@@ -1,0 +1,6 @@
+{
+	"ImportPath": "github.com/square/etre",
+	"GoVersion": "go1.7",
+	"GodepVersion": "v77",
+	"Deps": []
+}
