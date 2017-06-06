@@ -9,6 +9,8 @@
 package query
 
 import (
+	"strconv"
+
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -17,13 +19,11 @@ type Query struct {
 	Predicates []Predicate
 }
 
-// Predicate is a label, operator, and value. If using KLS syntax,
-// "foo=bar", would translate to a Predicate where Label="foo", Operator="=",
-// Values=["bar"].
+// Predicate represents a predicate in a Query.
 type Predicate struct {
 	Label    string
 	Operator string
-	Values   []string
+	Value    interface{}
 }
 
 // Translate parses KLS and wraps it in Query struct.
@@ -37,13 +37,40 @@ func Translate(labelSelectors string) (Query, error) {
 	}
 
 	for _, r := range req {
-		predicate := Predicate{
+		op := string(r.Operator())
+		p := Predicate{
 			Label:    r.Key(),
-			Operator: string(r.Operator()),
-			Values:   r.Values().List(),
+			Operator: op,
+			Value:    translateValues(op, r.Values().List()),
 		}
-		query.Predicates = append(query.Predicates, predicate)
+		query.Predicates = append(query.Predicates, p)
 	}
 
 	return query, err
+}
+
+// We can make certain assumptions on values for labels.Requirement based on
+// the operator. Read more here:
+// https://github.com/kubernetes/apimachinery/blob/master/pkg/labels/selector.go#L104-L110.).
+// We choose to translate data here to keep data consistent between db package
+// and audit log package.
+func translateValues(operator string, values []string) interface{} {
+	var value interface{}
+
+	switch operator {
+	case "in", "notin":
+		// Values set must be non-empty.
+		value = values
+	case "=", "==", "!=":
+		// Values set must contain one value.
+		value = values[0]
+	case "lt", "gt":
+		// Values set must contain only one value, which was interpreted as an integer, so convert from string to integer
+		value, _ = strconv.Atoi(values[0])
+	case "exists", "!":
+		// Values set must be empty
+		value = []string{}
+	}
+
+	return value
 }
