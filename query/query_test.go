@@ -16,7 +16,7 @@ func TestTranslateSingle(t *testing.T) {
 			query.Predicate{
 				Label:    "foo",
 				Operator: "=",
-				Values:   []string{"bar"},
+				Value:    "bar",
 			},
 		},
 	}
@@ -38,12 +38,12 @@ func TestTranslateMultiple(t *testing.T) {
 			query.Predicate{
 				Label:    "foo",
 				Operator: "=",
-				Values:   []string{"bar"},
+				Value:    "bar",
 			},
 			query.Predicate{
 				Label:    "name",
 				Operator: "notin",
-				Values:   []string{"baz", "qux"},
+				Value:    []string{"baz", "qux"},
 			},
 		},
 	}
