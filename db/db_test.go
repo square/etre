@@ -95,6 +95,29 @@ func TestDisconnect(t *testing.T) {
 	}
 }
 
+func DeleteEntityLabel(t *testing.T) {
+	c := setup(t)
+	defer teardown(t, c)
+
+	entity := seedEntities[0]
+	id := entity["_id"].(string)
+	label := "x"
+	expect := db.Entity{"_id": id, label: entity[label]}
+
+	actual, err := c.DeleteEntityLabel(id, label)
+	if err != nil {
+		if _, ok := err.(db.ErrDeleteLabel); ok {
+			t.Errorf("Error deleting label: %s", err)
+		} else {
+			t.Errorf("Uknown error when deleting label: %s", err)
+		}
+	}
+
+	if !reflect.DeepEqual(actual, expect) {
+		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	}
+}
+
 func TestCreateEntitiesMultiple(t *testing.T) {
 	c := setup(t)
 	defer teardown(t, c)

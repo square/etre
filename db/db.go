@@ -39,16 +39,8 @@ type Entity map[string]interface{}
 
 // Connector interface has methods needed to do CRUD operations on entities.
 type Connector interface {
-
-	// Managing a single entity
-	// TODO: CreateEntity(Entity) string
-	// TODO: ReadEntity(string) Entity
-	// TODO: UpdateEntity(string) Entity
-	// TODO: DeleteEntity(string) error
-
 	// Managing labels for a single entity
-	// TODO: ReadEntityLabels(string)
-	// TODO: DeleteEntityLabel(string, string)
+	DeleteEntityLabel(string, string) (Entity, error)
 
 	// Managing Multiple entities
 	CreateEntities([]Entity) ([]string, error)
@@ -111,6 +103,37 @@ func (m *mongo) Connect() error {
 // Disconnect must be called when finished with db connector.
 func (m *mongo) Disconnect() {
 	m.session.Close()
+}
+
+// DeleteEntityLabel deletes a label from an entity.
+//
+// Relevant documentation:
+//
+//     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
+//
+func (m *mongo) DeleteEntityLabel(id string, label string) (Entity, error) {
+	s := m.session.Copy()
+	defer s.Close()
+
+	c := s.DB(m.database).C(m.collection)
+
+	// ReturnNew: false is the default option. Will return the original document
+	// before update was performed.
+	change := mgo.Change{
+		Update:    bson.M{"$unset": bson.M{label: ""}},
+		ReturnNew: false,
+	}
+
+	var diff Entity
+	// We call Select so that Apply will return the orginal deleted label (and
+	// "_id" field, which is included by default) rather than returning the
+	// entire original document
+	_, err := c.Find(bson.M{"_id": id}).Select(bson.M{label: 1}).Apply(change, &diff)
+	if err != nil {
+		return nil, ErrDeleteLabel{DbError: err}
+	}
+
+	return diff, nil
 }
 
 // CreateEntities inserts many entities into DB. This method allows for partial
@@ -373,5 +396,13 @@ type ErrDelete struct {
 }
 
 func (e ErrDelete) Error() string {
+	return e.DbError.Error()
+}
+
+type ErrDeleteLabel struct {
+	DbError error
+}
+
+func (e ErrDeleteLabel) Error() string {
 	return e.DbError.Error()
 }
