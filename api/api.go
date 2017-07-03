@@ -2,25 +2,37 @@
 
 package api
 
-import "github.com/square/etre/router"
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+
+	"github.com/square/etre/db"
+	"github.com/square/etre/query"
+	"github.com/square/etre/router"
+)
 
 const (
 	API_ROOT              = "/api/v1/"
-	REQUEST_ID_PATTERN    = "([0-9]+)"
+	REQUEST_ID_PATTERN    = "([A-Za-z0-9]+)"
 	REQUEST_LABEL_PATTERN = "([A-Za-z0-9]+)"
+	REQUEST_QUERY_PATTERN = "([\\s\\S]*)"
 )
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
-	Router *router.Router
+	Router      *router.Router
+	DbConnector db.Connector
 }
 
 // NewAPI makes a new API.
-func NewAPI(router *router.Router) *API {
+func NewAPI(router *router.Router, c db.Connector) *API {
 	api := &API{
-		Router: router,
+		Router:      router,
+		DbConnector: c,
 	}
 
+	api.Router.AddRoute(API_ROOT+"entity", api.entityHandler, "api-entity")
 	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ID_PATTERN, api.entityHandler, "api-entity")
 	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ID_PATTERN+"/labels", api.entityLabelsHandler, "api-entity-labels")
 	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ID_PATTERN+"/labels"+REQUEST_LABEL_PATTERN, api.entityDeleteLabelHandler, "api-entity-delete-label")
@@ -38,13 +50,13 @@ func NewAPI(router *router.Router) *API {
 func (api *API) entityHandler(ctx router.HTTPContext) {
 	switch ctx.Request.Method {
 	case "POST":
-		// TODO: fill in
+		postEntityHandler(ctx, api.DbConnector)
 	case "GET":
-		// TODO: fill in
+		getEntityHandler(ctx, api.DbConnector)
 	case "PUT":
-		// TODO: fill in
+		putEntityHandler(ctx, api.DbConnector)
 	case "DELETE":
-		// TODO: fill in
+		deleteEntityHandler(ctx, api.DbConnector)
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -77,13 +89,13 @@ func (api *API) entityDeleteLabelHandler(ctx router.HTTPContext) {
 func (api *API) entitiesHandler(ctx router.HTTPContext) {
 	switch ctx.Request.Method {
 	case "POST":
-		// TODO: fill in
+		postEntitiesHandler(ctx, api.DbConnector)
 	case "GET":
-		// TODO: fill in
+		getEntitiesHandler(ctx, api.DbConnector)
 	case "PUT":
-		// TODO: fill in
+		putEntitiesHandler(ctx, api.DbConnector)
 	case "DELETE":
-		// TODO: fill in
+		deleteEntitiesHandler(ctx, api.DbConnector)
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -111,4 +123,349 @@ func (api *API) statsHandler(ctx router.HTTPContext) {
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
+}
+
+// ============================== HELPER FUNCTIONS ============================== //
+
+func postEntityHandler(ctx router.HTTPContext, c db.Connector) {
+	// Decode request body into entity var
+	var entity db.Entity
+	err := json.NewDecoder(ctx.Request.Body).Decode(&entity)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
+		return
+	}
+
+	ConvertFloat64ToInt(entity)
+
+	for k, v := range entity {
+		if !validValueType(v) {
+			ctx.APIError(router.ErrBadRequest, "Key (%v) has value (%v) with invalid type (%v). Type of value must be a string or int.", k, v, reflect.TypeOf(v))
+		}
+	}
+
+	ids, err := c.CreateEntities([]db.Entity{entity})
+	if err != nil {
+		if _, ok := err.(db.ErrCreate); ok {
+			ctx.APIError(router.ErrInternal, "Error creating entity: %s", err)
+			return
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when creating entity: %s", err)
+			return
+		}
+	}
+
+	out, err := json.Marshal(ids[0])
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func getEntityHandler(ctx router.HTTPContext, c db.Connector) {
+	if len(ctx.Arguments) != 2 {
+		ctx.APIError(router.ErrMissingParam, "Missing param: id")
+		return
+	}
+
+	requestId := ctx.Arguments[1]
+
+	q := queryForId(requestId)
+
+	entities, err := c.ReadEntities(q)
+	if err != nil {
+		if _, ok := err.(db.ErrRead); ok {
+			ctx.APIError(router.ErrInternal, "Error reading entity: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when reading entity: %s", err)
+		}
+
+		return
+	}
+
+	if entities == nil {
+		ctx.APIError(router.ErrNotFound, "No entity with id: %s", requestId)
+		return
+	}
+
+	out, err := json.Marshal(entities[0])
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
+	if len(ctx.Arguments) != 2 {
+		ctx.APIError(router.ErrMissingParam, "Missing param: id")
+		return
+	}
+
+	requestId := ctx.Arguments[1]
+	var requestUpdate db.Entity
+	err := json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
+		return
+	}
+
+	q := queryForId(requestId)
+
+	entities, err := c.UpdateEntities(q, requestUpdate)
+	if err != nil {
+		if _, ok := err.(db.ErrUpdate); ok {
+			ctx.APIError(router.ErrInternal, "Error updating entity: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when updating entity: %s", err)
+		}
+
+		return
+	}
+
+	out, err := json.Marshal(entities[0])
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func deleteEntityHandler(ctx router.HTTPContext, c db.Connector) {
+	if len(ctx.Arguments) != 2 {
+		ctx.APIError(router.ErrMissingParam, "Missing param: id")
+		return
+	}
+
+	requestId := ctx.Arguments[1]
+	q := queryForId(requestId)
+
+	entities, err := c.DeleteEntities(q)
+	if err != nil {
+		if _, ok := err.(db.ErrDelete); ok {
+			ctx.APIError(router.ErrInternal, "Error deleting entity: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when deleting entity: %s", err)
+		}
+
+		return
+	}
+
+	out, err := json.Marshal(entities[0])
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func postEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+	var entities []db.Entity
+	err := json.NewDecoder(ctx.Request.Body).Decode(&entities)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
+		return
+	}
+
+	for _, e := range entities {
+		ConvertFloat64ToInt(e)
+
+		for k, v := range e {
+			if !validValueType(v) {
+				ctx.APIError(router.ErrBadRequest, "Key (%v) has value (%v) with invalid type (%v). Type of value must be a string or int.", k, v, reflect.TypeOf(v))
+			}
+		}
+	}
+
+	ids, err := c.CreateEntities(entities)
+	if err != nil {
+		if _, ok := err.(db.ErrCreate); ok {
+			ctx.APIError(router.ErrInternal, "Error creating entities: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when creating entities: %s", err)
+		}
+
+		return
+	}
+
+	out, err := json.Marshal(ids)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func getEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+	// Translate URL query to query struct
+	queryParam := ctx.Request.Form["query"]
+	if queryParam == nil {
+		ctx.APIError(router.ErrMissingParam, "Missing param: query")
+		return
+	}
+
+	requestLabelSelector := queryParam[0]
+	if requestLabelSelector == "" {
+		ctx.APIError(router.ErrMissingParam, "Missing param: query string is empty")
+		return
+	}
+
+	q, err := query.Translate(requestLabelSelector)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Invalid query:  %s", err)
+		return
+	}
+
+	entities, err := c.ReadEntities(q)
+	if err != nil {
+		if _, ok := err.(db.ErrRead); ok {
+			ctx.APIError(router.ErrInternal, "Error reading entities: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when reading entities: %s", err)
+		}
+
+		return
+	}
+
+	if len(entities) == 0 {
+		ctx.APIError(router.ErrNotFound, "No entities match query: %s", requestLabelSelector)
+		return
+	}
+
+	out, err := json.Marshal(entities)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func putEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+	// Translate URL query to query struct
+	queryParam := ctx.Request.Form["query"]
+	if queryParam == nil {
+		ctx.APIError(router.ErrMissingParam, "Missing param: query")
+		return
+	}
+
+	requestLabelSelector := queryParam[0]
+	if requestLabelSelector == "" {
+		ctx.APIError(router.ErrMissingParam, "Missing param: query string is empty")
+		return
+	}
+
+	q, err := query.Translate(requestLabelSelector)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Invalid query: %s", err)
+		return
+	}
+
+	// Decode request update
+	var requestUpdate db.Entity
+	err = json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
+		return
+	}
+
+	entities, err := c.UpdateEntities(q, requestUpdate)
+	if err != nil {
+		if _, ok := err.(db.ErrUpdate); ok {
+			ctx.APIError(router.ErrInternal, "Error updating entities: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when updating entities: %s", err)
+		}
+
+		return
+	}
+
+	out, err := json.Marshal(entities)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+func deleteEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+	// Translate URL query to query struct
+	queryParam := ctx.Request.Form["query"]
+	if queryParam == nil {
+		ctx.APIError(router.ErrMissingParam, "Missing param: query")
+		return
+	}
+
+	requestLabelSelector := queryParam[0]
+	if requestLabelSelector == "" {
+		ctx.APIError(router.ErrMissingParam, "Missing param: query string is empty")
+		return
+	}
+
+	q, err := query.Translate(requestLabelSelector)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Invalid query: %s", err)
+		return
+	}
+
+	entities, err := c.DeleteEntities(q)
+	if err != nil {
+		if _, ok := err.(db.ErrDelete); ok {
+			ctx.APIError(router.ErrInternal, "Error deleting entities: %s", err)
+		} else {
+			ctx.APIError(router.ErrInternal, "Uknown error when deleting entities: %s", err)
+		}
+
+		return
+	}
+
+	out, err := json.Marshal(entities)
+	if err != nil {
+		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
+		return
+	}
+
+	fmt.Fprintln(ctx.Response, string(out))
+}
+
+// _id is not a valid field name to pass to query.Translate, so we manually
+// create a query object.
+func queryForId(id string) query.Query {
+	return query.Query{
+		[]query.Predicate{
+			query.Predicate{
+				Label:    "_id",
+				Operator: "=",
+				Value:    id,
+			},
+		},
+	}
+}
+
+// JSON treats all numbers as floats. Given this, when we see a float with
+// decimal values of all 0, it is unclear if the user passed in 3.0 (type
+// float) or 3 (type int). So, since we cannot tell the difference between a
+// some float numbers and integer numbers, we cast all floats to ints. This
+// means that floats with non-zero decimal values, such as 3.14 (type float),
+// will get truncated to 3i (type int) in this case.
+func ConvertFloat64ToInt(entity db.Entity) {
+	for k, v := range entity {
+		if reflect.TypeOf(v).Kind() == reflect.Float64 {
+			entity[k] = int(v.(float64))
+		}
+	}
+}
+
+// Values in entity must be of type string or int. This is because the query
+// language we use only supports querying by string or int. See more at:
+// github.com/square/etre/query
+func validValueType(v interface{}) bool {
+	return reflect.TypeOf(v).Kind() == reflect.String || reflect.TypeOf(v).Kind() == reflect.Int
 }
