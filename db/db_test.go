@@ -16,12 +16,13 @@ const (
 	URL        = "localhost"
 	Database   = "etre_test"
 	Collection = "entities"
+	Timeout    = 5
 )
 
 func setup(t *testing.T) db.Connector {
 	var err error
 
-	c := db.NewConnector(URL, Database, Collection)
+	c := db.NewConnector(URL, Database, Collection, Timeout, nil)
 	err = c.Connect()
 	if err != nil {
 		t.Error(err)
