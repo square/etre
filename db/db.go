@@ -29,6 +29,10 @@
 package db
 
 import (
+	"crypto/tls"
+	"net"
+	"time"
+
 	"github.com/square/etre/query"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -58,6 +62,8 @@ type mongo struct {
 	url        string
 	database   string
 	collection string
+	timeout    int
+	tlsConfig  *tls.Config
 	session    *mgo.Session
 }
 
@@ -79,24 +85,54 @@ var operatorMap = map[string]string{
 }
 
 // NewConnector creates an instance of Connector.
-func NewConnector(url string, database string, collection string) Connector {
+func NewConnector(url string, database string, collection string, timeout int, tlsConfig *tls.Config) Connector {
 	return &mongo{
 		url:        url,
 		database:   database,
 		collection: collection,
+		timeout:    timeout,
+		tlsConfig:  tlsConfig,
 	}
 }
 
 // Connect creates a session to db. All queries to DB will copy this session to
 // make a request. When you are finished, you must call Disconnect to close the session.
 func (m *mongo) Connect() error {
-	session, err := mgo.Dial(m.url)
+	// Make custom dialer that can do TLS
+	dialInfo, err := mgo.ParseURL(m.url)
 	if err != nil {
 		// Returning raw, low-level error since this method only does one thing.
 		return err
 	}
 
-	m.session = session
+	timeoutSec := time.Duration(m.timeout) * time.Second
+
+	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
+		if m.tlsConfig != nil {
+			dialer := &net.Dialer{
+				Timeout: timeoutSec,
+			}
+			conn, err := tls.DialWithDialer(dialer, "tcp", addr.String(), m.tlsConfig)
+			if err != nil {
+				return nil, err
+			}
+			return conn, nil
+		} else {
+			conn, err := net.DialTimeout("tcp", addr.String(), timeoutSec)
+			if err != nil {
+				return nil, err
+			}
+			return conn, nil
+		}
+	}
+
+	// Connect
+	s, err := mgo.DialWithInfo(dialInfo)
+	if err != nil {
+		return err
+	}
+
+	m.session = s
 	return nil
 }
 
