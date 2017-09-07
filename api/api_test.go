@@ -27,7 +27,7 @@ var seedEntity2 = db.Entity{"_id": "id2", "x": 2, "foo": "bar"}
 var seedEntities = []db.Entity{seedEntity0, seedEntity1, seedEntity2}
 
 func setup(t *testing.T) {
-	c := db.NewConnector("localhost", "etre", "entities", 5, nil)
+	c := db.NewConnector("localhost", "etre", "entities", 5, nil, nil)
 	err := c.Connect()
 	if err != nil {
 		t.Fatal(err)

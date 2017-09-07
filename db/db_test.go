@@ -22,7 +22,7 @@ const (
 func setup(t *testing.T) db.Connector {
 	var err error
 
-	c := db.NewConnector(URL, Database, Collection, Timeout, nil)
+	c := db.NewConnector(URL, Database, Collection, Timeout, nil, nil)
 	err = c.Connect()
 	if err != nil {
 		t.Error(err)
