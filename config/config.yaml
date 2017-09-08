@@ -1,0 +1,20 @@
+# below are all optional configurations. if there is a value present, that is
+# the default value. to override a value, change it and uncomment that line of
+# the config.
+
+# server:
+#   addr: 127.0.0.1:8080
+#   tls-cert:
+#   tls-key:
+#   tls-ca:
+# db:
+#   url: localhost
+#   database: etre
+#   collection: entities
+#   timeout: 5
+#   tls-cert:
+#   tls-key:
+#   tls-ca:
+#   username:
+#   source:
+#   mechanism:

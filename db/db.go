@@ -59,12 +59,13 @@ type Connector interface {
 
 // mongo struct stores all info needed to connect and query a mongo instance.
 type mongo struct {
-	url        string
-	database   string
-	collection string
-	timeout    int
-	tlsConfig  *tls.Config
-	session    *mgo.Session
+	url         string
+	database    string
+	collection  string
+	timeout     int
+	tlsConfig   *tls.Config
+	session     *mgo.Session
+	credentials map[string]string
 }
 
 // Map of Kubernetes Selection Operator to mongoDB Operator.
@@ -85,13 +86,14 @@ var operatorMap = map[string]string{
 }
 
 // NewConnector creates an instance of Connector.
-func NewConnector(url string, database string, collection string, timeout int, tlsConfig *tls.Config) Connector {
+func NewConnector(url string, database string, collection string, timeout int, tlsConfig *tls.Config, credentials map[string]string) Connector {
 	return &mongo{
-		url:        url,
-		database:   database,
-		collection: collection,
-		timeout:    timeout,
-		tlsConfig:  tlsConfig,
+		url:         url,
+		database:    database,
+		collection:  collection,
+		timeout:     timeout,
+		tlsConfig:   tlsConfig,
+		credentials: credentials,
 	}
 }
 
@@ -133,6 +135,20 @@ func (m *mongo) Connect() error {
 	}
 
 	m.session = s
+
+	// Login
+	if m.credentials["username"] != "" && m.credentials["source"] != "" && m.credentials["mechanism"] != "" {
+		cred := &mgo.Credential{
+			Username:  m.credentials["username"],
+			Source:    m.credentials["source"],
+			Mechanism: m.credentials["mechanism"],
+		}
+		err = s.Login(cred)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
