@@ -17,3 +17,4 @@
 *.swp
 
 tags
+coverage.out

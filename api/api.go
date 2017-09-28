@@ -333,11 +333,7 @@ func getEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 		return
 	}
 
-	if len(entities) == 0 {
-		ctx.APIError(router.ErrNotFound, "No entities match query: %s", requestLabelSelector)
-		return
-	}
-
+	// If no error, this endpoint always returns 200 OK and a list, even an empty list.
 	out, err := json.Marshal(entities)
 	if err != nil {
 		ctx.APIError(router.ErrInternal, "Can't encode response (error: %s)", err)
