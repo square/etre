@@ -25,10 +25,14 @@ var seedEntity0 = db.Entity{"_id": "id0", "x": 0, "foo": "bar"}
 var seedEntity1 = db.Entity{"_id": "id1", "x": 1, "foo": "bar"}
 var seedEntity2 = db.Entity{"_id": "id2", "x": 2, "foo": "bar"}
 var seedEntities = []db.Entity{seedEntity0, seedEntity1, seedEntity2}
+var entityType = "nodes"
 
 func setup(t *testing.T) {
-	c := db.NewConnector("localhost", "etre", "entities", 5, nil, nil)
-	err := c.Connect()
+	c, err := db.NewConnector("localhost", "etre", []string{entityType}, 5, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.Connect()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +40,7 @@ func setup(t *testing.T) {
 	defaultServer = httptest.NewServer(defaultAPI.Router)
 
 	// Add test data
-	url := defaultServer.URL + api.API_ROOT + "entities"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "/"
 	payload, err := json.Marshal(seedEntities)
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +65,7 @@ func teardown(t *testing.T) {
 
 	// Must make call through dbconnector as API does not support empty queries
 	// as a safety guard
-	_, err = defaultAPI.DbConnector.DeleteEntities(q)
+	_, err = defaultAPI.DbConnector.DeleteEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(db.ErrDelete); ok {
 			t.Fatalf("Error deleting entities: %s", err)
@@ -87,7 +91,7 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	expect := "id3"
 	entity := db.Entity{"_id": expect, "x": 3.0}
 
-	url := defaultServer.URL + api.API_ROOT + "entity"
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	payload, err := json.Marshal(entity)
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +116,7 @@ func TestPostEntityHandlerPayloadError(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	url := defaultServer.URL + api.API_ROOT + "entity"
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	// db.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
@@ -143,7 +147,7 @@ func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
 	x := []int{0, 1, 2}
 	entity := db.Entity{"_id": "id3", "x": x}
 
-	url := defaultServer.URL + api.API_ROOT + "entity"
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	payload, err := json.Marshal(entity)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +178,7 @@ func TestGetEntityHandlerSuccessful(t *testing.T) {
 	expect := seedEntity0
 	id := expect["_id"].(string)
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	var actual db.Entity
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
@@ -198,8 +202,8 @@ func TestGetEntityHandlerMissingIDError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit ID from URL
-	url := defaultServer.URL + api.API_ROOT + "entity/"
-	expectErr := "Missing param: id"
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/"
+	expectErr := "Missing params"
 	testBadRequestError(t, "GET", url, expectErr)
 }
 
@@ -210,7 +214,7 @@ func TestGetEntityHandlerNotFoundError(t *testing.T) {
 	// id that we have not inserted into db
 	id := "id4"
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	var respErr map[string]string
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &respErr)
@@ -238,7 +242,7 @@ func TestPutEntityHandlerSuccessful(t *testing.T) {
 	update := db.Entity{"foo": "baz"}
 	expect := db.Entity{"_id": seedEntity0["_id"], "foo": seedEntity0["foo"]}
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	payload, err := json.Marshal(update)
 	if err != nil {
 		t.Fatal(err)
@@ -264,8 +268,8 @@ func TestPutEntityHandlerMissingIDError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit ID from URL
-	url := defaultServer.URL + api.API_ROOT + "entity/"
-	expectErr := "Missing param: id"
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/"
+	expectErr := "Missing params"
 	testBadRequestError(t, "PUT", url, expectErr)
 }
 
@@ -275,7 +279,7 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 
 	id := seedEntity0["_id"].(string)
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	// db.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
@@ -305,7 +309,7 @@ func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 	expect := seedEntity0
 	id := expect["_id"].(string)
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	var actual db.Entity
 
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &actual)
@@ -329,8 +333,8 @@ func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit ID from URL
-	url := defaultServer.URL + api.API_ROOT + "entity/"
-	expectErr := "Missing param: id"
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/"
+	expectErr := "Missing params"
 	testBadRequestError(t, "DELETE", url, expectErr)
 }
 
@@ -348,7 +352,7 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 	entity1 := db.Entity{"_id": expect[1], "x": 4}
 	entities := []db.Entity{entity0, entity1}
 
-	url := defaultServer.URL + api.API_ROOT + "entities"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
 	payload, err := json.Marshal(entities)
 	if err != nil {
 		t.Fatal(err)
@@ -363,7 +367,6 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 	if diff := deep.Equal(actual, expect); diff != nil {
 		t.Error(diff)
 	}
-
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -373,7 +376,7 @@ func TestPostEntitiesHandlerPayloadError(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	url := defaultServer.URL + api.API_ROOT + "entities"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
 	// db.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
@@ -407,7 +410,7 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 	entity3 := db.Entity{"_id": "id4", "y": yArr}
 	entities := []db.Entity{entity2, entity3}
 
-	url := defaultServer.URL + api.API_ROOT + "entities"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
 	payload, err := json.Marshal(entities)
 	if err != nil {
 		t.Fatal(err)
@@ -438,7 +441,7 @@ func TestGetEntitiesHandlerSuccessful(t *testing.T) {
 	expect := seedEntities
 
 	query := url.QueryEscape("foo=bar")
-	url := defaultServer.URL + api.API_ROOT + "entities?query=" + query
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
 	var actual []db.Entity
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
@@ -464,7 +467,7 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query param from URL
-	url := defaultServer.URL + api.API_ROOT + "entities?"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?"
 	expectErr := "Missing param: query"
 	testBadRequestError(t, "GET", url, expectErr)
 }
@@ -474,7 +477,8 @@ func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query string from URL
-	url := defaultServer.URL + api.API_ROOT + "entities?query"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query"
+
 	expectErr := "Missing param: query string is empty"
 	testBadRequestError(t, "GET", url, expectErr)
 }
@@ -485,7 +489,7 @@ func TestGetEntitiesHandlerNotFoundError(t *testing.T) {
 
 	labelSelector := "x=9999"
 	query := url.QueryEscape(labelSelector)
-	url := defaultServer.URL + api.API_ROOT + "entities?query=" + query
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
 	var respErr map[string]string
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &respErr)
@@ -517,7 +521,7 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 	query := url.QueryEscape("x>0")
 	update := db.Entity{"foo": "baz"}
 
-	url := defaultServer.URL + api.API_ROOT + "entities?query=" + query
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
 	payload, err := json.Marshal(update)
 	if err != nil {
 		t.Fatal(err)
@@ -543,7 +547,7 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query param from URL
-	url := defaultServer.URL + api.API_ROOT + "entities?"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?"
 	expectErr := "Missing param: query"
 	testBadRequestError(t, "PUT", url, expectErr)
 }
@@ -553,7 +557,7 @@ func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query string from URL
-	url := defaultServer.URL + api.API_ROOT + "entities?query"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query"
 	expectErr := "Missing param: query string is empty"
 	testBadRequestError(t, "PUT", url, expectErr)
 }
@@ -564,7 +568,7 @@ func TestPutEntitiesHandlerPayloadError(t *testing.T) {
 
 	query := url.QueryEscape("x>0")
 
-	url := defaultServer.URL + api.API_ROOT + "entities?query=" + query
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
 	// db.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
@@ -594,7 +598,7 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 	expect := seedEntities
 	query := url.QueryEscape("foo=bar")
 
-	url := defaultServer.URL + api.API_ROOT + "entities?query=" + query
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
 	var actual []db.Entity
 
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &actual)
@@ -620,7 +624,7 @@ func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query param from URL
-	url := defaultServer.URL + api.API_ROOT + "entities?"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?"
 	expectErr := "Missing param: query"
 	testBadRequestError(t, "DELETE", url, expectErr)
 }
@@ -630,7 +634,7 @@ func TestDeleteEntitiesHandlerEmptyQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query string from URL
-	url := defaultServer.URL + api.API_ROOT + "entities?query"
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query"
 	expectErr := "Missing param: query string is empty"
 	testBadRequestError(t, "DELETE", url, expectErr)
 }

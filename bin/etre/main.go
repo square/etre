@@ -19,10 +19,10 @@ import (
 )
 
 type DBConfig struct {
-	URL        string `yaml:"url"`
-	Database   string `yaml:"database"`
-	Collection string `yaml:"collection"`
-	Timeout    int    `yaml:"timeout"`
+	URL         string   `yaml:"url"`
+	Database    string   `yaml:"database"`
+	EntityTypes []string `yaml:"entity_types"`
+	Timeout     int      `yaml:"timeout"`
 
 	// Certs
 	TLSCert string `yaml:"tls-cert"`
@@ -49,15 +49,12 @@ type Config struct {
 	DB     DBConfig
 }
 
-const (
-	DEFAULT_ADDR                     = "127.0.0.1:8080"
-	DEFAULT_DATABASE_URL             = "localhost"
-	DEFAULT_DATABASE                 = "etre"
-	DEFAULT_COLLECTION               = "entities"
-	DEFAULT_DATABASE_TIMEOUT_SECONDS = 5
-)
-
 var flagConfig string
+var default_addr = "127.0.0.1:8080"
+var default_database_url = "localhost"
+var default_database = "etre"
+var default_entity_types = []string{"entities"}
+var default_database_timeout_seconds = 5
 
 func init() {
 	flag.StringVar(&flagConfig, "config", "", "Config file")
@@ -84,13 +81,13 @@ func main() {
 
 	config := Config{
 		Server: ServerConfig{
-			Addr: DEFAULT_ADDR,
+			Addr: default_addr,
 		},
 		DB: DBConfig{
-			URL:        DEFAULT_DATABASE_URL,
-			Database:   DEFAULT_DATABASE,
-			Collection: DEFAULT_COLLECTION,
-			Timeout:    DEFAULT_DATABASE_TIMEOUT_SECONDS,
+			URL:         default_database_url,
+			Database:    default_database,
+			EntityTypes: default_entity_types,
+			Timeout:     default_database_timeout_seconds,
 		},
 	}
 	if err := yaml.Unmarshal(bytes, &config); err != nil {
@@ -140,14 +137,20 @@ func main() {
 	// //////////////////////////////////////////////////////////////////////
 	// Launch App (connect to DB, initialize router/API, start server)
 	// //////////////////////////////////////////////////////////////////////
-	c := db.NewConnector(
+	var c db.Connector
+	c, err = db.NewConnector(
 		config.DB.URL,
 		config.DB.Database,
-		config.DB.Collection,
+		config.DB.EntityTypes,
 		config.DB.Timeout,
 		tlsConfig,
 		dbCredentials,
 	)
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+
 	err = c.Connect()
 	if err != nil {
 		log.Println(err)

@@ -10,7 +10,8 @@
 # db:
 #   url: localhost
 #   database: etre
-#   collection: entities
+#   entity_types:
+#     - nodes
 #   timeout: 5
 #   tls-cert:
 #   tls-key:

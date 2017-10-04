@@ -1,7 +1,9 @@
 package db_test
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/square/etre/db"
@@ -12,24 +14,25 @@ var seedEntities = []db.Entity{
 	db.Entity{"x": 2, "y": "hello", "z": []interface{}{"foo", "bar"}},
 }
 
-const (
-	URL        = "localhost"
-	Database   = "etre_test"
-	Collection = "entities"
-	Timeout    = 5
-)
+var url = "localhost"
+var database = "etre_test"
+var entityType = "nodes"
+var entityTypes = []string{entityType}
+var timeout = 5
 
 func setup(t *testing.T) db.Connector {
-	var err error
+	c, err := db.NewConnector(url, database, entityTypes, timeout, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
 
-	c := db.NewConnector(URL, Database, Collection, Timeout, nil, nil)
 	err = c.Connect()
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Create test data
-	_, err = c.CreateEntities(seedEntities)
+	_, err = c.CreateEntities(entityType, seedEntities)
 	if err != nil {
 		if _, ok := err.(db.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -47,7 +50,7 @@ func teardown(t *testing.T, c db.Connector) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = c.DeleteEntities(q)
+	_, err = c.DeleteEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(db.ErrDelete); ok {
 			t.Errorf("Error deleting entities: %s", err)
@@ -60,6 +63,16 @@ func teardown(t *testing.T, c db.Connector) {
 	c.Disconnect()
 }
 
+func TestCreateNewConnectorError(t *testing.T) {
+	// This is invalid because it's a reserved name
+	invalidEntityType := "entities"
+	expectedErrMsg := fmt.Sprintf("Entity type (%s) cannot be a reserved word", invalidEntityType)
+	_, err := db.NewConnector(url, database, []string{invalidEntityType}, timeout, nil, nil)
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	}
+}
+
 func TestConnect(t *testing.T) {
 	c := setup(t)
 	defer teardown(t, c)
@@ -70,7 +83,7 @@ func TestConnect(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = c.ReadEntities(q)
+	_, err = c.ReadEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(db.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -90,13 +103,13 @@ func TestDisconnect(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = c.ReadEntities(q)
+	_, err = c.ReadEntities(entityType, q)
 	if err == nil {
 		t.Error("Still able to connect to DB. Expected to be disconnected.")
 	}
 }
 
-func DeleteEntityLabel(t *testing.T) {
+func TestDeleteEntityLabel(t *testing.T) {
 	c := setup(t)
 	defer teardown(t, c)
 
@@ -105,7 +118,7 @@ func DeleteEntityLabel(t *testing.T) {
 	label := "x"
 	expect := db.Entity{"_id": id, label: entity[label]}
 
-	actual, err := c.DeleteEntityLabel(id, label)
+	actual, err := c.DeleteEntityLabel(entityType, id, label)
 	if err != nil {
 		if _, ok := err.(db.ErrDeleteLabel); ok {
 			t.Errorf("Error deleting label: %s", err)
@@ -119,6 +132,23 @@ func DeleteEntityLabel(t *testing.T) {
 	}
 }
 
+func TestDeleteEntityLabelInvalidEntityType(t *testing.T) {
+	c := setup(t)
+	defer teardown(t, c)
+
+	entity := seedEntities[0]
+	id := entity["_id"].(string)
+	label := "x"
+
+	expectedErrMsg := "Invalid entityType name"
+	// This is invalid because it's a reserved name
+	invalidEntityType := "entities"
+	_, err := c.DeleteEntityLabel(invalidEntityType, id, label)
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	}
+}
+
 func TestCreateEntitiesMultiple(t *testing.T) {
 	c := setup(t)
 	defer teardown(t, c)
@@ -129,7 +159,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 		db.Entity{"z": 2},
 	}
 	// Note: teardown will delete this test data
-	ids, err := c.CreateEntities(testData)
+	ids, err := c.CreateEntities(entityType, testData)
 	if err != nil {
 		if _, ok := err.(db.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -157,7 +187,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 		db.Entity{"_id": "bar", "z": 2},
 	}
 	// Note: teardown will delete this test data
-	actual, err := c.CreateEntities(testData)
+	actual, err := c.CreateEntities(entityType, testData)
 
 	expect := []string{"foo", "bar"}
 
@@ -176,6 +206,25 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 		} else {
 			t.Errorf("Uknown error when creating entities: %s", err)
 		}
+	}
+}
+
+func TestCreateEntitiesInvalidEntityType(t *testing.T) {
+	c := setup(t)
+	defer teardown(t, c)
+
+	testData := []db.Entity{
+		db.Entity{"x": 0},
+		db.Entity{"y": 1},
+		db.Entity{"z": 2},
+	}
+
+	expectedErrMsg := "Invalid entityType name"
+	// This is invalid because it's a reserved name
+	invalidEntityType := "entities"
+	_, err := c.CreateEntities(invalidEntityType, testData)
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
 }
 
@@ -204,7 +253,7 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		actual, err := c.ReadEntities(q)
+		actual, err := c.ReadEntities(entityType, q)
 		if err != nil {
 			if _, ok := err.(db.ErrRead); ok {
 				t.Errorf("Error reading entities: %s", err)
@@ -230,7 +279,7 @@ func TestReadEntitiesWithComplexQuery(t *testing.T) {
 
 	expect := seedEntities
 
-	actual, err := c.ReadEntities(q)
+	actual, err := c.ReadEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(db.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -255,7 +304,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 		db.Entity{"a": 1, "b": 2, "c": 3},
 	}
 	// Note: teardown will delete this test data
-	_, err := c.CreateEntities(testData)
+	_, err := c.CreateEntities(entityType, testData)
 	if err != nil {
 		if _, ok := err.(db.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -268,7 +317,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	entities, err := c.ReadEntities(q)
+	entities, err := c.ReadEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(db.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -293,7 +342,7 @@ func TestReadEntitiesNotFound(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	actual, err := c.ReadEntities(q)
+	actual, err := c.ReadEntities(entityType, q)
 
 	if actual != nil {
 		t.Errorf("An empty list was expected, actual: %v", actual)
@@ -307,6 +356,24 @@ func TestReadEntitiesNotFound(t *testing.T) {
 	}
 }
 
+func TestReadEntitiesInvalidEntityType(t *testing.T) {
+	c := setup(t)
+	defer teardown(t, c)
+
+	q, err := query.Translate("a=b")
+	if err != nil {
+		t.Error(err)
+	}
+
+	expectedErrMsg := "Invalid entityType name"
+	// This is invalid because it's a reserved name
+	invalidEntityType := "entities"
+	_, err = c.ReadEntities(invalidEntityType, q)
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	}
+}
+
 func TestUpdateEntities(t *testing.T) {
 	c := setup(t)
 	defer teardown(t, c)
@@ -316,7 +383,7 @@ func TestUpdateEntities(t *testing.T) {
 		db.Entity{"x": 3, "y": "hello"},
 	}
 	// Note: teardown will delete this data
-	_, err := c.CreateEntities(testData)
+	_, err := c.CreateEntities(entityType, testData)
 	if err != nil {
 		if _, ok := err.(db.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -333,7 +400,7 @@ func TestUpdateEntities(t *testing.T) {
 
 	expectNumUpdated := 2
 
-	diff, err := c.UpdateEntities(q, u)
+	diff, err := c.UpdateEntities(entityType, q, u)
 	if err != nil {
 		if _, ok := err.(db.ErrUpdate); ok {
 			t.Errorf("Error updating entities: %s", err)
@@ -361,18 +428,37 @@ func TestUpdateEntities(t *testing.T) {
 
 }
 
+func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
+	c := setup(t)
+	defer teardown(t, c)
+
+	q, err := query.Translate("y=hello")
+	if err != nil {
+		t.Error(err)
+	}
+	u := db.Entity{"y": "goodbye"}
+
+	expectedErrMsg := "Invalid entityType name"
+	// This is invalid because it's a reserved name
+	invalidEntityType := "entities"
+	_, err = c.UpdateEntities(invalidEntityType, q, u)
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	}
+}
+
 func TestDeleteEntities(t *testing.T) {
 	c := setup(t)
 	defer teardown(t, c)
 
-	// Each Entity has "a" in it so we can query for documents with "a" and
+	// Each entity has "a" in it so we can query for documents with "a" and
 	// delete them
 	testData := []db.Entity{
 		db.Entity{"a": 1},
 		db.Entity{"a": 1, "b": 2},
 		db.Entity{"a": 1, "b": 2, "c": 3},
 	}
-	_, err := c.CreateEntities(testData)
+	_, err := c.CreateEntities(entityType, testData)
 	if err != nil {
 		if _, ok := err.(db.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -385,7 +471,7 @@ func TestDeleteEntities(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	actualDeletedEntities, err := c.DeleteEntities(q)
+	actualDeletedEntities, err := c.DeleteEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(db.ErrDelete); ok {
 			t.Errorf("Error deleting entities: %s", err)
@@ -404,5 +490,23 @@ func TestDeleteEntities(t *testing.T) {
 	// Test correct entities were deleted
 	if !reflect.DeepEqual(actualDeletedEntities, testData) {
 		t.Errorf("actual: %v, expect:  %v", actualDeletedEntities, testData)
+	}
+}
+
+func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
+	c := setup(t)
+	defer teardown(t, c)
+
+	q, err := query.Translate("a > 0")
+	if err != nil {
+		t.Error(err)
+	}
+
+	expectedErrMsg := "Invalid entityType name"
+	// This is invalid because it's a reserved name
+	invalidEntityType := "entities"
+	_, err = c.DeleteEntities(invalidEntityType, q)
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
 }
