@@ -30,6 +30,8 @@ package db
 
 import (
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -44,13 +46,13 @@ type Entity map[string]interface{}
 // Connector interface has methods needed to do CRUD operations on entities.
 type Connector interface {
 	// Managing labels for a single entity
-	DeleteEntityLabel(string, string) (Entity, error)
+	DeleteEntityLabel(string, string, string) (Entity, error)
 
 	// Managing Multiple entities
-	CreateEntities([]Entity) ([]string, error)
-	ReadEntities(query.Query) ([]Entity, error)
-	UpdateEntities(query.Query, Entity) ([]Entity, error)
-	DeleteEntities(query.Query) ([]Entity, error)
+	CreateEntities(string, []Entity) ([]string, error)
+	ReadEntities(string, query.Query) ([]Entity, error)
+	UpdateEntities(string, query.Query, Entity) ([]Entity, error)
+	DeleteEntities(string, query.Query) ([]Entity, error)
 
 	// Managing connection to DB
 	Connect() error
@@ -61,7 +63,7 @@ type Connector interface {
 type mongo struct {
 	url         string
 	database    string
-	collection  string
+	entityTypes []string
 	timeout     int
 	tlsConfig   *tls.Config
 	session     *mgo.Session
@@ -85,16 +87,28 @@ var operatorMap = map[string]string{
 	"gt":    "$gt",
 }
 
+var reservedNames = []string{"entity", "entities"}
+
 // NewConnector creates an instance of Connector.
-func NewConnector(url string, database string, collection string, timeout int, tlsConfig *tls.Config, credentials map[string]string) Connector {
+func NewConnector(url string, database string, entityTypes []string, timeout int, tlsConfig *tls.Config, credentials map[string]string) (Connector, error) {
+
+	// Ensure no entityType name is a reserved word
+	for _, r := range reservedNames {
+		for _, c := range entityTypes {
+			if r == c {
+				return nil, errors.New(fmt.Sprintf("Entity type (%s) cannot be a reserved word (%s).", c, r))
+			}
+		}
+	}
+
 	return &mongo{
 		url:         url,
 		database:    database,
-		collection:  collection,
+		entityTypes: entityTypes,
 		timeout:     timeout,
 		tlsConfig:   tlsConfig,
 		credentials: credentials,
-	}
+	}, nil
 }
 
 // Connect creates a session to db. All queries to DB will copy this session to
@@ -163,11 +177,15 @@ func (m *mongo) Disconnect() {
 //
 //     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
 //
-func (m *mongo) DeleteEntityLabel(id string, label string) (Entity, error) {
+func (m *mongo) DeleteEntityLabel(entityType string, id string, label string) (Entity, error) {
+	if !validEntityType(m, entityType) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name: %s. Valid entityType names: %s.", entityType, m.entityTypes))
+	}
+
 	s := m.session.Copy()
 	defer s.Close()
 
-	c := s.DB(m.database).C(m.collection)
+	c := s.DB(m.database).C(entityType)
 
 	// ReturnNew: false is the default option. Will return the original document
 	// before update was performed.
@@ -203,11 +221,15 @@ func (m *mongo) DeleteEntityLabel(id string, label string) (Entity, error) {
 // entities inserted. Since the entities were inserted in order (guranteed by
 // inserting one by one), caller should only return subset of entities that
 // failed to be inserted.
-func (m *mongo) CreateEntities(entities []Entity) ([]string, error) {
+func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, error) {
+	if !validEntityType(m, entityType) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
+	}
+
 	s := m.session.Copy()
 	defer s.Close()
 
-	c := m.session.DB(m.database).C(m.collection)
+	c := m.session.DB(m.database).C(entityType)
 
 	// A slice of IDs we generate to insert along with entities into DB
 	insertedObjectIDs := make([]string, 0, len(entities))
@@ -233,13 +255,17 @@ func (m *mongo) CreateEntities(entities []Entity) ([]string, error) {
 // ReadEntities queries the db and returns a slice of Entity objects if
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
-func (m *mongo) ReadEntities(q query.Query) ([]Entity, error) {
+func (m *mongo) ReadEntities(entityType string, q query.Query) ([]Entity, error) {
+	if !validEntityType(m, entityType) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
+	}
+
 	mgoQuery := translateQuery(q)
 
 	s := m.session.Copy()
 	defer s.Close()
 
-	c := s.DB(m.database).C(m.collection)
+	c := s.DB(m.database).C(entityType)
 
 	var entities []Entity
 	err := c.Find(mgoQuery).All(&entities)
@@ -265,17 +291,21 @@ func (m *mongo) ReadEntities(q query.Query) ([]Entity, error) {
 //
 //   diffs, err := c.UpdateEntities(q, update)
 //
-func (m *mongo) UpdateEntities(q query.Query, u Entity) ([]Entity, error) {
+func (m *mongo) UpdateEntities(t string, q query.Query, u Entity) ([]Entity, error) {
+	if !validEntityType(m, t) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, m.entityTypes))
+	}
+
 	mgoQuery := translateQuery(q)
 
 	s := m.session.Copy()
 	defer s.Close()
 
-	c := s.DB(m.database).C(m.collection)
+	entityType := s.DB(m.database).C(t)
 
 	// We can only call update on one doc at a time, so we generate a slice of IDs
 	// for docs to update.
-	ids, err := idsForQuery(c, mgoQuery)
+	ids, err := idsForQuery(entityType, mgoQuery)
 	if err != nil {
 		return nil, ErrUpdate{DbError: err}
 	}
@@ -297,7 +327,7 @@ func (m *mongo) UpdateEntities(q query.Query, u Entity) ([]Entity, error) {
 		// We call Select so that Apply will return only the fields we select
 		// ("_id" field and changed fields) rather than it returning the original
 		// document.
-		_, err := c.Find(bson.M{"_id": id}).Select(selectMap(u)).Apply(change, &diff)
+		_, err := entityType.Find(bson.M{"_id": id}).Select(selectMap(u)).Apply(change, &diff)
 		if err != nil {
 			return diffs, ErrUpdate{DbError: err}
 		}
@@ -316,16 +346,20 @@ func (m *mongo) UpdateEntities(q query.Query, u Entity) ([]Entity, error) {
 // Returns a slice of successfully deleted entities an error if there is one.
 // For example, if 4 entities were supposed to be deleted and 3 are ok and the
 // 4th fails, a slice with 3 deleted entities and an error will be returned.
-func (m *mongo) DeleteEntities(q query.Query) ([]Entity, error) {
+func (m *mongo) DeleteEntities(t string, q query.Query) ([]Entity, error) {
+	if !validEntityType(m, t) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, m.entityTypes))
+	}
+
 	mgoQuery := translateQuery(q)
 
 	s := m.session.Copy()
 	defer s.Close()
 
-	c := s.DB(m.database).C(m.collection)
+	entityType := s.DB(m.database).C(t)
 
 	// List of IDs for docs to update
-	ids, err := idsForQuery(c, mgoQuery)
+	ids, err := idsForQuery(entityType, mgoQuery)
 	if err != nil {
 		return nil, ErrDelete{DbError: err}
 	}
@@ -344,7 +378,7 @@ func (m *mongo) DeleteEntities(q query.Query) ([]Entity, error) {
 	// Query for each document and delete it
 	for _, id := range ids {
 		var deletedEntity Entity
-		_, err := c.Find(bson.M{"_id": id}).Apply(change, &deletedEntity)
+		_, err := entityType.Find(bson.M{"_id": id}).Apply(change, &deletedEntity)
 		if err != nil {
 			return deletedEntities, ErrDelete{DbError: err}
 		}
@@ -409,6 +443,17 @@ func selectMap(e Entity) map[string]int {
 	return selectMap
 }
 
+// validEntityType checks if the entityType passed in is in the entityType list of the connector
+func validEntityType(m *mongo, c string) bool {
+	for _, entityType := range m.entityTypes {
+		if c != entityType {
+			return false
+		}
+	}
+
+	return true
+}
+
 // ErrCreate is a higher level error for caller to check against when calling
 // CreateEntities. It holds the lower level error message from DB and the
 // number of entities successfully inserted on create.
@@ -451,6 +496,8 @@ func (e ErrDelete) Error() string {
 	return e.DbError.Error()
 }
 
+// ErrDeleteLabel is a higher level error for caller to check against when calling
+// DeleteEntityLabel. It holds the lower level error message from DB.
 type ErrDeleteLabel struct {
 	DbError error
 }
