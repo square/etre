@@ -7,11 +7,9 @@
 #   tls-cert:
 #   tls-key:
 #   tls-ca:
-# db:
+# datatsource:
 #   url: localhost
 #   database: etre
-#   entity_types:
-#     - nodes
 #   timeout: 5
 #   tls-cert:
 #   tls-key:
@@ -19,3 +17,14 @@
 #   username:
 #   source:
 #   mechanism:
+# entity:
+#   entity_types:
+#     - nodes
+# cdc:
+#   collection: cdc
+#   fallbackFile:
+#   write_retry_count: 3
+#   write_retry_wait_ms = 50
+# delay:
+#   collection: delay
+#   static_delay_ms: -1

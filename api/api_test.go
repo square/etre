@@ -8,88 +8,46 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/square/etre"
 	"github.com/square/etre/api"
-	"github.com/square/etre/db"
+	//	"github.com/square/etre/db"
+	//"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/router"
 	"github.com/square/etre/test"
+	"github.com/square/etre/test/mock"
+
+	"github.com/go-test/deep"
 )
 
-var defaultAPI *api.API
-var defaultServer *httptest.Server
-var seedEntity0 = db.Entity{"_id": "id0", "x": 0, "foo": "bar"}
-var seedEntity1 = db.Entity{"_id": "id1", "x": 1, "foo": "bar"}
-var seedEntity2 = db.Entity{"_id": "id2", "x": 2, "foo": "bar"}
-var seedEntities = []db.Entity{seedEntity0, seedEntity1, seedEntity2}
+var seedEntity0 = etre.Entity{"_id": "id0", "x": 0, "foo": "bar"}
+var seedEntity1 = etre.Entity{"_id": "id1", "x": 1, "foo": "bar"}
+var seedEntity2 = etre.Entity{"_id": "id2", "x": 2, "foo": "bar"}
+var seedEntities = []etre.Entity{seedEntity0, seedEntity1, seedEntity2}
 var entityType = "nodes"
-
-func setup(t *testing.T) {
-	c, err := db.NewConnector("localhost", "etre", []string{entityType}, 5, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = c.Connect()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defaultAPI = api.NewAPI(&router.Router{}, c)
-	defaultServer = httptest.NewServer(defaultAPI.Router)
-
-	// Add test data
-	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "/"
-	payload, err := json.Marshal(seedEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	statusCode, err := test.MakeHTTPRequest("POST", url, payload, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusOK {
-		t.Errorf("Error inserting seed data. Status code= %d, expected %d", statusCode, http.StatusOK)
-	}
-}
-
-func teardown(t *testing.T) {
-	// Delete all data in DB/Collection (empty query matches everything).
-	q, err := query.Translate("")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Must make call through dbconnector as API does not support empty queries
-	// as a safety guard
-	_, err = defaultAPI.DbConnector.DeleteEntities(entityType, q)
-	if err != nil {
-		if _, ok := err.(db.ErrDelete); ok {
-			t.Fatalf("Error deleting entities: %s", err)
-		} else {
-			t.Fatalf("Uknown error when deleting entities: %s", err)
-		}
-	}
-
-	// Close all connections
-	defaultServer.CloseClientConnections()
-	defaultServer.Close()
-	defaultAPI.DbConnector.Disconnect()
-}
 
 // //////////////////////////////////////////////////////////////////////////
 // Single Entity Management Handler Tests
 // //////////////////////////////////////////////////////////////////////////
 
 func TestPostEntityHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		CreateEntitiesFunc: func(entityType string, entities []etre.Entity, username string) ([]string, error) {
+			for _, entity := range entities {
+				if entity["_id"].(string) == "id3" {
+					return []string{"id3"}, nil
+				}
+			}
+			return []string{}, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := "id3"
-	entity := db.Entity{"_id": expect, "x": 3.0}
+	entity := etre.Entity{"_id": expect, "x": 3.0}
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	payload, err := json.Marshal(entity)
@@ -113,11 +71,11 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestPostEntityHandlerPayloadError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
-	// db.Entity type is expected to be in the payload, so passing in an empty
+	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
 	var respErr map[string]string
@@ -140,12 +98,12 @@ func TestPostEntityHandlerPayloadError(t *testing.T) {
 }
 
 func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// arrays are not supported value types
 	x := []int{0, 1, 2}
-	entity := db.Entity{"_id": "id3", "x": x}
+	entity := etre.Entity{"_id": "id3", "x": x}
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	payload, err := json.Marshal(entity)
@@ -172,14 +130,21 @@ func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
 }
 
 func TestGetEntityHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	var actualQuery query.Query
+	em := &mock.EntityManager{
+		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
+			actualQuery = q
+			return []etre.Entity{seedEntity0}, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntity0
 	id := expect["_id"].(string)
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
-	var actual db.Entity
+	var actual etre.Entity
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
 	if err != nil {
@@ -188,18 +153,31 @@ func TestGetEntityHandlerSuccessful(t *testing.T) {
 
 	api.ConvertFloat64ToInt(actual)
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
+
+	expectedQuery := query.Query{
+		[]query.Predicate{
+			query.Predicate{
+				Label:    "_id",
+				Operator: "=",
+				Value:    seedEntity0["_id"].(string),
+			},
+		},
+	}
+	if diff := deep.Equal(actualQuery, expectedQuery); diff != nil {
+		t.Error(diff)
+	}
 }
 
 func TestGetEntityHandlerMissingIDError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit ID from URL
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/"
@@ -208,8 +186,13 @@ func TestGetEntityHandlerMissingIDError(t *testing.T) {
 }
 
 func TestGetEntityHandlerNotFoundError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
+			return nil, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// id that we have not inserted into db
 	id := "id4"
@@ -235,27 +218,32 @@ func TestGetEntityHandlerNotFoundError(t *testing.T) {
 }
 
 func TestPutEntityHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		UpdateEntitiesFunc: func(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
+			return []etre.Entity{etre.Entity{"_id": seedEntity0["_id"], "foo": seedEntity0["foo"]}}, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	id := seedEntity0["_id"].(string)
-	update := db.Entity{"foo": "baz"}
-	expect := db.Entity{"_id": seedEntity0["_id"], "foo": seedEntity0["foo"]}
+	update := etre.Entity{"foo": "baz"}
+	expect := etre.Entity{"_id": seedEntity0["_id"], "foo": seedEntity0["foo"]}
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	payload, err := json.Marshal(update)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var actual db.Entity
+	var actual etre.Entity
 
 	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &actual)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 
 	if statusCode != http.StatusOK {
@@ -264,8 +252,8 @@ func TestPutEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestPutEntityHandlerMissingIDError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit ID from URL
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/"
@@ -274,13 +262,13 @@ func TestPutEntityHandlerMissingIDError(t *testing.T) {
 }
 
 func TestPutEntityHandlerPayloadError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	id := seedEntity0["_id"].(string)
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
-	// db.Entity type is expected to be in the payload, so passing in an empty
+	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
 	var respErr map[string]string
@@ -303,14 +291,19 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 }
 
 func TestDeleteEntityHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		DeleteEntitiesFunc: func(t string, q query.Query, user string) ([]etre.Entity, error) {
+			return []etre.Entity{seedEntity0}, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntity0
 	id := expect["_id"].(string)
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
-	var actual db.Entity
+	var actual etre.Entity
 
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &actual)
 	if err != nil {
@@ -319,8 +312,8 @@ func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 
 	api.ConvertFloat64ToInt(actual)
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 
 	if statusCode != http.StatusOK {
@@ -329,8 +322,8 @@ func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit ID from URL
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/"
@@ -343,14 +336,32 @@ func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
 // //////////////////////////////////////////////////////////////////////////
 
 func TestPostEntitiesHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		CreateEntitiesFunc: func(entityType string, entities []etre.Entity, username string) ([]string, error) {
+			var r1Found bool
+			var r2Found bool
+			for _, entity := range entities {
+				if entity["_id"].(string) == "id3" {
+					r1Found = true
+				}
+				if entity["_id"].(string) == "id4" {
+					r2Found = true
+				}
+			}
+			if r1Found && r2Found {
+				return []string{"id3", "id4"}, nil
+			}
+			return []string{}, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// seedEntities are id{0,1,2}
 	expect := []string{"id3", "id4"}
-	entity0 := db.Entity{"_id": expect[0], "x": 3}
-	entity1 := db.Entity{"_id": expect[1], "x": 4}
-	entities := []db.Entity{entity0, entity1}
+	entity0 := etre.Entity{"_id": expect[0], "x": 3}
+	entity1 := etre.Entity{"_id": expect[1], "x": 4}
+	entities := []etre.Entity{entity0, entity1}
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
 	payload, err := json.Marshal(entities)
@@ -373,11 +384,11 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestPostEntitiesHandlerPayloadError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
-	// db.Entity type is expected to be in the payload, so passing in an empty
+	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
 	var respErr map[string]string
@@ -400,15 +411,15 @@ func TestPostEntitiesHandlerPayloadError(t *testing.T) {
 }
 
 func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	yArr := []string{"foo", "bar", "baz"}
 
-	entity2 := db.Entity{"_id": "id3", "x": 2}
+	entity2 := etre.Entity{"_id": "id3", "x": 2}
 	// Arrays are not supported values types
-	entity3 := db.Entity{"_id": "id4", "y": yArr}
-	entities := []db.Entity{entity2, entity3}
+	entity3 := etre.Entity{"_id": "id4", "y": yArr}
+	entities := []etre.Entity{entity2, entity3}
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
 	payload, err := json.Marshal(entities)
@@ -435,14 +446,21 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 }
 
 func TestGetEntitiesHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	var actualQuery query.Query
+	em := &mock.EntityManager{
+		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
+			actualQuery = q
+			return seedEntities, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntities
 
-	query := url.QueryEscape("foo=bar")
-	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
-	var actual []db.Entity
+	q := url.QueryEscape("foo=bar")
+	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + q
+	var actual []etre.Entity
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
 	if err != nil {
@@ -453,18 +471,31 @@ func TestGetEntitiesHandlerSuccessful(t *testing.T) {
 		api.ConvertFloat64ToInt(e)
 	}
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
+
+	expectedQuery := query.Query{
+		[]query.Predicate{
+			query.Predicate{
+				Label:    "foo",
+				Operator: "=",
+				Value:    "bar",
+			},
+		},
+	}
+	if diff := deep.Equal(actualQuery, expectedQuery); diff != nil {
+		t.Error(diff)
+	}
 }
 
 func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query param from URL
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?"
@@ -473,8 +504,8 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 }
 
 func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query string from URL
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query"
@@ -484,8 +515,13 @@ func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
 }
 
 func TestGetEntitiesHandlerNotFoundError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
+			return nil, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	labelSelector := "x=9999"
 	query := url.QueryEscape(labelSelector)
@@ -510,31 +546,36 @@ func TestGetEntitiesHandlerNotFoundError(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
-
-	expect := []db.Entity{
-		db.Entity{"_id": seedEntity1["_id"], "foo": seedEntity1["foo"]},
-		db.Entity{"_id": seedEntity2["_id"], "foo": seedEntity2["foo"]},
+	expect := []etre.Entity{
+		etre.Entity{"_id": seedEntity1["_id"], "foo": seedEntity1["foo"]},
+		etre.Entity{"_id": seedEntity2["_id"], "foo": seedEntity2["foo"]},
 	}
 
+	em := &mock.EntityManager{
+		UpdateEntitiesFunc: func(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
+			return expect, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
+
 	query := url.QueryEscape("x>0")
-	update := db.Entity{"foo": "baz"}
+	update := etre.Entity{"foo": "baz"}
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
 	payload, err := json.Marshal(update)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var actual []db.Entity
+	var actual []etre.Entity
 
 	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &actual)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 
 	if statusCode != http.StatusOK {
@@ -543,8 +584,8 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query param from URL
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?"
@@ -553,8 +594,8 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query string from URL
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query"
@@ -563,13 +604,13 @@ func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerPayloadError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	query := url.QueryEscape("x>0")
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
-	// db.Entity type is expected to be in the payload, so passing in an empty
+	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
 	var respErr map[string]string
@@ -592,14 +633,19 @@ func TestPutEntitiesHandlerPayloadError(t *testing.T) {
 }
 
 func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	em := &mock.EntityManager{
+		DeleteEntitiesFunc: func(t string, q query.Query, user string) ([]etre.Entity, error) {
+			return seedEntities, nil
+		},
+	}
+	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntities
 	query := url.QueryEscape("foo=bar")
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
-	var actual []db.Entity
+	var actual []etre.Entity
 
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &actual)
 	if err != nil {
@@ -610,8 +656,8 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 		api.ConvertFloat64ToInt(e)
 	}
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 
 	if statusCode != http.StatusOK {
@@ -620,8 +666,8 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query param from URL
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?"
@@ -630,8 +676,8 @@ func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
 }
 
 func TestDeleteEntitiesHandlerEmptyQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query string from URL
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query"

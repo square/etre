@@ -1,6 +1,6 @@
 // Copyright 2017, Square, Inc.
 
-// Package db is a connector to execute CRUD commands for a single entity and
+// Package entity is a connector to execute CRUD commands for a single entity and
 // many entities on a DB instance.
 //
 // A note on querying limitations:
@@ -26,48 +26,44 @@
 //       above, if you expect to be able to query for a field/value, ensure you
 //       only create an entity that would then satisfy a query.
 //
-package db
+package entity
 
 import (
-	"crypto/tls"
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
+	"github.com/square/etre"
+	"github.com/square/etre/cdc"
+	"github.com/square/etre/db"
+	"github.com/square/etre/feed"
 	"github.com/square/etre/query"
+
+	"github.com/satori/go.uuid"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
-// Entity is a representation of what we store in the database.
-type Entity map[string]interface{}
-
-// Connector interface has methods needed to do CRUD operations on entities.
-type Connector interface {
+// Manager interface has methods needed to do CRUD operations on entities.
+type Manager interface {
 	// Managing labels for a single entity
-	DeleteEntityLabel(string, string, string) (Entity, error)
+	DeleteEntityLabel(string, string, string) (etre.Entity, error)
 
 	// Managing Multiple entities
-	CreateEntities(string, []Entity) ([]string, error)
-	ReadEntities(string, query.Query) ([]Entity, error)
-	UpdateEntities(string, query.Query, Entity) ([]Entity, error)
-	DeleteEntities(string, query.Query) ([]Entity, error)
-
-	// Managing connection to DB
-	Connect() error
-	Disconnect()
+	CreateEntities(string, []etre.Entity, string) ([]string, error)
+	ReadEntities(string, query.Query) ([]etre.Entity, error)
+	UpdateEntities(string, query.Query, etre.Entity, string) ([]etre.Entity, error)
+	DeleteEntities(string, query.Query, string) ([]etre.Entity, error)
 }
 
-// mongo struct stores all info needed to connect and query a mongo instance.
-type mongo struct {
-	url         string
+// manager struct stores all info needed to connect and query a mongo instance. It
+// implements the the Manager interface.
+type manager struct {
+	conn        db.Connector
 	database    string
 	entityTypes []string
-	timeout     int
-	tlsConfig   *tls.Config
-	session     *mgo.Session
-	credentials map[string]string
+	cdcm        cdc.Manager
+	dm          feed.DelayManager
 }
 
 // Map of Kubernetes Selection Operator to mongoDB Operator.
@@ -89,9 +85,8 @@ var operatorMap = map[string]string{
 
 var reservedNames = []string{"entity", "entities"}
 
-// NewConnector creates an instance of Connector.
-func NewConnector(url string, database string, entityTypes []string, timeout int, tlsConfig *tls.Config, credentials map[string]string) (Connector, error) {
-
+// NewManager creates a Manager.
+func NewManager(conn db.Connector, database string, entityTypes []string, cdcm cdc.Manager, dm feed.DelayManager) (Manager, error) {
 	// Ensure no entityType name is a reserved word
 	for _, r := range reservedNames {
 		for _, c := range entityTypes {
@@ -101,74 +96,13 @@ func NewConnector(url string, database string, entityTypes []string, timeout int
 		}
 	}
 
-	return &mongo{
-		url:         url,
+	return &manager{
+		conn:        conn,
 		database:    database,
 		entityTypes: entityTypes,
-		timeout:     timeout,
-		tlsConfig:   tlsConfig,
-		credentials: credentials,
+		cdcm:        cdcm,
+		dm:          dm,
 	}, nil
-}
-
-// Connect creates a session to db. All queries to DB will copy this session to
-// make a request. When you are finished, you must call Disconnect to close the session.
-func (m *mongo) Connect() error {
-	// Make custom dialer that can do TLS
-	dialInfo, err := mgo.ParseURL(m.url)
-	if err != nil {
-		// Returning raw, low-level error since this method only does one thing.
-		return err
-	}
-
-	timeoutSec := time.Duration(m.timeout) * time.Second
-
-	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-		if m.tlsConfig != nil {
-			dialer := &net.Dialer{
-				Timeout: timeoutSec,
-			}
-			conn, err := tls.DialWithDialer(dialer, "tcp", addr.String(), m.tlsConfig)
-			if err != nil {
-				return nil, err
-			}
-			return conn, nil
-		} else {
-			conn, err := net.DialTimeout("tcp", addr.String(), timeoutSec)
-			if err != nil {
-				return nil, err
-			}
-			return conn, nil
-		}
-	}
-
-	// Connect
-	s, err := mgo.DialWithInfo(dialInfo)
-	if err != nil {
-		return err
-	}
-
-	m.session = s
-
-	// Login
-	if m.credentials["username"] != "" && m.credentials["source"] != "" && m.credentials["mechanism"] != "" {
-		cred := &mgo.Credential{
-			Username:  m.credentials["username"],
-			Source:    m.credentials["source"],
-			Mechanism: m.credentials["mechanism"],
-		}
-		err = s.Login(cred)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Disconnect must be called when finished with db connector.
-func (m *mongo) Disconnect() {
-	m.session.Close()
 }
 
 // DeleteEntityLabel deletes a label from an entity.
@@ -177,12 +111,18 @@ func (m *mongo) Disconnect() {
 //
 //     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
 //
-func (m *mongo) DeleteEntityLabel(entityType string, id string, label string) (Entity, error) {
+func (m *manager) DeleteEntityLabel(entityType string, id string, label string) (etre.Entity, error) {
+	// @todo: make sure this is properly creating CDC events once it starts getting used.
+	return nil, fmt.Errorf("DeleteEntityLabel function needs more work before it can be used")
+
 	if !validEntityType(m, entityType) {
-		return nil, errors.New(fmt.Sprintf("Invalid entityType name: %s. Valid entityType names: %s.", entityType, m.entityTypes))
+		return nil, fmt.Errorf("Invalid entityType name: %s. Valid entityType names: %s.", entityType, m.entityTypes)
 	}
 
-	s := m.session.Copy()
+	s, err := m.conn.Connect()
+	if err != nil {
+		return nil, err
+	}
 	defer s.Close()
 
 	c := s.DB(m.database).C(entityType)
@@ -194,11 +134,11 @@ func (m *mongo) DeleteEntityLabel(entityType string, id string, label string) (E
 		ReturnNew: false,
 	}
 
-	var diff Entity
+	var diff etre.Entity
 	// We call Select so that Apply will return the orginal deleted label (and
 	// "_id" field, which is included by default) rather than returning the
 	// entire original document
-	_, err := c.Find(bson.M{"_id": id}).Select(bson.M{label: 1}).Apply(change, &diff)
+	_, err = c.Find(bson.M{"_id": id}).Select(bson.M{label: 1}).Apply(change, &diff)
 	if err != nil {
 		return nil, ErrDeleteLabel{DbError: err}
 	}
@@ -221,15 +161,28 @@ func (m *mongo) DeleteEntityLabel(entityType string, id string, label string) (E
 // entities inserted. Since the entities were inserted in order (guranteed by
 // inserting one by one), caller should only return subset of entities that
 // failed to be inserted.
-func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, error) {
+func (m *manager) CreateEntities(entityType string, entities []etre.Entity, user string) ([]string, error) {
 	if !validEntityType(m, entityType) {
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
 	}
 
-	s := m.session.Copy()
+	s, err := m.conn.Connect()
+	if err != nil {
+		return nil, err
+	}
 	defer s.Close()
 
-	c := m.session.DB(m.database).C(entityType)
+	c := s.DB(m.database).C(entityType)
+
+	// Notify the delay manager that a change is starting, and then notify the
+	// delay manager again when the change is done.
+	changeId := uuid.NewV4().String()
+	err = m.dm.BeginChange(changeId)
+	if err != nil {
+		return nil, err
+	}
+	// @todo: don't ignore error...this should report an exception or something
+	defer func() { m.dm.EndChange(changeId) }()
 
 	// A slice of IDs we generate to insert along with entities into DB
 	insertedObjectIDs := make([]string, 0, len(entities))
@@ -241,12 +194,39 @@ func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, 
 			e["_id"] = bson.NewObjectId().String()
 		}
 
+		// Set the entity revision to 0.
+		e["_rev"] = 0
+
+		// Remove the set* fields from the entity, but keep track of them because we
+		// will need them for the CDC event.
+		e, setId, setOp, setSize := removeSetFields(e)
+
 		err := c.Insert(e)
 		if err != nil {
 			return insertedObjectIDs, ErrCreate{DbError: err, N: len(insertedObjectIDs)}
 		}
 
 		insertedObjectIDs = append(insertedObjectIDs, e["_id"].(string))
+
+		// Create a CDC event.
+		event := etre.CDCEvent{
+			EventId:    bson.NewObjectId().String(),
+			EntityId:   e["_id"].(string),
+			EntityType: entityType,
+			Rev:        e["_rev"].(int),
+			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
+			User:       user,
+			Op:         "i",
+			Old:        nil,
+			New:        &e,
+			SetId:      setId,
+			SetOp:      setOp,
+			SetSize:    setSize,
+		}
+		err = m.cdcm.CreateEvent(event)
+		if err != nil {
+			return insertedObjectIDs, err
+		}
 	}
 
 	return insertedObjectIDs, nil
@@ -255,20 +235,23 @@ func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, 
 // ReadEntities queries the db and returns a slice of Entity objects if
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
-func (m *mongo) ReadEntities(entityType string, q query.Query) ([]Entity, error) {
+func (m *manager) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
 	if !validEntityType(m, entityType) {
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
 	}
 
 	mgoQuery := translateQuery(q)
 
-	s := m.session.Copy()
+	s, err := m.conn.Connect()
+	if err != nil {
+		return nil, err
+	}
 	defer s.Close()
 
 	c := s.DB(m.database).C(entityType)
 
-	var entities []Entity
-	err := c.Find(mgoQuery).All(&entities)
+	var entities []etre.Entity
+	err = c.Find(mgoQuery).All(&entities)
 	if err != nil {
 		return nil, ErrRead{DbError: err}
 	}
@@ -291,14 +274,17 @@ func (m *mongo) ReadEntities(entityType string, q query.Query) ([]Entity, error)
 //
 //   diffs, err := c.UpdateEntities(q, update)
 //
-func (m *mongo) UpdateEntities(t string, q query.Query, u Entity) ([]Entity, error) {
+func (m *manager) UpdateEntities(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
 	if !validEntityType(m, t) {
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, m.entityTypes))
 	}
 
 	mgoQuery := translateQuery(q)
 
-	s := m.session.Copy()
+	s, err := m.conn.Connect()
+	if err != nil {
+		return nil, err
+	}
 	defer s.Close()
 
 	entityType := s.DB(m.database).C(t)
@@ -312,18 +298,37 @@ func (m *mongo) UpdateEntities(t string, q query.Query, u Entity) ([]Entity, err
 
 	// Change to make
 	change := mgo.Change{
-		Update: bson.M{"$set": u},
+		Update: bson.M{
+			"$set": u,
+			"$inc": bson.M{
+				"_rev": 1, // increment the revision
+			},
+		},
 		// Return the original doc before modifications. This is the default
 		// option.
 		ReturnNew: false,
 	}
 
+	// Notify the delay manager that a change is starting, and then notify the
+	// delay manager again when the change is done.
+	changeId := uuid.NewV4().String()
+	err = m.dm.BeginChange(changeId)
+	if err != nil {
+		return nil, err
+	}
+	// @todo: don't ignore error...this should report an exception or something
+	defer func() { m.dm.EndChange(changeId) }()
+
 	// diffs is a slice made up of a diff for each doc updated
-	diffs := make([]Entity, 0, len(ids))
+	diffs := make([]etre.Entity, 0, len(ids))
 
 	// Query for each document and apply update
 	for _, id := range ids {
-		var diff Entity
+		// Remove the set* fields from the entity, but keep track of them because we
+		// will need them for the CDC event.
+		u, setId, setOp, setSize := removeSetFields(u)
+
+		var diff etre.Entity
 		// We call Select so that Apply will return only the fields we select
 		// ("_id" field and changed fields) rather than it returning the original
 		// document.
@@ -333,6 +338,31 @@ func (m *mongo) UpdateEntities(t string, q query.Query, u Entity) ([]Entity, err
 		}
 
 		diffs = append(diffs, diff)
+
+		// Add id and rev to the old entity for the CDC event.
+		newRev := diff["_rev"].(int) + 1 // +1 since we get the old document back
+		u["_id"] = id
+		u["_rev"] = newRev
+
+		// Create a CDC event.
+		event := etre.CDCEvent{
+			EventId:    bson.NewObjectId().String(),
+			EntityId:   id,
+			EntityType: t,
+			Rev:        newRev,
+			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
+			User:       user,
+			Op:         "u",
+			Old:        &diff,
+			New:        &u,
+			SetId:      setId,
+			SetOp:      setOp,
+			SetSize:    setSize,
+		}
+		err = m.cdcm.CreateEvent(event)
+		if err != nil {
+			return diffs, err
+		}
 	}
 
 	return diffs, nil
@@ -346,14 +376,17 @@ func (m *mongo) UpdateEntities(t string, q query.Query, u Entity) ([]Entity, err
 // Returns a slice of successfully deleted entities an error if there is one.
 // For example, if 4 entities were supposed to be deleted and 3 are ok and the
 // 4th fails, a slice with 3 deleted entities and an error will be returned.
-func (m *mongo) DeleteEntities(t string, q query.Query) ([]Entity, error) {
+func (m *manager) DeleteEntities(t string, q query.Query, user string) ([]etre.Entity, error) {
 	if !validEntityType(m, t) {
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, m.entityTypes))
 	}
 
 	mgoQuery := translateQuery(q)
 
-	s := m.session.Copy()
+	s, err := m.conn.Connect()
+	if err != nil {
+		return nil, err
+	}
 	defer s.Close()
 
 	entityType := s.DB(m.database).C(t)
@@ -373,17 +406,44 @@ func (m *mongo) DeleteEntities(t string, q query.Query) ([]Entity, error) {
 	}
 
 	// deletedEntities is a slice of entities that have been successfully deleted
-	deletedEntities := make([]Entity, 0, len(ids))
+	deletedEntities := make([]etre.Entity, 0, len(ids))
+
+	// Notify the delay manager that a change is starting, and then notify the
+	// delay manager again when the change is done.
+	changeId := uuid.NewV4().String()
+	err = m.dm.BeginChange(changeId)
+	if err != nil {
+		return nil, err
+	}
+	// @todo: don't ignore error...this should report an exception or something
+	defer func() { m.dm.EndChange(changeId) }()
 
 	// Query for each document and delete it
 	for _, id := range ids {
-		var deletedEntity Entity
+		var deletedEntity etre.Entity
 		_, err := entityType.Find(bson.M{"_id": id}).Apply(change, &deletedEntity)
 		if err != nil {
 			return deletedEntities, ErrDelete{DbError: err}
 		}
 
 		deletedEntities = append(deletedEntities, deletedEntity)
+
+		// Create a CDC event.
+		event := etre.CDCEvent{
+			EventId:    bson.NewObjectId().String(),
+			EntityId:   id,
+			EntityType: t,
+			Rev:        deletedEntity["_rev"].(int) + 1, // +1 since we get the old document back
+			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
+			User:       user,
+			Op:         "d",
+			Old:        &deletedEntity,
+			New:        nil,
+		}
+		err = m.cdcm.CreateEvent(event)
+		if err != nil {
+			return deletedEntities, err
+		}
 	}
 
 	return deletedEntities, nil
@@ -428,23 +488,24 @@ func idsForQuery(c *mgo.Collection, q bson.M) ([]string, error) {
 
 // selectMap is a map of field name to int of value 1. It is used in Select
 // query to tell DB which fields to return. "_id" field is included in return
-// by default.
+// by default. We also want to always include "_rev".
 //
 // Relevant documentation:
 //
 //     https://docs.mongodb.com/v3.0/tutorial/project-fields-from-query-results/
 //
-func selectMap(e Entity) map[string]int {
+func selectMap(e etre.Entity) map[string]int {
 	selectMap := make(map[string]int)
 	for k, _ := range e {
 		selectMap[k] = 1
 	}
+	selectMap["_rev"] = 1
 
 	return selectMap
 }
 
 // validEntityType checks if the entityType passed in is in the entityType list of the connector
-func validEntityType(m *mongo, c string) bool {
+func validEntityType(m *manager, c string) bool {
 	for _, entityType := range m.entityTypes {
 		if c != entityType {
 			return false
@@ -452,6 +513,30 @@ func validEntityType(m *mongo, c string) bool {
 	}
 
 	return true
+}
+
+func removeSetFields(e etre.Entity) (etre.Entity, string, string, int) {
+	var setId, setOp string
+	var setSize int
+	if _, ok := e["setId"]; ok {
+		setId = e["setId"].(string)
+	}
+	if _, ok := e["setOp"]; ok {
+		setOp = e["setOp"].(string)
+	}
+	if _, ok := e["setSize"]; ok {
+		setSize = e["setSize"].(int)
+	}
+
+	modified := etre.Entity{}
+	for k, v := range e {
+		if k == "setId" || k == "setOp" || k == "setSize" {
+			continue
+		}
+		modified[k] = v
+	}
+
+	return modified, setId, setOp, setSize
 }
 
 // ErrCreate is a higher level error for caller to check against when calling

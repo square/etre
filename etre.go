@@ -47,14 +47,18 @@ type WriteResult struct {
 }
 
 type CDCEvent struct {
-	EventId    string  `json:"eventId"`
-	EntityId   string  `json:"entityId"`
-	EntityType string  `json:"entityType"`
-	Ts         int64   `json:"ts"` // Unix nanoseconds
-	User       string  `json:"user"`
-	Op         string  `json:"op"`  // i=insert, u=update, d=delete
-	Old        *Entity `json:"old"` // old values of affected labels, null on insert
-	New        *Entity `json:"new"` // new values of affected labels, null on delete
+	EventId    string  `json:"eventId" bson:"eventId"`
+	EntityId   string  `json:"entityId" bson:"entityId"`
+	EntityType string  `json:"entityType" bson:"entityType"`
+	Rev        int     `json:"rev" bson:"rev"` // entity revision as of this op
+	Ts         int64   `json:"ts" bson:"ts"`   // Unix nanoseconds
+	User       string  `json:"user" bson:"user"`
+	Op         string  `json:"op" bson:"op"`   // i=insert, u=update, d=delete
+	Old        *Entity `json:"old" bson:"old"` // old values of affected labels, null on insert
+	New        *Entity `json:"new" bson:"new"` // new values of affected labels, null on delete
+	SetId      string  `json:"setId" bson:"setId"`
+	SetOp      string  `json:"setOp" bson:"setOp"`
+	SetSize    int     `json:"setSize" bson:"setSize"`
 }
 
 // Latency represents network latencies in milliseconds.

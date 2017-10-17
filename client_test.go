@@ -15,6 +15,8 @@ import (
 	"github.com/square/etre"
 )
 
+// @todo: the tests here are racey (run with --race to see)
+
 var httpClient *http.Client
 
 // The httptest.Server uses these globals. setup() will reset them to defaults.

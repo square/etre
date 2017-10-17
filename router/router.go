@@ -42,7 +42,8 @@ type Route struct {
 
 // Router is a collection of routes.
 type Router struct {
-	Routes []Route // list of routes supported by the application.
+	UsernameHeader string  // the http header that the requestor's username is set in
+	Routes         []Route // list of routes supported by the application.
 }
 
 // AddRoute adds an HTTP handler to the router. Any parameter {} is replaced to become
@@ -72,10 +73,11 @@ func (router *Router) Handler(req *http.Request) (h http.Handler, pattern string
 		if len(match) != 0 {
 			return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				ctx := HTTPContext{
-					Response:  rw,
-					Request:   req,
-					Arguments: match,
-					router:    router,
+					Response:       rw,
+					Request:        req,
+					Arguments:      match,
+					router:         router,
+					usernameHeader: router.UsernameHeader,
 				}
 				ctx.Request.ParseForm()
 				route.Handler(ctx)
