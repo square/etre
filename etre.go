@@ -4,6 +4,7 @@ package etre
 import (
 	"errors"
 	"fmt"
+	"log"
 )
 
 const (
@@ -26,6 +27,52 @@ const (
 // WriteResult.Id.
 type Entity map[string]interface{}
 
+func (e Entity) Id() string {
+	return e["_id"].(string)
+}
+
+func (e Entity) Type() string {
+	return e["_type"].(string)
+}
+
+// Has returns true of the entity has the label, regardless of its value.
+func (e Entity) Has(label string) bool {
+	_, ok := e[label]
+	return ok
+}
+
+var metaLabels = map[string]bool{
+	"_id":      true,
+	"_rev":     true,
+	"_setId":   true,
+	"_setOp":   true,
+	"_setSize": true,
+	"_ts":      true,
+	"_type":    true,
+}
+
+func (e Entity) Labels() []string {
+	labels := make([]string, 0, len(e))
+	for label := range e {
+		if metaLabels[label] {
+			continue
+		}
+		labels = append(labels, label)
+	}
+	return labels
+}
+
+// String returns the string value of the label. If the label is not set or
+// its value is not a string, an empty string is returned.
+func (e Entity) String(label string) string {
+	v := e[label]
+	switch v.(type) {
+	case string:
+		return v.(string)
+	}
+	return ""
+}
+
 type QueryFilter struct {
 	// ReturnLabels defines labels included in matching entities. An empty map
 	// returns all labels. Else, only labels in the map with a true value are
@@ -46,6 +93,12 @@ type WriteResult struct {
 	Error     string      `json:"error,omitempty"` // human-readable error string
 }
 
+type Set struct {
+	SetOp   string `json:"setOp"`
+	SetId   string `json:"setId"`
+	SetSize uint   `json:"setSize"`
+}
+
 type CDCEvent struct {
 	EventId    string  `json:"eventId" bson:"eventId"`
 	EntityId   string  `json:"entityId" bson:"entityId"`
@@ -56,9 +109,14 @@ type CDCEvent struct {
 	Op         string  `json:"op" bson:"op"`   // i=insert, u=update, d=delete
 	Old        *Entity `json:"old" bson:"old"` // old values of affected labels, null on insert
 	New        *Entity `json:"new" bson:"new"` // new values of affected labels, null on delete
-	SetId      string  `json:"setId" bson:"setId"`
-	SetOp      string  `json:"setOp" bson:"setOp"`
-	SetSize    int     `json:"setSize" bson:"setSize"`
+
+	// Set op fields are optional, copied from entity if set. The three
+	// fields are all or nothing: all should be set, or none should be set.
+	// Etre has no semantic awareness of set op values, nor does it validate
+	// them. The caller is responsible for ensuring they're correct.
+	SetId   string `json:"setId,omitempty" bson:"setId,omitempty"`
+	SetOp   string `json:"setOp,omitempty" bson:"setOp,omitempty"`
+	SetSize int    `json:"setSize,omitempty" bson:"setSize,omitempty"`
 }
 
 // Latency represents network latencies in milliseconds.
@@ -66,6 +124,15 @@ type Latency struct {
 	Send int64 // client -> server
 	Recv int64 // server -> client
 	RTT  int64 // client -> server -> client
+}
+
+var Debug = false
+
+func debug(fmt string, v ...interface{}) {
+	if !Debug {
+		return
+	}
+	log.Printf(fmt, v...)
 }
 
 // //////////////////////////////////////////////////////////////////////////
