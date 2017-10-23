@@ -324,7 +324,12 @@ func (m *mongo) UpdateEntities(t string, q query.Query, u Entity) ([]Entity, err
 
 	// Change to make
 	change := mgo.Change{
-		Update: bson.M{"$set": u},
+		Update: bson.M{
+			"$set": u,
+			"$inc": bson.M{
+				"_rev": 1,
+			},
+		},
 		// Return the original doc before modifications. This is the default
 		// option.
 		ReturnNew: false,
@@ -452,7 +457,11 @@ func idsForQuery(c *mgo.Collection, q bson.M) ([]bson.ObjectId, error) {
 //     https://docs.mongodb.com/v3.0/tutorial/project-fields-from-query-results/
 //
 func selectMap(e Entity) map[string]int {
-	selectMap := make(map[string]int)
+	selectMap := map[string]int{
+		"_id":   1,
+		"_type": 1,
+		"_rev":  1,
+	}
 	for k, _ := range e {
 		selectMap[k] = 1
 	}

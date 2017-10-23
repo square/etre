@@ -17,13 +17,15 @@ import (
 	"github.com/square/etre/query"
 	"github.com/square/etre/router"
 	"github.com/square/etre/test"
+	"gopkg.in/mgo.v2/bson"
 )
 
 var defaultAPI *api.API
 var defaultServer *httptest.Server
-var seedEntity0 = db.Entity{"_id": "id0", "x": 0, "foo": "bar"}
-var seedEntity1 = db.Entity{"_id": "id1", "x": 1, "foo": "bar"}
-var seedEntity2 = db.Entity{"_id": "id2", "x": 2, "foo": "bar"}
+var seedEntity0 = db.Entity{"x": 0, "foo": "bar"}
+var seedEntity1 = db.Entity{"x": 1, "foo": "bar"}
+var seedEntity2 = db.Entity{"x": 2, "foo": "bar"}
+var seedId0 string
 var seedEntities = []db.Entity{seedEntity0, seedEntity1, seedEntity2}
 var entityType = "nodes"
 
@@ -46,7 +48,8 @@ func setup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	statusCode, err := test.MakeHTTPRequest("POST", url, payload, nil)
+	var ids []string
+	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +57,11 @@ func setup(t *testing.T) {
 	if statusCode != http.StatusOK {
 		t.Errorf("Error inserting seed data. Status code= %d, expected %d", statusCode, http.StatusOK)
 	}
+
+	if len(ids) == 0 {
+		t.Fatal("got zero new IDs")
+	}
+	seedId0 = ids[0]
 }
 
 func teardown(t *testing.T) {
@@ -88,23 +96,22 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	expect := "id3"
-	entity := db.Entity{"_id": expect, "x": 3.0}
+	entity := db.Entity{"x": 3.0}
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	payload, err := json.Marshal(entity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var actual string
 
-	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &actual)
+	var id string
+	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &id)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if diff := deep.Equal(actual, expect); diff != nil {
-		t.Error(diff)
+	if id == "" {
+		t.Error("no return entity ID, expected one")
 	}
 
 	if statusCode != http.StatusOK {
@@ -145,7 +152,7 @@ func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
 
 	// arrays are not supported value types
 	x := []int{0, 1, 2}
-	entity := db.Entity{"_id": "id3", "x": x}
+	entity := db.Entity{"x": x}
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
 	payload, err := json.Marshal(entity)
@@ -175,10 +182,17 @@ func TestGetEntityHandlerSuccessful(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	expect := seedEntity0
-	id := expect["_id"].(string)
+	// Copy seedEntity0
+	expect := db.Entity{
+		"_id":   seedId0,
+		"_type": entityType,
+		"_rev":  0,
+	}
+	for k, v := range seedEntity0 {
+		expect[k] = v
+	}
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + seedId0
 	var actual db.Entity
 
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
@@ -212,7 +226,7 @@ func TestGetEntityHandlerNotFoundError(t *testing.T) {
 	defer teardown(t)
 
 	// id that we have not inserted into db
-	id := "id4"
+	id := "59ee2d725669fcc51f62aaaa"
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	var respErr map[string]string
@@ -238,9 +252,10 @@ func TestPutEntityHandlerSuccessful(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	id := seedEntity0["_id"].(string)
+	id := seedId0
 	update := db.Entity{"foo": "baz"}
-	expect := db.Entity{"_id": seedEntity0["_id"], "foo": seedEntity0["foo"]}
+	// We expect the previous values (i.e. rev=0):
+	expect := db.Entity{"_id": seedId0, "_type": entityType, "_rev": float64(0), "foo": seedEntity0["foo"]}
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	payload, err := json.Marshal(update)
@@ -254,8 +269,8 @@ func TestPutEntityHandlerSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(actual, expect) {
-		t.Errorf("Actual: %v, Expect: %v", actual, expect)
+	if diffs := deep.Equal(actual, expect); diffs != nil {
+		t.Error(diffs)
 	}
 
 	if statusCode != http.StatusOK {
@@ -277,7 +292,7 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	id := seedEntity0["_id"].(string)
+	id := seedId0
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
 	// db.Entity type is expected to be in the payload, so passing in an empty
@@ -306,10 +321,17 @@ func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
-	expect := seedEntity0
-	id := expect["_id"].(string)
+	// Copy seedEntity0
+	expect := db.Entity{
+		"_id":   seedId0,
+		"_type": entityType,
+		"_rev":  0,
+	}
+	for k, v := range seedEntity0 {
+		expect[k] = v
+	}
 
-	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + id
+	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType + "/" + seedId0
 	var actual db.Entity
 
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &actual)
@@ -347,9 +369,8 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 	defer teardown(t)
 
 	// seedEntities are id{0,1,2}
-	expect := []string{"id3", "id4"}
-	entity0 := db.Entity{"_id": expect[0], "x": 3}
-	entity1 := db.Entity{"_id": expect[1], "x": 4}
+	entity0 := db.Entity{"x": 3}
+	entity1 := db.Entity{"x": 4}
 	entities := []db.Entity{entity0, entity1}
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
@@ -364,9 +385,15 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if diff := deep.Equal(actual, expect); diff != nil {
-		t.Error(diff)
+	if len(actual) != 2 {
+		t.Errorf("got %d ids, expected 2", len(actual))
 	}
+	for _, id := range actual {
+		if !bson.IsObjectIdHex(id) {
+			t.Errorf("got invalid id: %s", id)
+		}
+	}
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -405,9 +432,9 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 
 	yArr := []string{"foo", "bar", "baz"}
 
-	entity2 := db.Entity{"_id": "id3", "x": 2}
+	entity2 := db.Entity{"x": 2}
 	// Arrays are not supported values types
-	entity3 := db.Entity{"_id": "id4", "y": yArr}
+	entity3 := db.Entity{"y": yArr}
 	entities := []db.Entity{entity2, entity3}
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
@@ -451,6 +478,9 @@ func TestGetEntitiesHandlerSuccessful(t *testing.T) {
 
 	for _, e := range actual {
 		api.ConvertFloat64ToInt(e)
+		delete(e, "_id")
+		delete(e, "_rev")
+		delete(e, "_type")
 	}
 
 	if !reflect.DeepEqual(actual, expect) {
@@ -490,22 +520,18 @@ func TestGetEntitiesHandlerNotFoundError(t *testing.T) {
 	labelSelector := "x=9999"
 	query := url.QueryEscape(labelSelector)
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType + "?query=" + query
-	var respErr map[string]string
 
-	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &respErr)
+	var actual []db.Entity
+	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	actual := respErr["message"]
-	expect := fmt.Sprintf("No entities match query: %s", labelSelector)
-
-	if actual != expect {
-		t.Errorf("response error message = %s, expected %s", actual, expect)
+	if statusCode != http.StatusOK {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
 
-	if statusCode != http.StatusNotFound {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
+	if len(actual) != 0 {
+		t.Errorf("got response, expected empty slice: %v", actual)
 	}
 }
 
@@ -514,8 +540,8 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 	defer teardown(t)
 
 	expect := []db.Entity{
-		db.Entity{"_id": seedEntity1["_id"], "foo": seedEntity1["foo"]},
-		db.Entity{"_id": seedEntity2["_id"], "foo": seedEntity2["foo"]},
+		db.Entity{"_type": entityType, "_rev": float64(0), "foo": seedEntity1["foo"]},
+		db.Entity{"_type": entityType, "_rev": float64(0), "foo": seedEntity2["foo"]},
 	}
 
 	query := url.QueryEscape("x>0")
@@ -531,6 +557,11 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &actual)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// Don't care about the ids
+	for _, e := range actual {
+		delete(e, "_id")
 	}
 
 	if !reflect.DeepEqual(actual, expect) {
@@ -608,6 +639,9 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 
 	for _, e := range actual {
 		api.ConvertFloat64ToInt(e)
+		delete(e, "_id")
+		delete(e, "_rev")
+		delete(e, "_type")
 	}
 
 	if !reflect.DeepEqual(actual, expect) {

@@ -193,9 +193,14 @@ func getEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	}
 
 	requestEntityType := args[0]
-	requestId := args[1]
+	entityId := args[1]
 
-	q := queryForId(requestId)
+	if !bson.IsObjectIdHex(entityId) {
+		ctx.APIError(router.ErrInvalidParam, "invalid entityId")
+		return
+	}
+
+	q := queryForId(entityId)
 
 	entities, err := c.ReadEntities(requestEntityType, q)
 	if err != nil {
@@ -209,7 +214,7 @@ func getEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	}
 
 	if entities == nil {
-		ctx.APIError(router.ErrNotFound, "No entity with id: %s", requestId)
+		ctx.APIError(router.ErrNotFound, "No entity with id: %s", entityId)
 		return
 	}
 
@@ -241,7 +246,7 @@ func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	}
 
 	requestEntityType := args[0]
-	requestId := args[1]
+	entityId := args[1]
 
 	var requestUpdate db.Entity
 	err := json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
@@ -250,7 +255,12 @@ func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
 		return
 	}
 
-	q := queryForId(requestId)
+	if !bson.IsObjectIdHex(entityId) {
+		ctx.APIError(router.ErrInvalidParam, "invalid entityId")
+		return
+	}
+
+	q := queryForId(entityId)
 
 	entities, err := c.UpdateEntities(requestEntityType, q, requestUpdate)
 	if err != nil {
@@ -290,9 +300,14 @@ func deleteEntityHandler(ctx router.HTTPContext, c db.Connector) {
 		}
 	}
 	requestEntityType := args[0]
-	requestId := args[1]
+	entityId := args[1]
 
-	q := queryForId(requestId)
+	if !bson.IsObjectIdHex(entityId) {
+		ctx.APIError(router.ErrInvalidParam, "invalid entityId")
+		return
+	}
+
+	q := queryForId(entityId)
 
 	entities, err := c.DeleteEntities(requestEntityType, q)
 	if err != nil {
