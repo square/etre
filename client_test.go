@@ -866,15 +866,16 @@ func TestCDCClient(t *testing.T) {
 	// is slightly different than the JSON-mashaled time string. So only
 	// way to be consistent is to cmp json marshaled to json marshaled.
 	v := map[string]interface{}{
-		"control": "start",
-		"startTs": startTs,
+		"control":     "start",
+		"startTs":     startTs.Unix(),
+		"chunkWindow": 3600,
 	}
 	bytes, _ := json.Marshal(v)
-	t.Logf("%s", string(bytes))
 	var expectStart map[string]interface{}
 	json.Unmarshal(bytes, &expectStart)
 	if diff := deep.Equal(gotStart, expectStart); diff != nil {
-		t.Logf("%#v", gotStart)
+		t.Logf("gotStart: %#v", gotStart)
+		t.Logf("expectStart: %s", string(bytes))
 		t.Error(diff)
 	}
 
@@ -956,8 +957,8 @@ func TestCDCClient(t *testing.T) {
 		time.Sleep(101 * time.Millisecond)
 		ping["control"] = "pong"
 		ping["dstTs"] = time.Now().UnixNano()
-		t.Logf("%#v", ping)
 		if err := wsConn.WriteJSON(ping); err != nil {
+			t.Logf("%#v", ping)
 			t.Error(err)
 			return
 		}
