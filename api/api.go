@@ -11,6 +11,7 @@ import (
 	"github.com/square/etre/db"
 	"github.com/square/etre/query"
 	"github.com/square/etre/router"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const (
@@ -522,7 +523,7 @@ func queryForId(id string) query.Query {
 			query.Predicate{
 				Label:    "_id",
 				Operator: "=",
-				Value:    id,
+				Value:    bson.ObjectIdHex(id),
 			},
 		},
 	}
