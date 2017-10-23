@@ -178,7 +178,7 @@ func (m *mongo) Disconnect() {
 //
 //     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
 //
-func (m *mongo) DeleteEntityLabel(entityType string, id string, label string) (Entity, error) {
+func (m *mongo) DeleteEntityLabel(entityType, id, label string) (Entity, error) {
 	if !validEntityType(m, entityType) {
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name: %s. Valid entityType names: %s.", entityType, m.entityTypes))
 	}
@@ -199,7 +199,7 @@ func (m *mongo) DeleteEntityLabel(entityType string, id string, label string) (E
 	// We call Select so that Apply will return the orginal deleted label (and
 	// "_id" field, which is included by default) rather than returning the
 	// entire original document
-	_, err := c.Find(bson.M{"_id": id}).Select(bson.M{label: 1}).Apply(change, &diff)
+	_, err := c.Find(bson.M{"_id": bson.ObjectIdHex(id)}).Select(bson.M{label: 1}).Apply(change, &diff)
 	if err != nil {
 		return nil, ErrDeleteLabel{DbError: err}
 	}
@@ -227,15 +227,15 @@ func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, 
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
 	}
 
-	for _, e := range entities {
+	for i, e := range entities {
 		if _, ok := e["_id"]; ok {
-			return nil, fmt.Errorf("_id set in entity[%d]; _id cannot be set on insert")
+			return nil, fmt.Errorf("_id set in entity[%d]; _id cannot be set on insert", i)
 		}
 		if _, ok := e["_type"]; ok {
-			return nil, fmt.Errorf("_type set in entity[%d]; _type cannot be set on insert")
+			return nil, fmt.Errorf("_type set in entity[%d]; _type cannot be set on insert", i)
 		}
 		if _, ok := e["_rev"]; ok {
-			return nil, fmt.Errorf("_rev set in entity[%d]; _rev cannot be set on insert")
+			return nil, fmt.Errorf("_rev set in entity[%d]; _rev cannot be set on insert", i)
 		}
 	}
 
@@ -251,7 +251,7 @@ func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, 
 		id := bson.NewObjectId()
 		e["_id"] = id
 		e["_type"] = entityType
-		e["_rev"] = uint(0)
+		e["_rev"] = 0
 
 		if err := c.Insert(e); err != nil {
 			return insertedObjectIds, ErrCreate{DbError: err, N: len(insertedObjectIds)}
@@ -390,9 +390,14 @@ func (m *mongo) DeleteEntities(t string, q query.Query) ([]Entity, error) {
 	// Query for each document and delete it
 	for _, id := range ids {
 		var deletedEntity Entity
-		_, err := entityType.Find(bson.M{"_id": id}).Apply(change, &deletedEntity)
+		_, err := entityType.FindId(id).Apply(change, &deletedEntity)
 		if err != nil {
-			return deletedEntities, ErrDelete{DbError: err}
+			switch err {
+			case mgo.ErrNotFound:
+				// ignore
+			default:
+				return deletedEntities, ErrDelete{DbError: err}
+			}
 		}
 
 		deletedEntities = append(deletedEntities, deletedEntity)
@@ -419,8 +424,8 @@ func translateQuery(q query.Query) bson.M {
 }
 
 // idsForQuery gets all ids of docs that satisfy query
-func idsForQuery(c *mgo.Collection, q bson.M) ([]string, error) {
-	var resultIds []map[string]string
+func idsForQuery(c *mgo.Collection, q bson.M) ([]bson.ObjectId, error) {
+	var resultIds []map[string]bson.ObjectId
 	// Select only "_id" field in returned results
 	err := c.Find(q).Select(bson.M{"_id": 1}).All(&resultIds)
 	if err != nil {
@@ -429,7 +434,7 @@ func idsForQuery(c *mgo.Collection, q bson.M) ([]string, error) {
 		return nil, err
 	}
 
-	ids := make([]string, len(resultIds))
+	ids := make([]bson.ObjectId, len(resultIds))
 
 	for i := range ids {
 		ids[i] = resultIds[i]["_id"]
