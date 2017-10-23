@@ -30,6 +30,7 @@ package db
 
 import (
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -226,30 +227,42 @@ func (m *mongo) CreateEntities(entityType string, entities []Entity) ([]string, 
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
 	}
 
+	for _, e := range entities {
+		if _, ok := e["_id"]; ok {
+			return nil, fmt.Errorf("_id set in entity[%d]; _id cannot be set on insert")
+		}
+		if _, ok := e["_type"]; ok {
+			return nil, fmt.Errorf("_type set in entity[%d]; _type cannot be set on insert")
+		}
+		if _, ok := e["_rev"]; ok {
+			return nil, fmt.Errorf("_rev set in entity[%d]; _rev cannot be set on insert")
+		}
+	}
+
 	s := m.session.Copy()
 	defer s.Close()
-
 	c := m.session.DB(m.database).C(entityType)
 
 	// A slice of IDs we generate to insert along with entities into DB
-	insertedObjectIDs := make([]string, 0, len(entities))
+	insertedObjectIds := make([]string, 0, len(entities))
 
 	for _, e := range entities {
-		if _, ok := e["_id"]; !ok {
-			// Create ID if one wasn't passed in with entity. Mgo driver does not
-			// return the one mongo creates, so create it ourself.
-			e["_id"] = bson.NewObjectId().String()
+		// Mgo driver does not return the ObjectId that Mongo creates, so create it ourself.
+		id := bson.NewObjectId()
+		e["_id"] = id
+		e["_type"] = entityType
+		e["_rev"] = uint(0)
+
+		if err := c.Insert(e); err != nil {
+			return insertedObjectIds, ErrCreate{DbError: err, N: len(insertedObjectIds)}
 		}
 
-		err := c.Insert(e)
-		if err != nil {
-			return insertedObjectIDs, ErrCreate{DbError: err, N: len(insertedObjectIDs)}
-		}
-
-		insertedObjectIDs = append(insertedObjectIDs, e["_id"].(string))
+		// bson.ObjectId.String() yields "ObjectId("abc")", but we need to report only "abc",
+		// so re-encode the raw bytes to a hex string. This make GET /entity/{t}/abc work.
+		insertedObjectIds = append(insertedObjectIds, hex.EncodeToString([]byte(id)))
 	}
 
-	return insertedObjectIDs, nil
+	return insertedObjectIds, nil
 }
 
 // ReadEntities queries the db and returns a slice of Entity objects if
@@ -260,12 +273,11 @@ func (m *mongo) ReadEntities(entityType string, q query.Query) ([]Entity, error)
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
 	}
 
-	mgoQuery := translateQuery(q)
-
 	s := m.session.Copy()
 	defer s.Close()
-
 	c := s.DB(m.database).C(entityType)
+
+	mgoQuery := translateQuery(q)
 
 	var entities []Entity
 	err := c.Find(mgoQuery).All(&entities)
@@ -408,19 +420,19 @@ func translateQuery(q query.Query) bson.M {
 
 // idsForQuery gets all ids of docs that satisfy query
 func idsForQuery(c *mgo.Collection, q bson.M) ([]string, error) {
-	var resultIDs []map[string]string
+	var resultIds []map[string]string
 	// Select only "_id" field in returned results
-	err := c.Find(q).Select(bson.M{"_id": 1}).All(&resultIDs)
+	err := c.Find(q).Select(bson.M{"_id": 1}).All(&resultIds)
 	if err != nil {
 		// Return raw, low-level error to allow caller wrap into higher level
 		// error.
 		return nil, err
 	}
 
-	ids := make([]string, len(resultIDs))
+	ids := make([]string, len(resultIds))
 
 	for i := range ids {
-		ids[i] = resultIDs[i]["_id"]
+		ids[i] = resultIds[i]["_id"]
 	}
 
 	return ids, nil
@@ -446,12 +458,11 @@ func selectMap(e Entity) map[string]int {
 // validEntityType checks if the entityType passed in is in the entityType list of the connector
 func validEntityType(m *mongo, c string) bool {
 	for _, entityType := range m.entityTypes {
-		if c != entityType {
-			return false
+		if c == entityType {
+			return true
 		}
 	}
-
-	return true
+	return false
 }
 
 // ErrCreate is a higher level error for caller to check against when calling
