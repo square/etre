@@ -101,14 +101,14 @@ type Set struct {
 
 type CDCEvent struct {
 	EventId    string  `json:"eventId" bson:"eventId"`
-	EntityId   string  `json:"entityId" bson:"entityId"`
-	EntityType string  `json:"entityType" bson:"entityType"`
-	Rev        int     `json:"rev" bson:"rev"` // entity revision as of this op
-	Ts         int64   `json:"ts" bson:"ts"`   // Unix nanoseconds
+	EntityId   string  `json:"entityId" bson:"entityId"`     // _id of entity
+	EntityType string  `json:"entityType" bson:"entityType"` // user-defined
+	Rev        int     `json:"rev" bson:"rev"`               // entity revision as of this op, 0 on insert
+	Ts         int64   `json:"ts" bson:"ts"`                 // Unix nanoseconds
 	User       string  `json:"user" bson:"user"`
-	Op         string  `json:"op" bson:"op"`   // i=insert, u=update, d=delete
-	Old        *Entity `json:"old" bson:"old"` // old values of affected labels, null on insert
-	New        *Entity `json:"new" bson:"new"` // new values of affected labels, null on delete
+	Op         string  `json:"op" bson:"op"`                       // i=insert, u=update, d=delete
+	Old        *Entity `json:"old,omitempty" bson:"old,omitempty"` // old values of affected labels, null on insert
+	New        *Entity `json:"new,omitempty" bson:"new,omitempty"` // new values of affected labels, null on delete
 
 	// Set op fields are optional, copied from entity if set. The three
 	// fields are all or nothing: all should be set, or none should be set.
