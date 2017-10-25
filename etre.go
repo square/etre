@@ -82,15 +82,14 @@ type QueryFilter struct {
 }
 
 // WriteResult represents the result of a write operation (insert, update, delete)
-// for one entity. The write operation failed if ErrorCode is non-zero (and Error
-// will be set, too). A write operation can succeed on some entities and fail on
-// others, so the caller must check all write results.
+// for one entity. The write operation failed if Error is set. A write operation
+// can succeed on some entities and fail on one, so the caller must check all write
+// results.
 type WriteResult struct {
-	Id        string      `json:"id"`              // internal _id of entity (all write ops)
-	URI       string      `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
-	Diff      interface{} `json:"diff,omitempty"`  // previous entity label values (update)
-	ErrorCode byte        `json:"errorCode"`       // an ERRCODE const
-	Error     string      `json:"error,omitempty"` // human-readable error string
+	Id    string `json:"id"`              // internal _id of entity (all write ops)
+	URI   string `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
+	Diff  Entity `json:"diff,omitempty"`  // previous entity label values (update)
+	Error string `json:"error,omitempty"` // human-readable error string
 }
 
 type Set struct {
@@ -139,9 +138,21 @@ func debug(fmt string, v ...interface{}) {
 // Errors
 // //////////////////////////////////////////////////////////////////////////
 
-type ErrorResponse struct {
-	Message string `json:"message"`
-	Type    string `json:"type"`
+type Error struct {
+	Message    string `json:"message"`
+	Type       string `json:"type"`
+	HTTPStatus int
+}
+
+func (e Error) New(msgFmt string, msgArgs ...interface{}) Error {
+	if msgFmt != "" {
+		e.Message = fmt.Sprintf(msgFmt, msgArgs...)
+	}
+	return e
+}
+
+func (e Error) String() string {
+	return fmt.Sprintf("Etre error %s: %s", e.Type, e.Message)
 }
 
 var (
@@ -153,12 +164,6 @@ var (
 	ErrNoQuery       = errors.New("empty query string")
 	ErrBadData       = errors.New("data from CDC feed is not event or control")
 	ErrCallerBlocked = errors.New("caller blocked")
-)
-
-const (
-	ERRCODE_NONE      byte = iota // 0 = no error
-	ERRCODE_DUPLICATE             // duplicate entity on insert
-	ERRCODE_NOT_FOUND             // entity not found on update or labels
 )
 
 // WriteError is a convenience function for returning the WriteResult error, if any,
@@ -179,11 +184,11 @@ func WriteError(wr []WriteResult, entities []Entity) error {
 
 	// If the number of write results = the number of entities _and_
 	// the last write result is not an error, then no error occurred.
-	if len(wr) == len(entities) && wr[len(wr)-1].ErrorCode == 0 {
+	if len(wr) == len(entities) && wr[len(wr)-1].Error == "" {
 		return nil
 	}
 
 	// An error occurred
 	wrLast := wr[len(wr)-1]
-	return fmt.Errorf("write error: entity %d: %s (code %d)", len(wr)-1, wrLast.Error, wrLast.ErrorCode)
+	return fmt.Errorf("error writing entity[%d]: %s", len(wr)-1, wrLast.Error)
 }

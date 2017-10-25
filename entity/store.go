@@ -222,7 +222,7 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 			EventId:    hex.EncodeToString([]byte(eventId)),
 			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: entityType,
-			Rev:        e["_rev"].(int),
+			Rev:        e["_rev"].(uint),
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
 			User:       user,
 			Op:         "i",
@@ -348,7 +348,7 @@ func (s *store) UpdateEntities(t string, q query.Query, u etre.Entity, user stri
 		diffs = append(diffs, diff)
 
 		// Add id and rev to the old entity for the CDC event.
-		newRev := diff["_rev"].(int) + 1 // +1 since we get the old document back
+		newRev := diff["_rev"].(uint) + 1 // +1 since we get the old document back
 		u["_id"] = id
 		u["_rev"] = newRev
 
@@ -448,7 +448,7 @@ func (s *store) DeleteEntities(t string, q query.Query, user string) ([]etre.Ent
 			EventId:    hex.EncodeToString([]byte(eventId)),
 			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: t,
-			Rev:        deletedEntity["_rev"].(int) + 1, // +1 since we get the old document back
+			Rev:        deletedEntity["_rev"].(uint) + 1, // +1 since we get the old document back
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
 			User:       user,
 			Op:         "d",

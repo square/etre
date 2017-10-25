@@ -300,7 +300,7 @@ func (c entityClient) url(endpoint string) string {
 }
 
 func apiError(resp *http.Response, bytes []byte) error {
-	var errResp ErrorResponse
+	var errResp Error
 	if len(bytes) > 0 {
 		json.Unmarshal(bytes, &errResp)
 	}

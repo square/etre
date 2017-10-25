@@ -16,7 +16,6 @@ import (
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
-	"github.com/square/etre/router"
 
 	"gopkg.in/yaml.v2"
 )
@@ -255,7 +254,7 @@ func main() {
 	// //////////////////////////////////////////////////////////////////////
 	// Entity Store.
 	// //////////////////////////////////////////////////////////////////////
-	em, err := entity.NewStore(
+	entityStore, err := entity.NewStore(
 		conn,
 		config.Datasource.Database,
 		config.Entity.Types,
@@ -286,23 +285,23 @@ func main() {
 	// //////////////////////////////////////////////////////////////////////
 	// Feed Factory
 	// //////////////////////////////////////////////////////////////////////
-	ff := cdc.NewFeedFactory(poller, cdcs)
+	feedFactory := cdc.NewFeedFactory(poller, cdcs)
 
 	// //////////////////////////////////////////////////////////////////////
 	// Launch App (initialize router/API, start server)
 	// //////////////////////////////////////////////////////////////////////
-	router := &router.Router{
+	router := &api.Router{
 		UsernameHeader: config.Server.UsernameHeader,
 	}
-	api := api.NewAPI(router, em, ff)
+	api := api.NewAPI(config.Server.Addr, router, entityStore, feedFactory)
 
 	// Start the web server.
 	if config.Server.TLSCert != "" && config.Server.TLSKey != "" {
 		log.Println("Listening on ", config.Server.Addr, " with TLS enabled")
-		err = http.ListenAndServeTLS(config.Server.Addr, config.Server.TLSCert, config.Server.TLSKey, api.Router)
+		err = http.ListenAndServeTLS(config.Server.Addr, config.Server.TLSCert, config.Server.TLSKey, api.Router())
 	} else {
 		log.Println("Listening on ", config.Server.Addr, " with TLS disabled")
-		err = http.ListenAndServe(config.Server.Addr, api.Router)
+		err = http.ListenAndServe(config.Server.Addr, api.Router())
 	}
 	if err != nil {
 		log.Println(err)
