@@ -159,7 +159,7 @@ func (api *API) changesHandler(ctx router.HTTPContext) {
 		}
 
 		// Create and run a feed.
-		f := api.ff.MakeWS(wsConn)
+		f := api.ff.MakeWebsocket(wsConn)
 		err = f.Run()
 		if err != nil {
 			ctx.APIError(router.ErrInternal, err.Error())

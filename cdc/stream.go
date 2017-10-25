@@ -24,15 +24,15 @@ var (
 // A streamer produces a stream of CDC events on a channel. It can start
 // streaming events from any point in the past, continually making its way closer
 // and closer to present events. Once it catches up to new events that are being
-// created in real-time, it will seamlessly transition to streaming those.
+// created in real-time, it seamlessly transitions to streaming those.
 //
 // streamers are used by feeds to produce the events that a feed sends to its
 // client. A feed can only have one streamer.
 type streamer interface {
 	// Start starts streaming events from a given timestamp. It returns a
 	// channel on which the caller can receive all of the events it streams
-	// for as long as the streamer is running. A streamer will run until
-	// Stop is called or until it encounters an error.
+	// for as long as the streamer is running. A streamer runs until Stop
+	// is called or until it encounters an error.
 	Start(startTs int64) <-chan etre.CDCEvent
 
 	// Stop stops the streamer and closes the event channel returned by Start.
@@ -122,8 +122,8 @@ func (p *realStreamer) stream(startTs int64) {
 	var registeredWithPoller bool
 	logInterval := time.NewTicker(time.Duration(DEFAULT_LOG_INTERVAL) * time.Second)
 
-	// sinceTs is the lower-bound timestamp that the streamer will select events
-	// on as it chugs along. It will get updated after each chunk of events.
+	// sinceTs is the lower-bound timestamp that the streamer selects events
+	// on as it chugs along. It gets updated after each chunk of events.
 	sinceTs := startTs
 
 	// Deregsiter the streamer from the poller when we're done.
@@ -182,8 +182,8 @@ PAST_EVENTS:
 		// If the upper-bound timestamp is greater than the timestamp that
 		// the poller last polled before we registered with it, use the
 		// poller's timetamp as the upper-bound instead. Also, if that's
-		// the case, this will be our last chunk of streaming past events
-		// before we switch over to the poller.
+		// the case, this is our last chunk of streaming past events before
+		// we switch over to the poller.
 		if untilTs >= maxPolledTs {
 			untilTs = maxPolledTs
 			lastChunk = true

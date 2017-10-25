@@ -3,7 +3,6 @@
 package mock
 
 import (
-	"github.com/square/etre"
 	"github.com/square/etre/cdc"
 
 	"github.com/gorilla/websocket"
@@ -34,20 +33,20 @@ func (f *Feed) Stop() {
 }
 
 type FeedFactory struct {
-	MakeWSFunc   func(*websocket.Conn) cdc.Feed
-	MakeChanFunc func(int64, int) (cdc.Feed, <-chan etre.CDCEvent)
+	MakeWebsocketFunc func(*websocket.Conn) *cdc.WebsocketFeed
+	MakeInternalFunc  func(int) *cdc.InternalFeed
 }
 
-func (ff *FeedFactory) MakeWS(wsConn *websocket.Conn) cdc.Feed {
-	if ff.MakeWSFunc != nil {
-		return ff.MakeWSFunc(wsConn)
+func (ff *FeedFactory) MakeWebsocket(wsConn *websocket.Conn) *cdc.WebsocketFeed {
+	if ff.MakeWebsocketFunc != nil {
+		return ff.MakeWebsocketFunc(wsConn)
 	}
 	return nil
 }
 
-func (ff *FeedFactory) MakeChan(startTs int64, clientBufferSize int) (cdc.Feed, <-chan etre.CDCEvent) {
-	if ff.MakeChanFunc != nil {
-		return ff.MakeChanFunc(startTs, clientBufferSize)
+func (ff *FeedFactory) MakeInternal(clientBufferSize int) *cdc.InternalFeed {
+	if ff.MakeInternalFunc != nil {
+		return ff.MakeInternalFunc(clientBufferSize)
 	}
-	return nil, nil
+	return nil
 }

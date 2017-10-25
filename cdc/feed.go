@@ -32,23 +32,17 @@ var (
 var CurrentTimestamp func() int64 = func() int64 { return time.Now().UnixNano() / int64(time.Millisecond) }
 
 // ////////////////////////////////////////////////////////////////////////////
-// Feed Interface and Factory
+// Feed Factory
 // ////////////////////////////////////////////////////////////////////////////
 
-// A Feed produces a change feed of Change Data Capture (CDC) events for all
-// entity types. Feeds are meant to be used by clients to stream events as they
-// happen within Etre. Each client will have its own feed.
-type Feed interface {
-	// Run runs a feed. It is a blocking operation that will only return
-	// if it encounters an error. Run can only be called once on a feed.
-	Run() error
-}
-
+// A FeedFactory creates feeds. A feed produces a change feed of Change Data
+// Capture (CDC) events for all entity types. Feeds are used by clients to
+// stream events as they happen within Etre. Each client has its own feed.
 type FeedFactory interface {
-	// MakeWS makes a websocket feed.
-	MakeWS(*websocket.Conn) Feed
-	// MakeChan makes a channel feed.
-	MakeChan(startTs int64, bufferSize int) (Feed, <-chan etre.CDCEvent)
+	// MakeWebsocket makes a websocket feed.
+	MakeWebsocket(*websocket.Conn) *WebsocketFeed
+	// MakeInternal makes an internal feed.
+	MakeInternal(bufferSize int) *InternalFeed
 }
 
 type feedFactory struct {
@@ -56,12 +50,12 @@ type feedFactory struct {
 	cdcs   Store
 }
 
-func (ff *feedFactory) MakeWS(wsConn *websocket.Conn) Feed {
-	return NewWSFeed(wsConn, ff.poller, ff.cdcs)
+func (ff *feedFactory) MakeWebsocket(wsConn *websocket.Conn) *WebsocketFeed {
+	return NewWebsocketFeed(wsConn, ff.poller, ff.cdcs)
 }
 
-func (ff *feedFactory) MakeChan(startTs int64, bufferSize int) (Feed, <-chan etre.CDCEvent) {
-	return NewChanFeed(startTs, bufferSize, ff.poller, ff.cdcs)
+func (ff *feedFactory) MakeInternal(bufferSize int) *InternalFeed {
+	return NewInternalFeed(bufferSize, ff.poller, ff.cdcs)
 }
 
 func NewFeedFactory(poller Poller, cdcs Store) FeedFactory {
@@ -75,8 +69,12 @@ func NewFeedFactory(poller Poller, cdcs Store) FeedFactory {
 // Websocket Feed Implementation
 // ////////////////////////////////////////////////////////////////////////////
 
-// wsFeed implements the Feed interface over a websocket.
-type wsFeed struct {
+// WebsocketFeed represents a feed that works over a websocket. Call Run on a
+// feed to make it listen to control messages on the websocket. When the feed
+// receives a "start" control message, it begins sending events over the
+// websocket. If the feed encounters an error it attempts to send an "error"
+// control message over the websocket before closing.
+type WebsocketFeed struct {
 	wsConn   *websocket.Conn // the websocket connection to the client
 	streamer streamer        // streams events for the feed
 	// --
@@ -88,14 +86,10 @@ type wsFeed struct {
 	logger          *log.Entry  // used for logging
 }
 
-// NewWSFeed creates a feed that works on a given websocket. Call Run after the
-// feed is created to make it listen to messages on the websocket. When the
-// feed receives a "start" control message, it will begin sending events over
-// the websocket. If the feed encounters an error it will attempt to send an
-// "error" control message over the websocket before closing it.
-func NewWSFeed(wsConn *websocket.Conn, poller Poller, cdcs Store) Feed {
+// NewWebsocketSFeed creates a feed that works on a given websocket.
+func NewWebsocketFeed(wsConn *websocket.Conn, poller Poller, cdcs Store) *WebsocketFeed {
 	id := xid.New().String()
-	return &wsFeed{
+	return &WebsocketFeed{
 		wsConn:   wsConn,
 		streamer: newStreamer(poller, cdcs, id), // make a streamer with the feed's id
 		id:       id,
@@ -105,15 +99,22 @@ func NewWSFeed(wsConn *websocket.Conn, poller Poller, cdcs Store) Feed {
 	}
 }
 
-func (f *wsFeed) Run() error {
+// Run makes a feed listen to messages on the websocket. The feed won't do
+// anything until it receives a control message on the websocket. Run is a
+// blocking operation that only returns if it encounters an error. Calling
+// Run on a running feed retruns ErrFeedAlreadyRunning. Calling Run on a
+// feed that has stopped returns ErrWebsocketConnect.
+func (f *WebsocketFeed) Run() error {
 	f.Lock()
 	f.logger.Info("running feed")
 
 	if f.wsConn == nil {
+		f.Unlock()
 		return ErrWebsocketConnect
 	}
 
 	if f.running {
+		f.Unlock()
 		return ErrFeedAlreadyRunning
 	}
 	f.running = true
@@ -125,7 +126,7 @@ func (f *wsFeed) Run() error {
 // ------------------------------------------------------------------------- //
 
 // recv receives control messages until there's an error or the client calls Stop.
-func (f *wsFeed) recv() error {
+func (f *WebsocketFeed) recv() error {
 	var now time.Time
 	for {
 		_, bytes, err := f.wsConn.ReadMessage()
@@ -154,7 +155,7 @@ func (f *wsFeed) recv() error {
 }
 
 // send sends a message on the feed via the feed's websocket.
-func (f *wsFeed) send(v interface{}) error {
+func (f *WebsocketFeed) send(v interface{}) error {
 	f.wsMutex.Lock()
 	defer f.wsMutex.Unlock()
 	f.wsConn.SetWriteDeadline(time.Now().Add(time.Duration(etre.CDC_WRITE_TIMEOUT) * time.Second))
@@ -165,7 +166,7 @@ func (f *wsFeed) send(v interface{}) error {
 }
 
 // control handles a control message from the client.
-func (f *wsFeed) control(msg map[string]interface{}, now time.Time) error {
+func (f *WebsocketFeed) control(msg map[string]interface{}, now time.Time) error {
 	switch msg["control"] {
 	case "ping":
 		// Ping from client
@@ -240,10 +241,10 @@ func (f *wsFeed) control(msg map[string]interface{}, now time.Time) error {
 
 // runStreamer starts the websocket feed's streamer and sends all events that
 // come out of it through the websocket to the client.
-func (f *wsFeed) runStreamer(startTs int64) {
+func (f *WebsocketFeed) runStreamer(startTs int64) {
 	// Start the streamer, and send all events it produces out through the
-	// feed. The streamer will run forever until it is stopped or unitl it
-	// encounters an error, at which point it will close the events channel.
+	// feed. The streamer runs forever until it is stopped or unitl it
+	// encounters an error, at which point it closes the events channel.
 	events := f.streamer.Start(startTs)
 	for {
 		// Get an event from the channel unless it has been closed.
@@ -267,7 +268,7 @@ func (f *wsFeed) runStreamer(startTs int64) {
 	if err != nil {
 		f.handleErr(err)
 	} else {
-		// If the streamer was stopped, no new events will be sent on
+		// If the streamer was stopped, no new events are sent on the
 		// feed. Therefore we must close the feed with an error letting
 		// the client know.
 		f.handleErr(ErrStreamerStopped)
@@ -277,7 +278,7 @@ func (f *wsFeed) runStreamer(startTs int64) {
 
 // handleErr sends error control messages over the feed. If it fails to send
 // a message, it stops the feed entirely.
-func (f *wsFeed) handleErr(e error) {
+func (f *WebsocketFeed) handleErr(e error) {
 	f.logger.Errorf("error in feed: %s", e)
 	msg := map[string]interface{}{
 		"control": "error",
@@ -291,7 +292,7 @@ func (f *wsFeed) handleErr(e error) {
 }
 
 // stop shuts down the feed if it's running.
-func (f *wsFeed) stop() {
+func (f *WebsocketFeed) stop() {
 	f.Lock()
 	defer f.Unlock()
 	f.logger.Info("stopping feed")
@@ -303,61 +304,119 @@ func (f *wsFeed) stop() {
 }
 
 // ////////////////////////////////////////////////////////////////////////////
-// Channel Feed Implementation
+// Internal Feed Implementation
 // ////////////////////////////////////////////////////////////////////////////
 
-// chanFeed implements the Feed interface over a channel.
-type chanFeed struct {
+// InternalFeed represents a feed that works on a channel. It is used by
+// internal components in Etre that need access to a feed of CDC events
+// (currently it is only used in tests). Call Start on a feed to start it and
+// to get access to the channel that the feed sends events on.
+type InternalFeed struct {
 	events     chan etre.CDCEvent // the channel that the feed sends events on
-	startTs    int64              // the timestamp to start the feed from
-	bufferSize int                // the buffer size of the channel that NewChanFeed returns
+	bufferSize int                // the buffer size of the channel that NewInternalFeed returns
 	streamer   streamer           // streams events for the feed
 	// --
-	id              string     // id for this feed
-	streamerStarted bool       // true once the streamer has been started
-	running         bool       // true while the feed is running
-	*sync.Mutex                // guard function calls
-	logger          *log.Entry // used for logging
+	id              string        // id for this feed
+	streamerStarted bool          // true once the streamer has been started
+	started         bool          // true while the feed is running
+	stopped         bool          // true after the feed is stopped
+	stopChan        chan struct{} // channel that gets closed when Stop is called
+	err             error         // last error in runStreamer()
+	*sync.Mutex                   // guard function calls
+	logger          *log.Entry    // used for logging
 }
 
-// NewChanFeed creates a feed that sends events on the returned channel. Call
-// Run after the feed is created to make it start sending events on the channel.
+// NewInternalFeed creates a feed that works on a channel.
 //
-// bufferSize specifies the size of the channel that is returned. A value of 10
-// is reasonable. If the channel blocks, it is closed and Run returns
+// bufferSize causes Start to create and return a buffered feed channel. A value
+// of 10 is reasonable. If the channel blocks, it is closed and Error returns
 // ErrCallerBlocked.
-//
-// startTs is the timestamp that the feed will start from.
-func NewChanFeed(startTs int64, bufferSize int, poller Poller, cdcs Store) (Feed, <-chan etre.CDCEvent) {
+func NewInternalFeed(bufferSize int, poller Poller, cdcs Store) *InternalFeed {
 	id := xid.New().String()
-	events := make(chan etre.CDCEvent, bufferSize)
-	return &chanFeed{
-		events:     events,
-		startTs:    startTs,
+	return &InternalFeed{
 		bufferSize: bufferSize,
 		streamer:   newStreamer(poller, cdcs, id), // make a streamer with the feed's id
 		id:         id,
 		Mutex:      &sync.Mutex{},
 		logger:     log.WithFields(log.Fields{"feedId": id}),
-	}, events
+	}
 }
 
-func (f *chanFeed) Run() error {
+// Start starts a feed from a given timestamp. It returns a feed channel on
+// which the caller can receive CDC events for as long as the feed is running.
+// Calling Start again returns the same feed channel if already started. On
+// error or when Stop is called, the feed channel is closed and Error returns
+// the error. A feed cannot be restarted once it has stopped.
+func (f *InternalFeed) Start(startTs int64) <-chan etre.CDCEvent {
 	f.Lock()
-	f.logger.Info("running feed")
+	defer f.Unlock()
+	f.logger.Info("starting feed")
 
-	if f.running {
-		return ErrFeedAlreadyRunning
+	if f.stopped {
+		f.logger.Info("feed already stoped")
+		return f.events
 	}
-	f.running = true
+	if f.started {
+		f.logger.Info("feed already started")
+		return f.events
+	}
 
-	f.Unlock()
+	f.started = true
+	f.events = make(chan etre.CDCEvent, f.bufferSize)
+	f.stopChan = make(chan struct{})
 
+	go f.runStreamer(startTs)
+
+	return f.events
+}
+
+// Stop stops the feed and closes the feed channel returned by Start. It is
+// safe to call multiple times.
+func (f *InternalFeed) Stop() {
+	f.Lock()
+	defer f.Unlock()
+	f.logger.Info("stopping feed")
+
+	if !f.started {
+		f.logger.Info("feed not running")
+		return
+	}
+	if f.stopped {
+		f.logger.Info("feed already stopped")
+		return
+	}
+
+	f.stopped = true
+
+	// Close the stop channel, but do NOT close the events channel. The
+	// events channel must be closed by runStreamer() to avoid sending
+	// on a closed channel.
+	close(f.stopChan)
+}
+
+// Error returns the error that caused the feed channel to be closed.
+func (f *InternalFeed) Error() error {
+	f.Lock()
+	defer f.Unlock()
+	return f.err
+}
+
+// ------------------------------------------------------------------------- //
+
+func (f *InternalFeed) runStreamer(startTs int64) {
 	// Start the streamer, and send all events it produces out through the
-	// feed. The streamer will run forever until it is stopped or unitl it
-	// encounters an error, at which point it will close the events channel.
-	streamedEvents := f.streamer.Start(f.startTs)
+	// feed. The streamer runs forever until it is stopped or unitl it
+	// encounters an error, at which point it closes the events channel.
+	streamedEvents := f.streamer.Start(startTs)
 	for {
+		// Check to see if stop was called.
+		select {
+		case <-f.stopChan:
+			close(f.events)
+			return
+		default:
+		}
+
 		// Get an event from the channel unless it has been closed.
 		event, ok := <-streamedEvents
 		if !ok {
@@ -365,24 +424,32 @@ func (f *chanFeed) Run() error {
 		}
 
 		// Send the event out through the feed's channel. If the send
-		// is blocked, return an error.
+		// is blocked, save the error.
 		select {
 		case f.events <- event:
 		default:
+			f.Lock()
 			f.streamer.Stop()
-			return etre.ErrCallerBlocked
+			f.err = etre.ErrCallerBlocked
+			close(f.events)
+			f.Unlock()
+			return
 		}
 	}
 
 	// Check the error from the streamer. If there was none, it must have
-	// been stopped. If there was an error, bail out.
+	// been stopped. Regardless, bail out.
+	f.Lock()
+	defer f.Unlock()
 	err := f.streamer.Error()
 	if err != nil {
-		return err
+		f.err = err
 	} else {
-		// If the streamer was stopped, no new events will be sent on
+		// If the streamer was stopped, no new events are sent on the
 		// feed. Therefore we must close the feed with an error letting
 		// the client know.
-		return ErrStreamerStopped
+		f.err = ErrStreamerStopped
 	}
+	close(f.events)
+	return
 }

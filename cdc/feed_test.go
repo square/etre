@@ -40,7 +40,7 @@ func TestWSFeed(t *testing.T) {
 		}
 
 		// Create a feed.
-		f := cdc.NewWSFeed(wsConn, p, &mock.CDCStore{})
+		f := cdc.NewWebsocketFeed(wsConn, p, &mock.CDCStore{})
 
 		// Run the feed.
 		f.Run()
@@ -181,15 +181,10 @@ func TestChanFeed(t *testing.T) {
 	}
 
 	// Create a feed.
-	startTs := int64(1)
-	f, feedChan := cdc.NewChanFeed(startTs, 10, p, &mock.CDCStore{})
+	f := cdc.NewInternalFeed(10, p, &mock.CDCStore{})
 
-	// Run the feed in a goroutine and capture the error.
-	errChan := make(chan error)
-	go func() {
-		err := f.Run()
-		errChan <- err
-	}()
+	startTs := int64(1)
+	feedChan := f.Start(startTs)
 
 	//
 	// Make the poller produce events, which will cause the streamer to send them to the feed.
@@ -220,9 +215,11 @@ func TestChanFeed(t *testing.T) {
 	//
 
 	close(pollerEvents)
-	err := <-errChan
-	if err != cdc.ErrStreamerLag {
-		t.Errorf("err = %s, expected %s", err, cdc.ErrStreamerLag)
+	// Give client a few milliseconds to shutdown
+	time.Sleep(500 * time.Millisecond)
+
+	if f.Error() != cdc.ErrStreamerLag {
+		t.Errorf("err = %s, expected %s", f.Error(), cdc.ErrStreamerLag)
 	}
 }
 
@@ -237,16 +234,10 @@ func TestChanFeedCallerBlocked(t *testing.T) {
 	}
 
 	// Create a feed.
-	startTs := int64(5)                                      // must be greater than maxPolledTimestamp
-	f, _ := cdc.NewChanFeed(startTs, 1, p, &mock.CDCStore{}) // IMPORTANT: channel buffer size of 1
+	f := cdc.NewInternalFeed(1, p, &mock.CDCStore{}) // IMPORTANT: channel buffer size of 1
 
-	// Run the feed in a goroutine and capture the error.
-	errChan := make(chan error)
-	go func() {
-		err := f.Run()
-		time.Sleep(1 * time.Second)
-		errChan <- err
-	}()
+	startTs := int64(5) // must be greater than maxPolledTimestamp
+	f.Start(startTs)
 
 	//
 	// Make the poller produce events, which will cause the streamer to send them to the feed.
@@ -265,8 +256,10 @@ func TestChanFeedCallerBlocked(t *testing.T) {
 		}
 	}
 
-	err := <-errChan
-	if err != etre.ErrCallerBlocked {
-		t.Errorf("err = %s, expected %s", err, etre.ErrCallerBlocked)
+	// Give client a few milliseconds to shutdown
+	time.Sleep(500 * time.Millisecond)
+
+	if f.Error() != etre.ErrCallerBlocked {
+		t.Errorf("err = %s, expected %s", f.Error(), etre.ErrCallerBlocked)
 	}
 }

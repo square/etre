@@ -4,6 +4,7 @@ package cdc_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
@@ -36,16 +37,10 @@ func TestStreamer(t *testing.T) {
 		},
 	}
 
-	// Create a channel feed which is basically a light wrapper around a streamer.
+	// Create an internal feed which is basically a light wrapper around a streamer.
+	f := cdc.NewInternalFeed(10, p, cdcs)
 	startTs := int64(1)
-	f, feedChan := cdc.NewChanFeed(startTs, 100, p, cdcs)
-
-	// Run the feed in a goroutine and capture the error.
-	errChan := make(chan error)
-	go func() {
-		err := f.Run()
-		errChan <- err
-	}()
+	feedChan := f.Start(startTs)
 
 	//
 	// Make the streamer loop through 3 chunks of past events before catching up
@@ -114,9 +109,11 @@ func TestStreamer(t *testing.T) {
 	//
 
 	close(pollerEvents)
-	err := <-errChan
-	if err != cdc.ErrStreamerLag {
-		t.Errorf("err = %s, expected %s", err, cdc.ErrStreamerLag)
+	// Give client a few milliseconds to shutdown
+	time.Sleep(500 * time.Millisecond)
+
+	if f.Error() != cdc.ErrStreamerLag {
+		t.Errorf("err = %s, expected %s", f.Error(), cdc.ErrStreamerLag)
 	}
 
 	//
@@ -147,16 +144,10 @@ func TestStreamerImmediatelyPoll(t *testing.T) {
 		},
 	}
 
-	// Create a channel feed which is basically a light wrapper around a streamer.
+	// Create an internal feed which is basically a light wrapper around a streamer.
+	f := cdc.NewInternalFeed(100, p, &mock.CDCStore{})
 	startTs := int64(100)
-	f, feedChan := cdc.NewChanFeed(startTs, 100, p, &mock.CDCStore{})
-
-	// Run the feed in a goroutine and capture the error.
-	errChan := make(chan error)
-	go func() {
-		err := f.Run()
-		errChan <- err
-	}()
+	feedChan := f.Start(startTs)
 
 	//
 	// Make the streamer jump straight to the poller by returning a maxPooledTs
@@ -199,8 +190,10 @@ func TestStreamerImmediatelyPoll(t *testing.T) {
 	//
 
 	close(pollerEvents)
-	err := <-errChan
-	if err != cdc.ErrStreamerLag {
-		t.Errorf("err = %s, expected %s", err, cdc.ErrStreamerLag)
+	// Give client a few milliseconds to shutdown
+	time.Sleep(500 * time.Millisecond)
+
+	if f.Error() != cdc.ErrStreamerLag {
+		t.Errorf("err = %s, expected %s", f.Error(), cdc.ErrStreamerLag)
 	}
 }

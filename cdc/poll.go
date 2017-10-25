@@ -36,7 +36,7 @@ type Poller interface {
 	// client was registered. The client can assume that all events after
 	// this timestamp will come through the aforementioned channel. If the
 	// buffer on the channel fills up (if the client isn't consuming from
-	// it fast enough), the Poller will automatically deregister the client.
+	// it fast enough), the Poller automatically deregisters the client.
 	//
 	// The only argument that register takes is a string (id) that must
 	// uniquely identify a client.

@@ -18,16 +18,15 @@ import (
 // guarantee doesn't apply if the Delayer timestamp is not used.
 //
 // The Delyer is a singleton. Its need arises from the fact that there is
-// no guarantee that CDC events are written in the order that they happened
-// in (entities and CDC events are not written in a single transaction).
-// For example, let's say event1 happened before event2, but event2 is
-// written to the datastore before event1 is. Until event1 is written, the
-// Delayer is responsible for returning a timestamp that is LESS than the
-// starting time for both events1 and events2. Once both events have been
-// written, it will return a timestamp that is GREATER than or equal to the
-// completion timestamp of both events. This ensures that any queries to the
-// Store that use this timestamp as the maximum upper-bound timestamp will
-// never get event2 without getting event1 first.
+// no guarantee that CDC events are written in the order that they happen
+// in (entities and CDC events are not written in a single transaction). This
+// can occur if event1 happens before event2, but event2 is written to the
+// datastore before event1. Until event1 is written, the Delayer returns a
+// timestamp that is LESS than the starting time for both event1 and event2.
+// When both events have been written, the Delayer returns a timestamp
+// GREATER than or equal to the completion timestamp of both events. This
+// ensures that any queries to the Store that use this timestamp as the
+// maximum upper-bound timestamp never get event2 without getting event1 first.
 type Delayer interface {
 	// Returns the maximum upper-bound timetstamp that is safe to use when
 	// querying for CDC events.
@@ -65,8 +64,8 @@ type activeChanges struct {
 	all  map[string]*activeChange // id => activeChange
 }
 
-// dynamicDelayer implements the Delayer interface. It dynamically
-// updates the maximum upper-bound timestamp.
+// dynamicDelayer implements the Delayer interface. It dynamically updates
+// the maximum upper-bound timestamp.
 type dynamicDelayer struct {
 	conn       db.Connector
 	database   string
@@ -87,9 +86,9 @@ type staticDelayer struct {
 // upper-bound timestamp. It keeps track of all active entity changes (inserts,
 // updates, deletes) on this Etre instance and continually writes the start
 // time of the oldest active change to a persistent data store. Each Etre
-// instance will maintain its own "oldest active change" record in the data
-// store. The max upper-bound timestamp that is safe to use is calculated by
-// querying the smallest "oldest active change" value from the data store.
+// instance maintains its own "oldest active change" record in the data store.
+// The max upper-bound timestamp that is safe to use is calculated by querying
+// the smallest "oldest active change" value from the data store.
 func NewDynamicDelayer(conn db.Connector, database, collection string) (Delayer, error) {
 	h, err := os.Hostname()
 	if err != nil {
@@ -190,11 +189,11 @@ func (dd *dynamicDelayer) EndChange(changeId string) error {
 	// Remove from activeChanges.
 	dd.activeChanges.remove(changeId)
 
-	// If this is the oldest active change, we will need to update
-	// the delay document for this host in mongo to hold the timestamp
-	// of the next-oldest change (or, in the case that there aren't
-	// any other active changes, we need to remove the delay document
-	// for this host entirely).
+	// If this is the oldest active change, we need to update the
+	// delay document for this host in mongo to hold the timestamp of
+	// the next-oldest change (or, in the case that there aren't any
+	// other active changes, we need to remove the delay document for
+	// this host entirely).
 	if isOldest {
 		s, err := dd.conn.Connect()
 		if err != nil {
@@ -238,10 +237,9 @@ func (dd *dynamicDelayer) EndChange(changeId string) error {
 	return nil
 }
 
-// NewStaticDelayer returns a Delayer that uses a static value
-// for determining the maximum upper-bound timestamp. For example, if one
-// is created with the delay value of 5000 milliseconds, it will always
-// return time.Now() - 5000ms as the maximum upper-bound timestamp.
+// NewStaticDelayer returns a Delayer that uses a static value for determining
+// determining the maximum upper-bound timestamp. It always returns
+// time.Now() - delay as the maximum upper-bound timestamp.
 func NewStaticDelayer(delay int) (Delayer, error) {
 	return &staticDelayer{
 		delay: delay,
