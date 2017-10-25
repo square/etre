@@ -1,6 +1,6 @@
 // Copyright 2017, Square, Inc.
 
-package feed_test
+package cdc_test
 
 import (
 	"testing"
@@ -8,104 +8,126 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
-	"github.com/square/etre/feed"
 	"github.com/square/etre/test/mock"
 
 	"github.com/go-test/deep"
 )
 
-// @todo: figure out a more elegant way to test this wrt controlling when
-// clients get registered with the poller.
 func TestPoller(t *testing.T) {
 	maxTimestampChan := make(chan int64)
-	// Create a mock delay manager that will return whatever timestamp we send
+	// Create a mock delayer that will return whatever timestamp we send
 	// to it over the maxTimestampChan. It will block until it receives something.
-	dm := &mock.DelayManager{
+	d := &mock.Delayer{
 		MaxTimestampFunc: func() (int64, error) {
 			return <-maxTimestampChan, nil
 		},
 	}
 	defer close(maxTimestampChan)
 
-	listEventsChan := make(chan []etre.CDCEvent)
+	readEventsChan := make(chan []etre.CDCEvent)
 	actualFilters := []cdc.Filter{}
-	// Create a mock CDC manager that will return whatever events we send
-	// to it over the listEventsChan. It will block until it receives something.
+	// Create a mock CDC store that will return whatever events we send
+	// to it over the readEventsChan. It will block until it receives something.
 	// Also record the filters we receive.
-	cdcm := &mock.CDCManager{
-		ListEventsFunc: func(filter cdc.Filter) ([]etre.CDCEvent, error) {
+	cdcs := &mock.CDCStore{
+		ReadFunc: func(filter cdc.Filter) ([]etre.CDCEvent, error) {
 			actualFilters = append(actualFilters, filter)
-			return <-listEventsChan, nil
+			return <-readEventsChan, nil
 		},
 	}
-	defer close(listEventsChan)
+	defer close(readEventsChan)
+
+	// Create a mock pollInterval ticker that we will use to control the
+	// poller from this test.
+	pollIntervalChan := make(chan time.Time)
+	pollInterval := &time.Ticker{
+		C: pollIntervalChan,
+	}
 
 	// Create a poller.
-	p := feed.NewPoller(cdcm, dm, 0, 100, 100)
-	feed.CurrentTimestamp = func() int64 { return 1 } // current timestamp is 1
-
-	// Stopping before the poller has been started shouldn't do anything.
-	p.Stop()
+	p := cdc.NewPoller(cdcs, d, 100, pollInterval)
+	cdc.CurrentTimestamp = func() int64 { return 1 } // current timestamp is 1
 
 	// Registering with the poller before it has started returns an error.
 	_, _, err := p.Register("a")
-	if err != feed.ErrPollerNotRunning {
-		t.Errorf("error = nil, expected %s", feed.ErrPollerNotRunning)
+	if err != cdc.ErrPollerNotRunning {
+		t.Errorf("error = nil, expected %s", cdc.ErrPollerNotRunning)
 	}
 
-	// Start the poller.
-	p.Start()
-	// Starting it again shouldn't do anything.
-	p.Start()
+	// Run the poller.
+	go p.Run()
 
-	// Cause the dm to return a specific timestamp, and the cdcm to return
+	// Cause the delayer to return a specific timestamp, and the cdcs to return
 	// specific events. Since there aren't any clients registered with the
 	// poller right now, these events won't get sent anywhere.
 	maxTimestampChan <- 5
-	listEventsChan <- []etre.CDCEvent{
+	readEventsChan <- []etre.CDCEvent{
 		etre.CDCEvent{EventId: "abc"},
 		etre.CDCEvent{EventId: "def"},
 	}
 
-	// On the next loop, register with the poller before it sends the events
-	// for that loop.
-	maxTimestampChan <- 12
+	// Allow the poller to progress through the next loop.
+	pollIntervalChan <- time.Now()
+
+	// Register a client with the poller.
 	c1Events, lastPolledTs, err := p.Register("client1")
 	if err != nil {
 		t.Error(err)
-	}
-	listEventsChan <- []etre.CDCEvent{
-		etre.CDCEvent{EventId: "ghi"},
-		etre.CDCEvent{EventId: "jkl"},
 	}
 
 	if lastPolledTs != 5 {
 		t.Errorf("lastPolledTs = %d, expectd 5", lastPolledTs)
 	}
 
-	// On the next loop, register a second client with the poller before i
-	// sends the events for that loop.
-	maxTimestampChan <- 23
+	maxTimestampChan <- 12
+	readEventsChan <- []etre.CDCEvent{
+		etre.CDCEvent{EventId: "ghi"},
+		etre.CDCEvent{EventId: "jkl"},
+	}
+
+	// Allow the poller to progress through the next loop.
+	pollIntervalChan <- time.Now()
+
+	// Register another client with the poller.
 	c2Events, lastPolledTs, err := p.Register("client2")
 	if err != nil {
 		t.Error(err)
 	}
-	listEventsChan <- []etre.CDCEvent{
+
+	if lastPolledTs != 12 {
+		t.Errorf("lastPolledTs = %d, expectd 12", lastPolledTs)
+	}
+
+	maxTimestampChan <- 23
+	readEventsChan <- []etre.CDCEvent{
 		etre.CDCEvent{EventId: "mno"},
 		etre.CDCEvent{EventId: "pqr"},
 	}
 
-	if lastPolledTs != 12 {
-		t.Errorf("lastPolledTs = %d, expectd 5", lastPolledTs)
-	}
+	// Allow the poller to progress through the next loop.
+	pollIntervalChan <- time.Now()
 
-	// On the next loop, stop the poller before it sends events for
-	// that loop. This will cause it to stop after the loop finishes.
-	maxTimestampChan <- 23
-	p.Stop()
-	listEventsChan <- []etre.CDCEvent{
+	// Deregister the first client from the poller.
+	p.Deregister("client1")
+
+	maxTimestampChan <- 28
+	readEventsChan <- []etre.CDCEvent{
 		etre.CDCEvent{EventId: "stu"},
 		etre.CDCEvent{EventId: "vwx"},
+	}
+
+	// Allow the poller to progress through the next loop.
+	pollIntervalChan <- time.Now()
+
+	// Deregister the second client from the poller.
+	p.Deregister("client2")
+
+	// Since both clients have been deregistered, they should not see the
+	// events from this loop.
+	maxTimestampChan <- 31
+	readEventsChan <- []etre.CDCEvent{
+		etre.CDCEvent{EventId: "yz1"},
+		etre.CDCEvent{EventId: "234"},
 	}
 
 	// Get all the events for the clients. The channel for each client should
@@ -144,8 +166,6 @@ POLLED_EVENTS2:
 		etre.CDCEvent{EventId: "jkl"},
 		etre.CDCEvent{EventId: "mno"},
 		etre.CDCEvent{EventId: "pqr"},
-		etre.CDCEvent{EventId: "stu"},
-		etre.CDCEvent{EventId: "vwx"},
 	}
 
 	c2Expected := []etre.CDCEvent{

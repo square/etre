@@ -4,29 +4,29 @@ package mock
 
 import ()
 
-type DelayManager struct {
+type Delayer struct {
 	MaxTimestampFunc func() (int64, error)
 	BeginChangeFunc  func(string) error
 	EndChangeFunc    func(string) error
 }
 
-func (m *DelayManager) MaxTimestamp() (int64, error) {
-	if m.MaxTimestampFunc != nil {
-		return m.MaxTimestampFunc()
+func (d *Delayer) MaxTimestamp() (int64, error) {
+	if d.MaxTimestampFunc != nil {
+		return d.MaxTimestampFunc()
 	}
 	return 0, nil
 }
 
-func (m *DelayManager) BeginChange(changeId string) error {
-	if m.BeginChangeFunc != nil {
-		return m.BeginChangeFunc(changeId)
+func (d *Delayer) BeginChange(changeId string) error {
+	if d.BeginChangeFunc != nil {
+		return d.BeginChangeFunc(changeId)
 	}
 	return nil
 }
 
-func (m *DelayManager) EndChange(changeId string) error {
-	if m.EndChangeFunc != nil {
-		return m.EndChangeFunc(changeId)
+func (d *Delayer) EndChange(changeId string) error {
+	if d.EndChangeFunc != nil {
+		return d.EndChangeFunc(changeId)
 	}
 	return nil
 }

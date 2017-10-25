@@ -14,21 +14,20 @@ import (
 	"gopkg.in/mgo.v2"
 )
 
-// @todo: make the host/port configurable
-var url = "localhost:3000"
-var database = "etre_test"
-var collection = "cdc"
-var timeout = 5
+// @todo: make this configurable
+var cdcDatabase = "etre_test"
+var cdcCollection = "cdc"
 
-func setup(t *testing.T) db.Connector {
-	conn := db.NewConnector(url, timeout, nil, nil)
+func cdcSetup(t *testing.T) db.Connector {
+	// @todo: make this configurable
+	conn := db.NewConnector("localhost:3000", 5, nil, nil)
 	s, err := conn.Connect()
 	if err != nil {
 		t.Error("error connecting to mongo: %s", err)
 	}
 
 	for _, event := range mock.CDCEvents {
-		err = s.DB(database).C(collection).Insert(event)
+		err = s.DB(cdcDatabase).C(cdcCollection).Insert(event)
 		if err != nil {
 			t.Error("error writing test CDC data to mongo: %s", err)
 		}
@@ -37,13 +36,13 @@ func setup(t *testing.T) db.Connector {
 	return conn
 }
 
-func teardown(t *testing.T, conn db.Connector) {
+func cdcTeardown(t *testing.T, conn db.Connector) {
 	s, err := conn.Connect()
 	if err != nil {
 		t.Error("error connecting to mongo: %s", err)
 	}
 
-	err = s.DB(database).C(collection).DropCollection()
+	err = s.DB(cdcDatabase).C(cdcCollection).DropCollection()
 	if err != nil {
 		t.Errorf("error deleting CDC events: %s", err)
 	}
@@ -52,17 +51,17 @@ func teardown(t *testing.T, conn db.Connector) {
 	conn.Close()
 }
 
-func TestListEvents(t *testing.T) {
-	conn := setup(t)
-	defer teardown(t, conn)
-	cdcm := cdc.NewManager(conn, database, collection, "", cdc.NoRetryStrategy)
+func TestRead(t *testing.T) {
+	conn := cdcSetup(t)
+	defer cdcTeardown(t, conn)
+	cdcs := cdc.NewStore(conn, cdcDatabase, cdcCollection, "", cdc.NoRetryPolicy)
 
 	// Filter #1.
 	filter := cdc.Filter{
 		SinceTs: 13,
 		UntilTs: 35,
 	}
-	events, err := cdcm.ListEvents(filter)
+	events, err := cdcs.Read(filter)
 	if err != nil {
 		t.Error(err)
 	}
@@ -72,7 +71,7 @@ func TestListEvents(t *testing.T) {
 		actualIds = append(actualIds, event.EventId)
 	}
 
-	expectedIds := []string{"vno", "4pi", "p34"} // order matters
+	expectedIds := []string{"p34", "vno", "4pi"} // order matters
 	if diff := deep.Equal(actualIds, expectedIds); diff != nil {
 		t.Error(diff)
 	}
@@ -81,9 +80,8 @@ func TestListEvents(t *testing.T) {
 	filter = cdc.Filter{
 		SinceTs: 10,
 		UntilTs: 43,
-		SortBy:  cdc.SORT_BY_ENTID_REV,
 	}
-	events, err = cdcm.ListEvents(filter)
+	events, err = cdcs.Read(filter)
 	if err != nil {
 		t.Error(err)
 	}
@@ -99,13 +97,13 @@ func TestListEvents(t *testing.T) {
 	}
 }
 
-func TestCreateEventSuccess(t *testing.T) {
-	conn := setup(t)
-	defer teardown(t, conn)
-	cdcm := cdc.NewManager(conn, database, collection, "", cdc.NoRetryStrategy)
+func TestWriteSuccess(t *testing.T) {
+	conn := cdcSetup(t)
+	defer cdcTeardown(t, conn)
+	cdcs := cdc.NewStore(conn, cdcDatabase, cdcCollection, "", cdc.NoRetryPolicy)
 
 	event := etre.CDCEvent{EventId: "abc", EntityId: "e13", Rev: 7, Ts: 54}
-	err := cdcm.CreateEvent(event)
+	err := cdcs.Write(event)
 	if err != nil {
 		t.Error(err)
 	}
@@ -115,7 +113,7 @@ func TestCreateEventSuccess(t *testing.T) {
 		SinceTs: 54,
 		UntilTs: 55,
 	}
-	actualEvents, err := cdcm.ListEvents(filter)
+	actualEvents, err := cdcs.Read(filter)
 	if err != nil {
 		t.Error(err)
 	}
@@ -129,7 +127,7 @@ func TestCreateEventSuccess(t *testing.T) {
 	}
 }
 
-func TestCreateEventFailure(t *testing.T) {
+func TestWriteFailure(t *testing.T) {
 	var tries int
 	// Create a mock dbconn that will always throw an error.
 	conn := &mock.Connector{
@@ -139,15 +137,15 @@ func TestCreateEventFailure(t *testing.T) {
 		},
 	}
 
-	wrs := cdc.RetryStrategy{
+	wrp := cdc.RetryPolicy{
 		RetryCount: 3,
 		RetryWait:  0,
 	}
 
-	cdcm := cdc.NewManager(conn, database, collection, "", wrs)
+	cdcs := cdc.NewStore(conn, cdcDatabase, cdcCollection, "", wrp)
 
 	event := etre.CDCEvent{EventId: "abc", EntityId: "e13", Rev: 7, Ts: 54}
-	err := cdcm.CreateEvent(event)
+	err := cdcs.Write(event)
 	if err == nil {
 		t.Error("expected an error but did not get one")
 	}
@@ -164,6 +162,6 @@ func TestCreateEventFailure(t *testing.T) {
 	}
 }
 
-func TestCreateEventFallbackFile(t *testing.T) {
+func TestWriteFallbackFile(t *testing.T) {
 	// @todo: test writing to the fallback file as well
 }

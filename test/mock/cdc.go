@@ -7,21 +7,21 @@ import (
 	"github.com/square/etre/cdc"
 )
 
-type CDCManager struct {
-	CreateEventFunc func(etre.CDCEvent) error
-	ListEventsFunc  func(cdc.Filter) ([]etre.CDCEvent, error)
+type CDCStore struct {
+	WriteFunc func(etre.CDCEvent) error
+	ReadFunc  func(cdc.Filter) ([]etre.CDCEvent, error)
 }
 
-func (m *CDCManager) CreateEvent(e etre.CDCEvent) error {
-	if m.CreateEventFunc != nil {
-		return m.CreateEventFunc(e)
+func (s *CDCStore) Write(e etre.CDCEvent) error {
+	if s.WriteFunc != nil {
+		return s.WriteFunc(e)
 	}
 	return nil
 }
 
-func (m *CDCManager) ListEvents(filter cdc.Filter) ([]etre.CDCEvent, error) {
-	if m.ListEventsFunc != nil {
-		return m.ListEventsFunc(filter)
+func (s *CDCStore) Read(filter cdc.Filter) ([]etre.CDCEvent, error) {
+	if s.ReadFunc != nil {
+		return s.ReadFunc(filter)
 	}
 	return nil, nil
 }

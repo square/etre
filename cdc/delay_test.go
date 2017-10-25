@@ -1,22 +1,21 @@
 // Copyright 2017, Square, Inc.
 
-package feed_test
+package cdc_test
 
 import (
 	"testing"
 
+	"github.com/square/etre/cdc"
 	"github.com/square/etre/db"
-	"github.com/square/etre/feed"
 )
 
-// @todo: make the host/port configurable
-var mongoUrl = "localhost:3000"
-var database = "etre_test"
-var collection = "delay"
-var timeout = 5
+// @todo: make this configurable
+var delayDatabase = "etre_test"
+var delayCollection = "cdc"
 
-func setup(t *testing.T) db.Connector {
-	conn := db.NewConnector(mongoUrl, timeout, nil, nil)
+func delaySetup(t *testing.T) db.Connector {
+	// @todo: make this configurable
+	conn := db.NewConnector("localhost:3000", 1, nil, nil)
 
 	_, err := conn.Connect()
 	if err != nil {
@@ -26,13 +25,13 @@ func setup(t *testing.T) db.Connector {
 	return conn
 }
 
-func teardown(t *testing.T, conn db.Connector) {
+func delayTeardown(t *testing.T, conn db.Connector) {
 	s, err := conn.Connect()
 	if err != nil {
 		t.Error("error connecting to mongo: %s", err)
 	}
 
-	err = s.DB(database).C(collection).DropCollection()
+	err = s.DB(delayDatabase).C(delayCollection).DropCollection()
 	if err != nil {
 		t.Errorf("error deleting CDC events: %s", err)
 	}
@@ -41,25 +40,25 @@ func teardown(t *testing.T, conn db.Connector) {
 	conn.Close()
 }
 
-func TestDynamicDelayManager(t *testing.T) {
-	conn := setup(t)
-	defer teardown(t, conn)
+func TestDynamicDelayer(t *testing.T) {
+	conn := delaySetup(t)
+	defer delayTeardown(t, conn)
 
-	dm, err := feed.NewDynamicDelayManager(conn, database, collection)
+	d, err := cdc.NewDynamicDelayer(conn, delayDatabase, delayCollection)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Start change #1.
 	changeId1 := "abc"
-	feed.CurrentTimestamp = func() int64 { return 1 }
-	err = dm.BeginChange(changeId1)
+	cdc.CurrentTimestamp = func() int64 { return 1 }
+	err = d.BeginChange(changeId1)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Verify the max timestamp.
-	maxTimestamp, err := dm.MaxTimestamp()
+	maxTimestamp, err := d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}
@@ -69,14 +68,14 @@ func TestDynamicDelayManager(t *testing.T) {
 
 	// Start change #2.
 	changeId2 := "def"
-	feed.CurrentTimestamp = func() int64 { return 3 }
-	err = dm.BeginChange(changeId2)
+	cdc.CurrentTimestamp = func() int64 { return 3 }
+	err = d.BeginChange(changeId2)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Verify the max timestamp hasn't changed.
-	maxTimestamp, err = dm.MaxTimestamp()
+	maxTimestamp, err = d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}
@@ -86,14 +85,14 @@ func TestDynamicDelayManager(t *testing.T) {
 
 	// Start change #3.
 	changeId3 := "ghi"
-	feed.CurrentTimestamp = func() int64 { return 9 }
-	err = dm.BeginChange(changeId3)
+	cdc.CurrentTimestamp = func() int64 { return 9 }
+	err = d.BeginChange(changeId3)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Verify the max timestamp hasn't changed.
-	maxTimestamp, err = dm.MaxTimestamp()
+	maxTimestamp, err = d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}
@@ -102,13 +101,13 @@ func TestDynamicDelayManager(t *testing.T) {
 	}
 
 	// Stop change #1.
-	err = dm.EndChange(changeId1)
+	err = d.EndChange(changeId1)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Verify the max timestamp is now change #2s start time.
-	maxTimestamp, err = dm.MaxTimestamp()
+	maxTimestamp, err = d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}
@@ -117,13 +116,13 @@ func TestDynamicDelayManager(t *testing.T) {
 	}
 
 	// Stop change #3.
-	err = dm.EndChange(changeId3)
+	err = d.EndChange(changeId3)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Verify the max timestamp hasn't changed.
-	maxTimestamp, err = dm.MaxTimestamp()
+	maxTimestamp, err = d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}
@@ -132,14 +131,14 @@ func TestDynamicDelayManager(t *testing.T) {
 	}
 
 	// Stop change #2.
-	err = dm.EndChange(changeId2)
+	err = d.EndChange(changeId2)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Verify the max timestamp is now the current time.
-	feed.CurrentTimestamp = func() int64 { return 50 }
-	maxTimestamp, err = dm.MaxTimestamp()
+	cdc.CurrentTimestamp = func() int64 { return 50 }
+	maxTimestamp, err = d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}
@@ -148,15 +147,15 @@ func TestDynamicDelayManager(t *testing.T) {
 	}
 }
 
-func TestStaticDelayManager(t *testing.T) {
+func TestStaticDelayer(t *testing.T) {
 	delay := 5
-	dm, err := feed.NewStaticDelayManager(delay)
+	d, err := cdc.NewStaticDelayer(delay)
 	if err != nil {
 		t.Error(err)
 	}
 
-	feed.CurrentTimestamp = func() int64 { return 12 }
-	maxTimestamp, err := dm.MaxTimestamp()
+	cdc.CurrentTimestamp = func() int64 { return 12 }
+	maxTimestamp, err := d.MaxTimestamp()
 	if err != nil {
 		t.Error(err)
 	}

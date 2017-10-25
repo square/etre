@@ -10,12 +10,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/square/etre/api"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
-	"github.com/square/etre/feed"
 	"github.com/square/etre/router"
 
 	"gopkg.in/yaml.v2"
@@ -56,23 +56,20 @@ type CDCConfig struct {
 type DelayConfig struct {
 	// The collection that delays are stored in.
 	Collection string `yaml:"collection"`
-	// If this value is positive, the delay manager will always return a max
-	// timestamp that is time.Now() minus this config value. If this value is
-	// negative, the delay manager will return a max timestamp that dynamically
-	// changes depending on the active API calls into Etre. Units in milliseconds.
+	// If this value is positive, the delayer will always return a max timestamp
+	// that is time.Now() minus this config value. If this value is negative,
+	// the delayer will return a max timestamp that dynamically changes
+	// depending on the active API calls into Etre. Units in milliseconds.
 	StaticDelay int `yaml:"static_delay"`
 }
 
 type FeedConfig struct {
-	// The buffer size that a feed has when consuming from the poller. If the
-	// poller fills the buffer up then the feed will error out since it won't
+	// The buffer size that a streamer has when consuming from the poller. If the
+	// poller fills the buffer up then the streamer will error out since it won't
 	// be able to catch up to the poller anymore.
-	PollingBufferSize int `yaml:"polling_buffer_size"`
+	StreamerBufferSize int `yaml:"streamer_buffer_size"`
 	// The amount of time that the poller will sleep between polls, in milliseconds.
-	SleepBetweenPolls int `yaml:"sleep_between_polls"`
-	// How often the poller and any feeds log their progress, in seconds. If
-	// this number is small, the logs will be cluttered. 30 is a sane default.
-	LogEvery int `yaml:"log_every"`
+	PollInterval int `yaml:"poll_interval"`
 }
 
 type ServerConfig struct {
@@ -82,6 +79,10 @@ type ServerConfig struct {
 	TLSCert string `yaml:"tls-cert"`
 	TLSKey  string `yaml:"tls-key"`
 	TLSCA   string `yaml:"tls-ca"`
+
+	// Etre will look at this HTTP header to get the username of the requestor of
+	// all API calls.
+	UsernameHeader string `yaml:"username_header"`
 }
 
 type Config struct {
@@ -104,10 +105,9 @@ var default_delay_collection = "delay"
 var default_cdc_fallback_file = ""
 var default_cdc_write_retry_count = 3
 var default_cdc_write_retry_wait = 50
-var default_static_delay = -1 // if negative, system will use a dynamic delay manager
-var default_polling_buffer_size = 1000
-var default_sleep_between_polls = 2000
-var default_feed_log_every = 30
+var default_static_delay = -1 // if negative, system will use a dynamic delayer
+var default_streamer_buffer_size = 100
+var default_poll_interval = 2000
 
 func init() {
 	flag.StringVar(&flagConfig, "config", "", "Config file")
@@ -149,14 +149,13 @@ func main() {
 			WriteRetryCount: default_cdc_write_retry_count,
 			WriteRetryWait:  default_cdc_write_retry_wait,
 		},
+		Feed: FeedConfig{
+			StreamerBufferSize: default_streamer_buffer_size,
+			PollInterval:       default_poll_interval,
+		},
 		Delay: DelayConfig{
 			Collection:  default_delay_collection,
 			StaticDelay: default_static_delay,
-		},
-		Feed: FeedConfig{
-			PollingBufferSize: default_polling_buffer_size,
-			SleepBetweenPolls: default_sleep_between_polls,
-			LogEvery:          default_feed_log_every,
 		},
 	}
 	if err := yaml.Unmarshal(bytes, &config); err != nil {
@@ -215,18 +214,18 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// CDC Manager.
+	// CDC Store.
 	// //////////////////////////////////////////////////////////////////////
-	wrs := cdc.RetryStrategy{
+	wrp := cdc.RetryPolicy{
 		RetryCount: config.CDC.WriteRetryCount,
 		RetryWait:  config.CDC.WriteRetryWait,
 	}
-	cdcm := cdc.NewManager(
+	cdcs := cdc.NewStore(
 		conn,
 		config.Datasource.Database,
 		config.CDC.Collection,
 		config.CDC.FallbackFile,
-		wrs,
+		wrp,
 	)
 	if err != nil {
 		log.Println(err)
@@ -234,15 +233,15 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Delay Manager.
+	// Delayer.
 	// //////////////////////////////////////////////////////////////////////
-	var dm feed.DelayManager
+	var dm cdc.Delayer
 	if config.Delay.StaticDelay >= 0 {
-		dm, err = feed.NewStaticDelayManager(
+		dm, err = cdc.NewStaticDelayer(
 			config.Delay.StaticDelay,
 		)
 	} else {
-		dm, err = feed.NewDynamicDelayManager(
+		dm, err = cdc.NewDynamicDelayer(
 			conn,
 			config.Datasource.Database,
 			config.Delay.Collection,
@@ -254,13 +253,13 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Entity Manager.
+	// Entity Store.
 	// //////////////////////////////////////////////////////////////////////
-	em, err := entity.NewManager(
+	em, err := entity.NewStore(
 		conn,
 		config.Datasource.Database,
 		config.Entity.Types,
-		cdcm,
+		cdcs,
 		dm,
 	)
 	if err != nil {
@@ -269,28 +268,31 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Create and Start Poller.
+	// Create and Run Poller.
 	// //////////////////////////////////////////////////////////////////////
-	poller := feed.NewPoller(
-		cdcm,
+	poller := cdc.NewPoller(
+		cdcs,
 		dm,
-		config.Feed.SleepBetweenPolls,
-		config.Feed.PollingBufferSize,
-		config.Feed.LogEvery,
+		config.Feed.StreamerBufferSize,
+		time.NewTicker(time.Duration(config.Feed.PollInterval)*time.Millisecond),
 	)
-	poller.Start()
+	go func() {
+		err = poller.Run()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
 
 	// //////////////////////////////////////////////////////////////////////
-	// Feed and Producer Factories.
+	// Feed Factory
 	// //////////////////////////////////////////////////////////////////////
-	pf := feed.NewProducerFactory(poller, cdcm, config.Feed.LogEvery)
-	ff := feed.NewFeedFactory(pf)
+	ff := cdc.NewFeedFactory(poller, cdcs)
 
 	// //////////////////////////////////////////////////////////////////////
 	// Launch App (initialize router/API, start server)
 	// //////////////////////////////////////////////////////////////////////
 	router := &router.Router{
-		UsernameHeader: "username", // GET THIS FROM CONFIG
+		UsernameHeader: config.Server.UsernameHeader,
 	}
 	api := api.NewAPI(router, em, ff)
 

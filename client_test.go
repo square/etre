@@ -866,9 +866,8 @@ func TestCDCClient(t *testing.T) {
 	// is slightly different than the JSON-mashaled time string. So only
 	// way to be consistent is to cmp json marshaled to json marshaled.
 	v := map[string]interface{}{
-		"control":     "start",
-		"startTs":     startTs.Unix(),
-		"chunkWindow": 3600,
+		"control": "start",
+		"startTs": startTs.UnixNano() / int64(time.Millisecond),
 	}
 	bytes, _ := json.Marshal(v)
 	var expectStart map[string]interface{}

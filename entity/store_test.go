@@ -29,17 +29,17 @@ var entityTypes = []string{entityType}
 var timeout = 5
 var conn db.Connector
 
-func setup(t *testing.T, cdcm *mock.CDCManager, dm *mock.DelayManager) entity.Manager {
+func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 	conn = db.NewConnector(url, timeout, nil, nil)
 	_, err := conn.Connect()
 	if err != nil {
 		t.Error(err)
 	}
 
-	em, err := entity.NewManager(conn, database, entityTypes, cdcm, dm)
+	es, err := entity.NewStore(conn, database, entityTypes, cdcm, d)
 
 	// Create test data
-	_, err = em.CreateEntities(entityType, seedEntities, username)
+	_, err = es.CreateEntities(entityType, seedEntities, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -48,16 +48,16 @@ func setup(t *testing.T, cdcm *mock.CDCManager, dm *mock.DelayManager) entity.Ma
 		}
 	}
 
-	return em
+	return es
 }
 
-func teardown(t *testing.T, em entity.Manager) {
+func teardown(t *testing.T, es entity.Store) {
 	// Delete all data in DB/Collection (empty query matches everything).
 	q, err := query.Translate("")
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = em.DeleteEntities(entityType, q, username)
+	_, err = es.DeleteEntities(entityType, q, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrDelete); ok {
 			t.Errorf("Error deleting entities: %s", err)
@@ -70,11 +70,11 @@ func teardown(t *testing.T, em entity.Manager) {
 	conn.Close()
 }
 
-func TestCreateNewManagerError(t *testing.T) {
+func TestCreateNewStoreError(t *testing.T) {
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
 	expectedErrMsg := fmt.Sprintf("Entity type (%s) cannot be a reserved word", invalidEntityType)
-	_, err := entity.NewManager(&mock.Connector{}, database, []string{invalidEntityType}, &mock.CDCManager{}, &mock.DelayManager{})
+	_, err := entity.NewStore(&mock.Connector{}, database, []string{invalidEntityType}, &mock.CDCStore{}, &mock.Delayer{})
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
@@ -82,15 +82,15 @@ func TestCreateNewManagerError(t *testing.T) {
 
 func TestCreateEntitiesMultiple(t *testing.T) {
 	var lastEvent etre.CDCEvent
-	cdcm := &mock.CDCManager{
-		CreateEventFunc: func(e etre.CDCEvent) error {
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
 			lastEvent = e
 			return nil
 		},
 	}
 
-	em := setup(t, cdcm, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, cdcm, &mock.Delayer{})
+	defer teardown(t, es)
 
 	testData := []etre.Entity{
 		etre.Entity{"_id": "tjf", "x": 0},
@@ -98,7 +98,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 		etre.Entity{"_id": "fes", "z": 2, "setId": "343", "setOp": "something", "setSize": 1},
 	}
 	// Note: teardown will delete this test data
-	ids, err := em.CreateEntities(entityType, testData, username)
+	ids, err := es.CreateEntities(entityType, testData, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -135,8 +135,8 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 }
 
 func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	// Expect first two documents to be inserted and third to fail
 	testData := []etre.Entity{
@@ -145,7 +145,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 		etre.Entity{"_id": "bar", "z": 2},
 	}
 	// Note: teardown will delete this test data
-	actual, err := em.CreateEntities(entityType, testData, username)
+	actual, err := es.CreateEntities(entityType, testData, username)
 
 	expect := []string{"foo", "bar"}
 
@@ -168,8 +168,8 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 }
 
 func TestCreateEntitiesInvalidEntityType(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	testData := []etre.Entity{
 		etre.Entity{"x": 0},
@@ -180,15 +180,15 @@ func TestCreateEntitiesInvalidEntityType(t *testing.T) {
 	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err := em.CreateEntities(invalidEntityType, testData, username)
+	_, err := es.CreateEntities(invalidEntityType, testData, username)
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
 }
 
 func TestReadEntitiesWithAllOperators(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	// List of label selctors to build queries from
 	labelSelectors := []string{
@@ -211,7 +211,7 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		actual, err := em.ReadEntities(entityType, q)
+		actual, err := es.ReadEntities(entityType, q)
 		if err != nil {
 			if _, ok := err.(entity.ErrRead); ok {
 				t.Errorf("Error reading entities: %s", err)
@@ -227,8 +227,8 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 }
 
 func TestReadEntitiesWithComplexQuery(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	q, err := query.Translate("y, !a, x>1")
 	if err != nil {
@@ -237,7 +237,7 @@ func TestReadEntitiesWithComplexQuery(t *testing.T) {
 
 	expect := seedEntities
 
-	actual, err := em.ReadEntities(entityType, q)
+	actual, err := es.ReadEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(entity.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -252,8 +252,8 @@ func TestReadEntitiesWithComplexQuery(t *testing.T) {
 }
 
 func TestReadEntitiesMultipleFound(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	// Each Entity has "a" in it so we can query for documents with "a" and
 	// delete them
@@ -263,7 +263,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 		etre.Entity{"a": 1, "b": 2, "c": 3},
 	}
 	// Note: teardown will delete this test data
-	_, err := em.CreateEntities(entityType, testData, username)
+	_, err := es.CreateEntities(entityType, testData, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -276,7 +276,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	entities, err := em.ReadEntities(entityType, q)
+	entities, err := es.ReadEntities(entityType, q)
 	if err != nil {
 		if _, ok := err.(entity.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -294,14 +294,14 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 }
 
 func TestReadEntitiesNotFound(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	q, err := query.Translate("a=b")
 	if err != nil {
 		t.Error(err)
 	}
-	actual, err := em.ReadEntities(entityType, q)
+	actual, err := es.ReadEntities(entityType, q)
 
 	if actual != nil {
 		t.Errorf("An empty list was expected, actual: %v", actual)
@@ -316,8 +316,8 @@ func TestReadEntitiesNotFound(t *testing.T) {
 }
 
 func TestReadEntitiesInvalidEntityType(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	q, err := query.Translate("a=b")
 	if err != nil {
@@ -327,7 +327,7 @@ func TestReadEntitiesInvalidEntityType(t *testing.T) {
 	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err = em.ReadEntities(invalidEntityType, q)
+	_, err = es.ReadEntities(invalidEntityType, q)
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
@@ -335,22 +335,22 @@ func TestReadEntitiesInvalidEntityType(t *testing.T) {
 
 func TestUpdateEntities(t *testing.T) {
 	var lastEvent etre.CDCEvent
-	cdcm := &mock.CDCManager{
-		CreateEventFunc: func(e etre.CDCEvent) error {
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
 			lastEvent = e
 			return nil
 		},
 	}
 
-	em := setup(t, cdcm, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, cdcm, &mock.Delayer{})
+	defer teardown(t, es)
 
 	// Create another entity to test we can update multiple documents
 	testData := []etre.Entity{
 		etre.Entity{"_id": "zzz", "x": 3, "y": "hello"},
 	}
 	// Note: teardown will delete this data
-	_, err := em.CreateEntities(entityType, testData, username)
+	_, err := es.CreateEntities(entityType, testData, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -367,7 +367,7 @@ func TestUpdateEntities(t *testing.T) {
 
 	expectNumUpdated := 2
 
-	diff, err := em.UpdateEntities(entityType, q, u, username)
+	diff, err := es.UpdateEntities(entityType, q, u, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrUpdate); ok {
 			t.Errorf("Error updating entities: %s", err)
@@ -414,8 +414,8 @@ func TestUpdateEntities(t *testing.T) {
 }
 
 func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	q, err := query.Translate("y=hello")
 	if err != nil {
@@ -426,7 +426,7 @@ func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
 	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err = em.UpdateEntities(invalidEntityType, q, u, username)
+	_, err = es.UpdateEntities(invalidEntityType, q, u, username)
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
@@ -434,15 +434,15 @@ func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
 
 func TestDeleteEntities(t *testing.T) {
 	var lastEvent etre.CDCEvent
-	cdcm := &mock.CDCManager{
-		CreateEventFunc: func(e etre.CDCEvent) error {
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
 			lastEvent = e
 			return nil
 		},
 	}
 
-	em := setup(t, cdcm, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, cdcm, &mock.Delayer{})
+	defer teardown(t, es)
 
 	// Each entity has "a" in it so we can query for documents with "a" and
 	// delete them
@@ -451,7 +451,7 @@ func TestDeleteEntities(t *testing.T) {
 		etre.Entity{"_id": "eee", "a": 1, "b": 2},
 		etre.Entity{"_id": "fff", "a": 1, "b": 2, "c": 3},
 	}
-	_, err := em.CreateEntities(entityType, testData, username)
+	_, err := es.CreateEntities(entityType, testData, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -464,7 +464,7 @@ func TestDeleteEntities(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	actualDeletedEntities, err := em.DeleteEntities(entityType, q, username)
+	actualDeletedEntities, err := es.DeleteEntities(entityType, q, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrDelete); ok {
 			t.Errorf("Error deleting entities: %s", err)
@@ -503,8 +503,8 @@ func TestDeleteEntities(t *testing.T) {
 }
 
 func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
-	em := setup(t, &mock.CDCManager{}, &mock.DelayManager{})
-	defer teardown(t, em)
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
 
 	q, err := query.Translate("a > 0")
 	if err != nil {
@@ -514,7 +514,7 @@ func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
 	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err = em.DeleteEntities(invalidEntityType, q, username)
+	_, err = es.DeleteEntities(invalidEntityType, q, username)
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}

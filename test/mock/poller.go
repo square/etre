@@ -3,27 +3,27 @@
 package mock
 
 import (
+	"errors"
+
 	"github.com/square/etre"
 )
 
+var (
+	ErrPoller = errors.New("error in poller")
+)
+
 type Poller struct {
-	StartFunc      func()
-	StopFunc       func()
+	RunFunc        func() error
 	RegisterFunc   func(string) (<-chan etre.CDCEvent, int64, error)
 	DeregisterFunc func(string)
 	ErrorFunc      func() error
 }
 
-func (p *Poller) Start() {
-	if p.StartFunc != nil {
-		p.StartFunc()
+func (p *Poller) Run() error {
+	if p.RunFunc != nil {
+		p.RunFunc()
 	}
-}
-
-func (p *Poller) Stop() {
-	if p.StopFunc != nil {
-		p.StopFunc()
-	}
+	return nil
 }
 
 func (p *Poller) Register(uuid string) (<-chan etre.CDCEvent, int64, error) {

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/square/etre"
+	"github.com/square/etre/cdc"
 	"github.com/square/etre/entity"
-	"github.com/square/etre/feed"
 	"github.com/square/etre/query"
 	"github.com/square/etre/router"
 
@@ -32,15 +32,15 @@ const (
 // code a lot more concise.
 type API struct {
 	Router *router.Router
-	em     entity.Manager
-	ff     feed.FeedFactory
+	es     entity.Store
+	ff     cdc.FeedFactory
 }
 
 // NewAPI makes a new API.
-func NewAPI(router *router.Router, em entity.Manager, ff feed.FeedFactory) *API {
+func NewAPI(router *router.Router, es entity.Store, ff cdc.FeedFactory) *API {
 	api := &API{
 		Router: router,
-		em:     em,
+		es:     es,
 		ff:     ff,
 	}
 
@@ -64,13 +64,13 @@ func (api *API) entityHandler(ctx router.HTTPContext) {
 	// Handle the request.
 	switch ctx.Request.Method {
 	case "POST":
-		postEntityHandler(ctx, api.em)
+		postEntityHandler(ctx, api.es)
 	case "PUT":
-		putEntityHandler(ctx, api.em)
+		putEntityHandler(ctx, api.es)
 	case "DELETE":
-		deleteEntityHandler(ctx, api.em)
+		deleteEntityHandler(ctx, api.es)
 	case "GET":
-		getEntityHandler(ctx, api.em)
+		getEntityHandler(ctx, api.es)
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -104,13 +104,13 @@ func (api *API) entitiesHandler(ctx router.HTTPContext) {
 	// Handle the request.
 	switch ctx.Request.Method {
 	case "POST":
-		postEntitiesHandler(ctx, api.em)
+		postEntitiesHandler(ctx, api.es)
 	case "PUT":
-		putEntitiesHandler(ctx, api.em)
+		putEntitiesHandler(ctx, api.es)
 	case "DELETE":
-		deleteEntitiesHandler(ctx, api.em)
+		deleteEntitiesHandler(ctx, api.es)
 	case "GET":
-		getEntitiesHandler(ctx, api.em)
+		getEntitiesHandler(ctx, api.es)
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -157,9 +157,13 @@ func (api *API) changesHandler(ctx router.HTTPContext) {
 			return
 		}
 
-		f := api.ff.Make(wsConn) // make a feed
-		f.Start()                // start the feed
-		f.Wait()                 // wait for the feed to finish
+		// Create and run a feed.
+		f := api.ff.MakeWS(wsConn)
+		err = f.Run()
+		if err != nil {
+			ctx.APIError(router.ErrInternal, err.Error())
+			return
+		}
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -167,7 +171,7 @@ func (api *API) changesHandler(ctx router.HTTPContext) {
 
 // ============================== HELPER FUNCTIONS ============================== //
 
-func postEntityHandler(ctx router.HTTPContext, em entity.Manager) {
+func postEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: request entity type")
 		return
@@ -192,7 +196,7 @@ func postEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 		}
 	}
 
-	ids, err := em.CreateEntities(requestEntityType, []etre.Entity{e}, ctx.Username())
+	ids, err := es.CreateEntities(requestEntityType, []etre.Entity{e}, ctx.Username())
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			ctx.APIError(router.ErrInternal, "Error creating entity: %s", err)
@@ -212,7 +216,7 @@ func postEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func getEntityHandler(ctx router.HTTPContext, em entity.Manager) {
+func getEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing params")
 		return
@@ -235,7 +239,7 @@ func getEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 
 	q := queryForId(entityId)
 
-	entities, err := em.ReadEntities(requestEntityType, q)
+	entities, err := es.ReadEntities(requestEntityType, q)
 	if err != nil {
 		if _, ok := err.(entity.ErrRead); ok {
 			ctx.APIError(router.ErrInternal, "Error reading entity: %s", err)
@@ -260,7 +264,7 @@ func getEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func putEntityHandler(ctx router.HTTPContext, em entity.Manager) {
+func putEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing params")
 		return
@@ -290,7 +294,7 @@ func putEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 
 	q := queryForId(entityId)
 
-	entities, err := em.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
+	entities, err := es.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
 	if err != nil {
 		if _, ok := err.(entity.ErrUpdate); ok {
 			ctx.APIError(router.ErrInternal, "Error updating entity: %s", err)
@@ -310,7 +314,7 @@ func putEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func deleteEntityHandler(ctx router.HTTPContext, em entity.Manager) {
+func deleteEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing params")
 		return
@@ -332,7 +336,7 @@ func deleteEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 
 	q := queryForId(entityId)
 
-	entities, err := em.DeleteEntities(requestEntityType, q, ctx.Username())
+	entities, err := es.DeleteEntities(requestEntityType, q, ctx.Username())
 	if err != nil {
 		if _, ok := err.(entity.ErrDelete); ok {
 			ctx.APIError(router.ErrInternal, "Error deleting entity: %s", err)
@@ -352,7 +356,7 @@ func deleteEntityHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func postEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
+func postEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param")
 		return
@@ -383,7 +387,7 @@ func postEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 		}
 	}
 
-	ids, err := em.CreateEntities(requestEntityType, entities, ctx.Username())
+	ids, err := es.CreateEntities(requestEntityType, entities, ctx.Username())
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			ctx.APIError(router.ErrInternal, "Error creating entities: %s", err)
@@ -403,7 +407,7 @@ func postEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func getEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
+func getEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: id")
 		return
@@ -430,7 +434,7 @@ func getEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 		return
 	}
 
-	entities, err := em.ReadEntities(requestEntityType, q)
+	entities, err := es.ReadEntities(requestEntityType, q)
 	if err != nil {
 		if _, ok := err.(entity.ErrRead); ok {
 			ctx.APIError(router.ErrInternal, "Error reading entities: %s", err)
@@ -456,7 +460,7 @@ func getEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func putEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
+func putEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: id")
 		return
@@ -491,7 +495,7 @@ func putEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 		return
 	}
 
-	entities, err := em.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
+	entities, err := es.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
 	if err != nil {
 		if _, ok := err.(entity.ErrUpdate); ok {
 			ctx.APIError(router.ErrInternal, "Error updating entities: %s", err)
@@ -510,7 +514,7 @@ func putEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func deleteEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
+func deleteEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: id")
 		return
@@ -537,7 +541,7 @@ func deleteEntitiesHandler(ctx router.HTTPContext, em entity.Manager) {
 		return
 	}
 
-	entities, err := em.DeleteEntities(requestEntityType, q, ctx.Username())
+	entities, err := es.DeleteEntities(requestEntityType, q, ctx.Username())
 	if err != nil {
 		if _, ok := err.(entity.ErrDelete); ok {
 			ctx.APIError(router.ErrInternal, "Error deleting entities: %s", err)

@@ -7,7 +7,7 @@ import (
 	"github.com/square/etre/query"
 )
 
-type EntityManager struct {
+type EntityStore struct {
 	DeleteEntityLabelFunc func(string, string, string) (etre.Entity, error)
 	CreateEntitiesFunc    func(string, []etre.Entity, string) ([]string, error)
 	ReadEntitiesFunc      func(string, query.Query) ([]etre.Entity, error)
@@ -15,37 +15,37 @@ type EntityManager struct {
 	DeleteEntitiesFunc    func(string, query.Query, string) ([]etre.Entity, error)
 }
 
-func (e *EntityManager) DeleteEntityLabel(entityType string, id string, label string) (etre.Entity, error) {
-	if e.DeleteEntityLabelFunc != nil {
-		return e.DeleteEntityLabelFunc(entityType, id, label)
+func (s *EntityStore) DeleteEntityLabel(entityType string, id string, label string) (etre.Entity, error) {
+	if s.DeleteEntityLabelFunc != nil {
+		return s.DeleteEntityLabelFunc(entityType, id, label)
 	}
 	return nil, nil
 }
 
-func (e *EntityManager) CreateEntities(entityType string, entities []etre.Entity, user string) ([]string, error) {
-	if e.CreateEntitiesFunc != nil {
-		return e.CreateEntitiesFunc(entityType, entities, user)
+func (s *EntityStore) CreateEntities(entityType string, entities []etre.Entity, user string) ([]string, error) {
+	if s.CreateEntitiesFunc != nil {
+		return s.CreateEntitiesFunc(entityType, entities, user)
 	}
 	return nil, nil
 }
 
-func (e *EntityManager) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
-	if e.ReadEntitiesFunc != nil {
-		return e.ReadEntitiesFunc(entityType, q)
+func (s *EntityStore) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
+	if s.ReadEntitiesFunc != nil {
+		return s.ReadEntitiesFunc(entityType, q)
 	}
 	return nil, nil
 }
 
-func (e *EntityManager) UpdateEntities(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
-	if e.UpdateEntitiesFunc != nil {
-		return e.UpdateEntitiesFunc(t, q, u, user)
+func (s *EntityStore) UpdateEntities(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
+	if s.UpdateEntitiesFunc != nil {
+		return s.UpdateEntitiesFunc(t, q, u, user)
 	}
 	return nil, nil
 }
 
-func (e *EntityManager) DeleteEntities(t string, q query.Query, user string) ([]etre.Entity, error) {
-	if e.DeleteEntitiesFunc != nil {
-		return e.DeleteEntitiesFunc(t, q, user)
+func (s *EntityStore) DeleteEntities(t string, q query.Query, user string) ([]etre.Entity, error) {
+	if s.DeleteEntitiesFunc != nil {
+		return s.DeleteEntitiesFunc(t, q, user)
 	}
 	return nil, nil
 }

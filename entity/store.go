@@ -36,16 +36,15 @@ import (
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/db"
-	"github.com/square/etre/feed"
 	"github.com/square/etre/query"
 
-	"github.com/satori/go.uuid"
+	"github.com/rs/xid"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
-// Manager interface has methods needed to do CRUD operations on entities.
-type Manager interface {
+// Store interface has methods needed to do CRUD operations on entities.
+type Store interface {
 	// Managing labels for a single entity
 	DeleteEntityLabel(string, string, string) (etre.Entity, error)
 
@@ -56,14 +55,14 @@ type Manager interface {
 	DeleteEntities(string, query.Query, string) ([]etre.Entity, error)
 }
 
-// manager struct stores all info needed to connect and query a mongo instance. It
-// implements the the Manager interface.
-type manager struct {
+// store struct stores all info needed to connect and query a mongo instance. It
+// implements the the Store interface.
+type store struct {
 	conn        db.Connector
 	database    string
 	entityTypes []string
-	cdcm        cdc.Manager
-	dm          feed.DelayManager
+	cdcs        cdc.Store
+	d           cdc.Delayer
 }
 
 // Map of Kubernetes Selection Operator to mongoDB Operator.
@@ -85,8 +84,8 @@ var operatorMap = map[string]string{
 
 var reservedNames = []string{"entity", "entities"}
 
-// NewManager creates a Manager.
-func NewManager(conn db.Connector, database string, entityTypes []string, cdcm cdc.Manager, dm feed.DelayManager) (Manager, error) {
+// NewStore creates a Store.
+func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc.Store, d cdc.Delayer) (Store, error) {
 	// Ensure no entityType name is a reserved word
 	for _, r := range reservedNames {
 		for _, c := range entityTypes {
@@ -96,12 +95,12 @@ func NewManager(conn db.Connector, database string, entityTypes []string, cdcm c
 		}
 	}
 
-	return &manager{
+	return &store{
 		conn:        conn,
 		database:    database,
 		entityTypes: entityTypes,
-		cdcm:        cdcm,
-		dm:          dm,
+		cdcs:        cdcs,
+		d:           d,
 	}, nil
 }
 
@@ -111,21 +110,21 @@ func NewManager(conn db.Connector, database string, entityTypes []string, cdcm c
 //
 //     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
 //
-func (m *manager) DeleteEntityLabel(entityType string, id string, label string) (etre.Entity, error) {
+func (s *store) DeleteEntityLabel(entityType string, id string, label string) (etre.Entity, error) {
 	// @todo: make sure this is properly creating CDC events once it starts getting used.
 	return nil, fmt.Errorf("DeleteEntityLabel function needs more work before it can be used")
 
-	if !validEntityType(m, entityType) {
-		return nil, fmt.Errorf("Invalid entityType name: %s. Valid entityType names: %s.", entityType, m.entityTypes)
+	if !validEntityType(s, entityType) {
+		return nil, fmt.Errorf("Invalid entityType name: %s. Valid entityType names: %s.", entityType, s.entityTypes)
 	}
 
-	s, err := m.conn.Connect()
+	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer ms.Close()
 
-	c := s.DB(m.database).C(entityType)
+	c := ms.DB(s.database).C(entityType)
 
 	// ReturnNew: false is the default option. Will return the original document
 	// before update was performed.
@@ -161,28 +160,28 @@ func (m *manager) DeleteEntityLabel(entityType string, id string, label string) 
 // entities inserted. Since the entities were inserted in order (guranteed by
 // inserting one by one), caller should only return subset of entities that
 // failed to be inserted.
-func (m *manager) CreateEntities(entityType string, entities []etre.Entity, user string) ([]string, error) {
-	if !validEntityType(m, entityType) {
-		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
+func (s *store) CreateEntities(entityType string, entities []etre.Entity, user string) ([]string, error) {
+	if !validEntityType(s, entityType) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, s.entityTypes))
 	}
 
-	s, err := m.conn.Connect()
+	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer ms.Close()
 
-	c := s.DB(m.database).C(entityType)
+	c := ms.DB(s.database).C(entityType)
 
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
-	changeId := uuid.NewV4().String()
-	err = m.dm.BeginChange(changeId)
+	changeId := xid.New().String()
+	err = s.d.BeginChange(changeId)
 	if err != nil {
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer func() { m.dm.EndChange(changeId) }()
+	defer func() { s.d.EndChange(changeId) }()
 
 	// A slice of IDs we generate to insert along with entities into DB
 	insertedObjectIDs := make([]string, 0, len(entities))
@@ -223,7 +222,7 @@ func (m *manager) CreateEntities(entityType string, entities []etre.Entity, user
 			SetOp:      setOp,
 			SetSize:    setSize,
 		}
-		err = m.cdcm.CreateEvent(event)
+		err = s.cdcs.Write(event)
 		if err != nil {
 			return insertedObjectIDs, err
 		}
@@ -235,20 +234,20 @@ func (m *manager) CreateEntities(entityType string, entities []etre.Entity, user
 // ReadEntities queries the db and returns a slice of Entity objects if
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
-func (m *manager) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
-	if !validEntityType(m, entityType) {
-		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, m.entityTypes))
+func (s *store) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
+	if !validEntityType(s, entityType) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, s.entityTypes))
 	}
 
 	mgoQuery := translateQuery(q)
 
-	s, err := m.conn.Connect()
+	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer ms.Close()
 
-	c := s.DB(m.database).C(entityType)
+	c := ms.DB(s.database).C(entityType)
 
 	var entities []etre.Entity
 	err = c.Find(mgoQuery).All(&entities)
@@ -274,20 +273,20 @@ func (m *manager) ReadEntities(entityType string, q query.Query) ([]etre.Entity,
 //
 //   diffs, err := c.UpdateEntities(q, update)
 //
-func (m *manager) UpdateEntities(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
-	if !validEntityType(m, t) {
-		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, m.entityTypes))
+func (s *store) UpdateEntities(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
+	if !validEntityType(s, t) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, s.entityTypes))
 	}
 
 	mgoQuery := translateQuery(q)
 
-	s, err := m.conn.Connect()
+	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer ms.Close()
 
-	entityType := s.DB(m.database).C(t)
+	entityType := ms.DB(s.database).C(t)
 
 	// We can only call update on one doc at a time, so we generate a slice of IDs
 	// for docs to update.
@@ -311,13 +310,13 @@ func (m *manager) UpdateEntities(t string, q query.Query, u etre.Entity, user st
 
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
-	changeId := uuid.NewV4().String()
-	err = m.dm.BeginChange(changeId)
+	changeId := xid.New().String()
+	err = s.d.BeginChange(changeId)
 	if err != nil {
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer func() { m.dm.EndChange(changeId) }()
+	defer func() { s.d.EndChange(changeId) }()
 
 	// diffs is a slice made up of a diff for each doc updated
 	diffs := make([]etre.Entity, 0, len(ids))
@@ -359,7 +358,7 @@ func (m *manager) UpdateEntities(t string, q query.Query, u etre.Entity, user st
 			SetOp:      setOp,
 			SetSize:    setSize,
 		}
-		err = m.cdcm.CreateEvent(event)
+		err = s.cdcs.Write(event)
 		if err != nil {
 			return diffs, err
 		}
@@ -376,20 +375,20 @@ func (m *manager) UpdateEntities(t string, q query.Query, u etre.Entity, user st
 // Returns a slice of successfully deleted entities an error if there is one.
 // For example, if 4 entities were supposed to be deleted and 3 are ok and the
 // 4th fails, a slice with 3 deleted entities and an error will be returned.
-func (m *manager) DeleteEntities(t string, q query.Query, user string) ([]etre.Entity, error) {
-	if !validEntityType(m, t) {
-		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, m.entityTypes))
+func (s *store) DeleteEntities(t string, q query.Query, user string) ([]etre.Entity, error) {
+	if !validEntityType(s, t) {
+		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", t, s.entityTypes))
 	}
 
 	mgoQuery := translateQuery(q)
 
-	s, err := m.conn.Connect()
+	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer ms.Close()
 
-	entityType := s.DB(m.database).C(t)
+	entityType := ms.DB(s.database).C(t)
 
 	// List of IDs for docs to update
 	ids, err := idsForQuery(entityType, mgoQuery)
@@ -410,13 +409,13 @@ func (m *manager) DeleteEntities(t string, q query.Query, user string) ([]etre.E
 
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
-	changeId := uuid.NewV4().String()
-	err = m.dm.BeginChange(changeId)
+	changeId := xid.New().String()
+	err = s.d.BeginChange(changeId)
 	if err != nil {
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer func() { m.dm.EndChange(changeId) }()
+	defer func() { s.d.EndChange(changeId) }()
 
 	// Query for each document and delete it
 	for _, id := range ids {
@@ -440,7 +439,7 @@ func (m *manager) DeleteEntities(t string, q query.Query, user string) ([]etre.E
 			Old:        &deletedEntity,
 			New:        nil,
 		}
-		err = m.cdcm.CreateEvent(event)
+		err = s.cdcs.Write(event)
 		if err != nil {
 			return deletedEntities, err
 		}
@@ -505,8 +504,8 @@ func selectMap(e etre.Entity) map[string]int {
 }
 
 // validEntityType checks if the entityType passed in is in the entityType list of the connector
-func validEntityType(m *manager, c string) bool {
-	for _, entityType := range m.entityTypes {
+func validEntityType(s *store, c string) bool {
+	for _, entityType := range s.entityTypes {
 		if c != entityType {
 			return false
 		}

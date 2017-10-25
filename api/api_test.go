@@ -12,8 +12,6 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
-	//	"github.com/square/etre/db"
-	//"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/router"
 	"github.com/square/etre/test"
@@ -33,7 +31,7 @@ var entityType = "nodes"
 // //////////////////////////////////////////////////////////////////////////
 
 func TestPostEntityHandlerSuccessful(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		CreateEntitiesFunc: func(entityType string, entities []etre.Entity, username string) ([]string, error) {
 			for _, entity := range entities {
 				if entity["_id"].(string) == "id3" {
@@ -43,7 +41,7 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 			return []string{}, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := "id3"
@@ -71,7 +69,7 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestPostEntityHandlerPayloadError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	url := defaultServer.URL + api.API_ROOT + "entity/" + entityType
@@ -98,7 +96,7 @@ func TestPostEntityHandlerPayloadError(t *testing.T) {
 }
 
 func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// arrays are not supported value types
@@ -131,13 +129,13 @@ func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
 
 func TestGetEntityHandlerSuccessful(t *testing.T) {
 	var actualQuery query.Query
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
 			actualQuery = q
 			return []etre.Entity{seedEntity0}, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntity0
@@ -176,7 +174,7 @@ func TestGetEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestGetEntityHandlerMissingIDError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit ID from URL
@@ -186,12 +184,12 @@ func TestGetEntityHandlerMissingIDError(t *testing.T) {
 }
 
 func TestGetEntityHandlerNotFoundError(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
 			return nil, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// id that we have not inserted into db
@@ -218,12 +216,12 @@ func TestGetEntityHandlerNotFoundError(t *testing.T) {
 }
 
 func TestPutEntityHandlerSuccessful(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		UpdateEntitiesFunc: func(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
 			return []etre.Entity{etre.Entity{"_id": seedEntity0["_id"], "foo": seedEntity0["foo"]}}, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	id := seedEntity0["_id"].(string)
@@ -252,7 +250,7 @@ func TestPutEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestPutEntityHandlerMissingIDError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit ID from URL
@@ -262,7 +260,7 @@ func TestPutEntityHandlerMissingIDError(t *testing.T) {
 }
 
 func TestPutEntityHandlerPayloadError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	id := seedEntity0["_id"].(string)
@@ -291,12 +289,12 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 }
 
 func TestDeleteEntityHandlerSuccessful(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		DeleteEntitiesFunc: func(t string, q query.Query, user string) ([]etre.Entity, error) {
 			return []etre.Entity{seedEntity0}, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntity0
@@ -322,7 +320,7 @@ func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 }
 
 func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit ID from URL
@@ -336,7 +334,7 @@ func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
 // //////////////////////////////////////////////////////////////////////////
 
 func TestPostEntitiesHandlerSuccessful(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		CreateEntitiesFunc: func(entityType string, entities []etre.Entity, username string) ([]string, error) {
 			var r1Found bool
 			var r2Found bool
@@ -354,7 +352,7 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 			return []string{}, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// seedEntities are id{0,1,2}
@@ -384,7 +382,7 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestPostEntitiesHandlerPayloadError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	url := defaultServer.URL + api.API_ROOT + "entities/" + entityType
@@ -411,7 +409,7 @@ func TestPostEntitiesHandlerPayloadError(t *testing.T) {
 }
 
 func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	yArr := []string{"foo", "bar", "baz"}
@@ -447,13 +445,13 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 
 func TestGetEntitiesHandlerSuccessful(t *testing.T) {
 	var actualQuery query.Query
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
 			actualQuery = q
 			return seedEntities, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntities
@@ -494,7 +492,7 @@ func TestGetEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query param from URL
@@ -503,8 +501,8 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 	testBadRequestError(t, "GET", url, expectErr)
 }
 
-func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+func TestGetEntitiesHandleresptyQueryError(t *testing.T) {
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query string from URL
@@ -515,12 +513,12 @@ func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
 }
 
 func TestGetEntitiesHandlerNotFoundError(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		ReadEntitiesFunc: func(entityType string, q query.Query) ([]etre.Entity, error) {
 			return nil, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	labelSelector := "x=9999"
@@ -551,12 +549,12 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 		etre.Entity{"_id": seedEntity2["_id"], "foo": seedEntity2["foo"]},
 	}
 
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		UpdateEntitiesFunc: func(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
 			return expect, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	query := url.QueryEscape("x>0")
@@ -584,7 +582,7 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query param from URL
@@ -594,7 +592,7 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query string from URL
@@ -604,7 +602,7 @@ func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
 }
 
 func TestPutEntitiesHandlerPayloadError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	query := url.QueryEscape("x>0")
@@ -633,12 +631,12 @@ func TestPutEntitiesHandlerPayloadError(t *testing.T) {
 }
 
 func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
-	em := &mock.EntityManager{
+	es := &mock.EntityStore{
 		DeleteEntitiesFunc: func(t string, q query.Query, user string) ([]etre.Entity, error) {
 			return seedEntities, nil
 		},
 	}
-	defaultAPI := api.NewAPI(&router.Router{}, em, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, es, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	expect := seedEntities
@@ -666,7 +664,7 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 }
 
 func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query param from URL
@@ -675,8 +673,8 @@ func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
 	testBadRequestError(t, "DELETE", url, expectErr)
 }
 
-func TestDeleteEntitiesHandlerEmptyQueryError(t *testing.T) {
-	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityManager{}, &mock.FeedFactory{})
+func TestDeleteEntitiesHandleresptyQueryError(t *testing.T) {
+	defaultAPI := api.NewAPI(&router.Router{}, &mock.EntityStore{}, &mock.FeedFactory{})
 	defaultServer := httptest.NewServer(defaultAPI.Router)
 
 	// Omit query string from URL

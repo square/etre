@@ -3,7 +3,8 @@
 package mock
 
 import (
-	"github.com/square/etre/feed"
+	"github.com/square/etre"
+	"github.com/square/etre/cdc"
 
 	"github.com/gorilla/websocket"
 )
@@ -33,12 +34,20 @@ func (f *Feed) Stop() {
 }
 
 type FeedFactory struct {
-	MakeFunc func(*websocket.Conn) feed.Feed
+	MakeWSFunc   func(*websocket.Conn) cdc.Feed
+	MakeChanFunc func(int64, int) (cdc.Feed, <-chan etre.CDCEvent)
 }
 
-func (ff *FeedFactory) Make(wsConn *websocket.Conn) feed.Feed {
-	if ff.MakeFunc != nil {
-		return ff.MakeFunc(wsConn)
+func (ff *FeedFactory) MakeWS(wsConn *websocket.Conn) cdc.Feed {
+	if ff.MakeWSFunc != nil {
+		return ff.MakeWSFunc(wsConn)
 	}
 	return nil
+}
+
+func (ff *FeedFactory) MakeChan(startTs int64, clientBufferSize int) (cdc.Feed, <-chan etre.CDCEvent) {
+	if ff.MakeChanFunc != nil {
+		return ff.MakeChanFunc(startTs, clientBufferSize)
+	}
+	return nil, nil
 }

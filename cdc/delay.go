@@ -1,6 +1,6 @@
 // Copyright 2017, Square, Inc.
 
-package feed
+package cdc
 
 import (
 	"os"
@@ -12,23 +12,38 @@ import (
 	"github.com/square/etre/db"
 )
 
-// A DelayManager keeps track of the maximum upper-bound timestamp that is safe
+// A Delayer keeps track of the maximum upper-bound timestamp that is safe
 // to use when querying for CDC events. As long as the maximum upper-bound
 // timestamp used, queries are guaranteed to return consistent data. This
-// guarantee doesn't apply if the DelayManager timestamp is not used.
-type DelayManager interface {
+// guarantee doesn't apply if the Delayer timestamp is not used.
+//
+// The Delyer is a singleton. Its need arises from the fact that there is
+// no guarantee that CDC events are written in the order that they happened
+// in (entities and CDC events are not written in a single transaction).
+// For example, let's say event1 happened before event2, but event2 is
+// written to the datastore before event1 is. Until event1 is written, the
+// Delayer is responsible for returning a timestamp that is LESS than the
+// starting time for both events1 and events2. Once both events have been
+// written, it will return a timestamp that is GREATER than or equal to the
+// completion timestamp of both events. This ensures that any queries to the
+// Store that use this timestamp as the maximum upper-bound timestamp will
+// never get event2 without getting event1 first.
+type Delayer interface {
 	// Returns the maximum upper-bound timetstamp that is safe to use when
 	// querying for CDC events.
 	MaxTimestamp() (int64, error)
 
-	// Marks a change as having started.
+	// BeginChange marks an entity change as having started. The only
+	// argument it takes is a string (id) that must uniquely identify
+	// the change.
 	BeginChange(changeId string) error
 
-	// Marks a change as having ended.
+	// EndChange takes the id of an entity change and marks is as having
+	// ended.
 	EndChange(changeId string) error
 }
 
-// Delay represents the maximum upper-bound timestamp for a given host.
+// Delay represents the maximum upper-bound timestamp for a given Etre instance.
 type Delay struct {
 	Hostname string `json:"hostname"`
 	Ts       int64  `json:"ts"`
@@ -50,9 +65,9 @@ type activeChanges struct {
 	all  map[string]*activeChange // id => activeChange
 }
 
-// dynamicDelayManager implements the DelayManager interface. It dynamically
+// dynamicDelayer implements the Delayer interface. It dynamically
 // updates the maximum upper-bound timestamp.
-type dynamicDelayManager struct {
+type dynamicDelayer struct {
 	conn       db.Connector
 	database   string
 	collection string
@@ -62,24 +77,26 @@ type dynamicDelayManager struct {
 	*sync.Mutex
 }
 
-// staticDelayManager implements the DelayManager interface. It uses a static
+// staticDelayer implements the Delayer interface. It uses a static
 // delay for the maximum uppoer-bound timestamp.
-type staticDelayManager struct {
+type staticDelayer struct {
 	delay int // millisecond delay behind time.Now()
 }
 
-// NewDynamicDelayManager returns a DelayManager that dynamically updates
-// the maximum upper-bound timestamp. It does this by keeping track of all
-// active API changes on each Etre instance and setting the maximum upper-
-// bound timestamp to be equal to the start time of the oldest API change
-// accross all Etre instances.
-func NewDynamicDelayManager(conn db.Connector, database, collection string) (DelayManager, error) {
+// NewDynamicDelayer returns a Delayer that dynamically updates the maximum
+// upper-bound timestamp. It keeps track of all active entity changes (inserts,
+// updates, deletes) on this Etre instance and continually writes the start
+// time of the oldest active change to a persistent data store. Each Etre
+// instance will maintain its own "oldest active change" record in the data
+// store. The max upper-bound timestamp that is safe to use is calculated by
+// querying the smallest "oldest active change" value from the data store.
+func NewDynamicDelayer(conn db.Connector, database, collection string) (Delayer, error) {
 	h, err := os.Hostname()
 	if err != nil {
 		return nil, err
 	}
 
-	return &dynamicDelayManager{
+	return &dynamicDelayer{
 		conn:       conn,
 		database:   database,
 		collection: collection,
@@ -91,7 +108,7 @@ func NewDynamicDelayManager(conn db.Connector, database, collection string) (Del
 	}, nil
 }
 
-func (dd *dynamicDelayManager) MaxTimestamp() (int64, error) {
+func (dd *dynamicDelayer) MaxTimestamp() (int64, error) {
 	s, err := dd.conn.Connect()
 	if err != nil {
 		return 0, err
@@ -114,7 +131,7 @@ func (dd *dynamicDelayManager) MaxTimestamp() (int64, error) {
 	return delays[0].Ts, nil
 }
 
-func (dd *dynamicDelayManager) BeginChange(changeId string) error {
+func (dd *dynamicDelayer) BeginChange(changeId string) error {
 	r := activeChange{
 		id: changeId,
 		ts: CurrentTimestamp(),
@@ -163,7 +180,7 @@ func (dd *dynamicDelayManager) BeginChange(changeId string) error {
 	return nil
 }
 
-func (dd *dynamicDelayManager) EndChange(changeId string) error {
+func (dd *dynamicDelayer) EndChange(changeId string) error {
 	dd.Lock()
 	defer dd.Unlock()
 
@@ -221,26 +238,26 @@ func (dd *dynamicDelayManager) EndChange(changeId string) error {
 	return nil
 }
 
-// NewStaticDelayManager returns a DelayManager that uses a static value
+// NewStaticDelayer returns a Delayer that uses a static value
 // for determining the maximum upper-bound timestamp. For example, if one
 // is created with the delay value of 5000 milliseconds, it will always
 // return time.Now() - 5000ms as the maximum upper-bound timestamp.
-func NewStaticDelayManager(delay int) (DelayManager, error) {
-	return &staticDelayManager{
+func NewStaticDelayer(delay int) (Delayer, error) {
+	return &staticDelayer{
 		delay: delay,
 	}, nil
 }
 
-func (sd *staticDelayManager) MaxTimestamp() (int64, error) {
+func (sd *staticDelayer) MaxTimestamp() (int64, error) {
 	return (CurrentTimestamp()) - int64(sd.delay), nil
 }
 
-func (sd *staticDelayManager) BeginChange(changeId string) error {
+func (sd *staticDelayer) BeginChange(changeId string) error {
 	// noop
 	return nil
 }
 
-func (sd *staticDelayManager) EndChange(changeId string) error {
+func (sd *staticDelayer) EndChange(changeId string) error {
 	// noop
 	return nil
 }

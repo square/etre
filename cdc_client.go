@@ -105,9 +105,8 @@ func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 
 	// Send start control message
 	start := map[string]interface{}{
-		"control":     "start",
-		"startTs":     (startTs.UnixNano() / int64(time.Millisecond)) - 120000,
-		"chunkWindow": 3600,
+		"control": "start",
+		"startTs": (startTs.UnixNano() / int64(time.Millisecond)),
 		// @todo: checkpoint
 	}
 	c.debug("sending start")

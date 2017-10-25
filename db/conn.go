@@ -11,14 +11,12 @@ import (
 	"gopkg.in/mgo.v2"
 )
 
-// A Connector manages a pool of mongo connections.
+// A Connector provides a database connection. It encapsulates logic about
+// where and how to connect, like the TLS config, so that code using a
+// Connector does not need to know this logic. Implementations can also vary
+// wrt connection pooling.
 type Connector interface {
-	// Connect creates a session to mongo. Subsequent calls to Connect will
-	// return a copy of the original session. Callers should close these
-	// copied sessions (not the Connector itself) when they are done using them.
 	Connect() (*mgo.Session, error)
-
-	// Close closes the Connector's mongo session.
 	Close()
 }
 
