@@ -8,40 +8,51 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/square/etre/db"
+	"github.com/square/etre"
+	"github.com/square/etre/cdc"
+	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/router"
+
+	"github.com/gorilla/websocket"
 	"gopkg.in/mgo.v2/bson"
 )
 
 const (
 	API_ROOT                    = "/api/v1/"
-	REQUEST_ID_PATTERN          = "([A-Za-z0-9]+)"
+	ENTITY_ID_PATTERN           = "([A-Za-z0-9]+)"
 	REQUEST_LABEL_PATTERN       = "([A-Za-z0-9]+)"
 	REQUEST_QUERY_PATTERN       = "([\\s\\S]*)"
 	REQUEST_ENTITY_TYPE_PATTERN = "([\\s\\S]*)"
 )
 
 // API provides controllers for endpoints it registers with a router.
+//
+// @todo: instead of writing our own router, use the echo package
+// (https://github.com/labstack/echo). That should help make the API
+// code a lot more concise.
 type API struct {
-	Router      *router.Router
-	DbConnector db.Connector
+	Router *router.Router
+	es     entity.Store
+	ff     cdc.FeedFactory
 }
 
 // NewAPI makes a new API.
-func NewAPI(router *router.Router, c db.Connector) *API {
+func NewAPI(router *router.Router, es entity.Store, ff cdc.FeedFactory) *API {
 	api := &API{
-		Router:      router,
-		DbConnector: c,
+		Router: router,
+		es:     es,
+		ff:     ff,
 	}
 
 	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN, api.entityHandler, "api-entity")
-	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN+"/"+REQUEST_ID_PATTERN, api.entityHandler, "api-entity")
-	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN+"/"+REQUEST_ID_PATTERN+"/labels", api.entityLabelsHandler, "api-entity-labels")
-	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN+"/"+REQUEST_ID_PATTERN+"/labels"+REQUEST_LABEL_PATTERN, api.entityDeleteLabelHandler, "api-entity-delete-label")
+	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN+"/"+ENTITY_ID_PATTERN, api.entityHandler, "api-entity")
+	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN+"/"+ENTITY_ID_PATTERN+"/labels", api.entityLabelsHandler, "api-entity-labels")
+	api.Router.AddRoute(API_ROOT+"entity/"+REQUEST_ENTITY_TYPE_PATTERN+"/"+ENTITY_ID_PATTERN+"/labels"+REQUEST_LABEL_PATTERN, api.entityDeleteLabelHandler, "api-entity-delete-label")
 	api.Router.AddRoute(API_ROOT+"entities/"+REQUEST_ENTITY_TYPE_PATTERN, api.entitiesHandler, "api-entities")
 	api.Router.AddRoute(API_ROOT+"query", api.queryHandler, "query-entity")
 	api.Router.AddRoute(API_ROOT+"stats", api.statsHandler, "api-stats")
+	api.Router.AddRoute(API_ROOT+"changes", api.changesHandler, "api-changes")
 
 	return api
 }
@@ -51,15 +62,16 @@ func NewAPI(router *router.Router, c db.Connector) *API {
 // {POST,GET,PUT,DELETE} /entity/{_id}
 // Managing a single entity
 func (api *API) entityHandler(ctx router.HTTPContext) {
+	// Handle the request.
 	switch ctx.Request.Method {
 	case "POST":
-		postEntityHandler(ctx, api.DbConnector)
-	case "GET":
-		getEntityHandler(ctx, api.DbConnector)
+		postEntityHandler(ctx, api.es)
 	case "PUT":
-		putEntityHandler(ctx, api.DbConnector)
+		putEntityHandler(ctx, api.es)
 	case "DELETE":
-		deleteEntityHandler(ctx, api.DbConnector)
+		deleteEntityHandler(ctx, api.es)
+	case "GET":
+		getEntityHandler(ctx, api.es)
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -90,15 +102,16 @@ func (api *API) entityDeleteLabelHandler(ctx router.HTTPContext) {
 // {POST,GET,PUT,DELETE} /entity/{_id}/labels/{label}
 // Manage one or more entities
 func (api *API) entitiesHandler(ctx router.HTTPContext) {
+	// Handle the request.
 	switch ctx.Request.Method {
 	case "POST":
-		postEntitiesHandler(ctx, api.DbConnector)
-	case "GET":
-		getEntitiesHandler(ctx, api.DbConnector)
+		postEntitiesHandler(ctx, api.es)
 	case "PUT":
-		putEntitiesHandler(ctx, api.DbConnector)
+		putEntitiesHandler(ctx, api.es)
 	case "DELETE":
-		deleteEntitiesHandler(ctx, api.DbConnector)
+		deleteEntitiesHandler(ctx, api.es)
+	case "GET":
+		getEntitiesHandler(ctx, api.es)
 	default:
 		ctx.UnsupportedAPIMethod()
 	}
@@ -128,9 +141,38 @@ func (api *API) statsHandler(ctx router.HTTPContext) {
 	}
 }
 
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
+// GET /changes
+// Consume change feed
+func (api *API) changesHandler(ctx router.HTTPContext) {
+	switch ctx.Request.Method {
+	case "GET":
+		// Upgrade to a WebSocket connection.
+		wsConn, err := upgrader.Upgrade(ctx.Response, ctx.Request, nil)
+		if err != nil {
+			ctx.APIError(router.ErrInternal, err.Error())
+			return
+		}
+
+		// Create and run a feed.
+		f := api.ff.MakeWS(wsConn)
+		err = f.Run()
+		if err != nil {
+			ctx.APIError(router.ErrInternal, err.Error())
+			return
+		}
+	default:
+		ctx.UnsupportedAPIMethod()
+	}
+}
+
 // ============================== HELPER FUNCTIONS ============================== //
 
-func postEntityHandler(ctx router.HTTPContext, c db.Connector) {
+func postEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: request entity type")
 		return
@@ -139,24 +181,25 @@ func postEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	requestEntityType := ctx.Arguments[1]
 
 	// Decode request body into entity var
-	var entity db.Entity
-	err := json.NewDecoder(ctx.Request.Body).Decode(&entity)
+	var e etre.Entity
+	err := json.NewDecoder(ctx.Request.Body).Decode(&e)
 	if err != nil {
 		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
 		return
 	}
 
-	ConvertFloat64ToInt(entity)
+	ConvertFloat64ToInt(e)
 
-	for k, v := range entity {
+	for k, v := range e {
 		if !validValueType(v) {
 			ctx.APIError(router.ErrBadRequest, "Key (%v) has value (%v) with invalid type (%v). Type of value must be a string or int.", k, v, reflect.TypeOf(v))
+			return
 		}
 	}
 
-	ids, err := c.CreateEntities(requestEntityType, []db.Entity{entity})
+	ids, err := es.CreateEntities(requestEntityType, []etre.Entity{e}, ctx.Username())
 	if err != nil {
-		if _, ok := err.(db.ErrCreate); ok {
+		if _, ok := err.(entity.ErrCreate); ok {
 			ctx.APIError(router.ErrInternal, "Error creating entity: %s", err)
 			return
 		} else {
@@ -174,7 +217,7 @@ func postEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func getEntityHandler(ctx router.HTTPContext, c db.Connector) {
+func getEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing params")
 		return
@@ -202,9 +245,9 @@ func getEntityHandler(ctx router.HTTPContext, c db.Connector) {
 
 	q := queryForId(entityId)
 
-	entities, err := c.ReadEntities(requestEntityType, q)
+	entities, err := es.ReadEntities(requestEntityType, q)
 	if err != nil {
-		if _, ok := err.(db.ErrRead); ok {
+		if _, ok := err.(entity.ErrRead); ok {
 			ctx.APIError(router.ErrInternal, "Error reading entity: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when reading entity: %s", err)
@@ -227,7 +270,7 @@ func getEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
+func putEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing params")
 		return
@@ -248,7 +291,7 @@ func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	requestEntityType := args[0]
 	entityId := args[1]
 
-	var requestUpdate db.Entity
+	var requestUpdate etre.Entity
 	err := json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
 	if err != nil {
 		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
@@ -262,9 +305,9 @@ func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
 
 	q := queryForId(entityId)
 
-	entities, err := c.UpdateEntities(requestEntityType, q, requestUpdate)
+	entities, err := es.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
 	if err != nil {
-		if _, ok := err.(db.ErrUpdate); ok {
+		if _, ok := err.(entity.ErrUpdate); ok {
 			ctx.APIError(router.ErrInternal, "Error updating entity: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when updating entity: %s", err)
@@ -282,7 +325,7 @@ func putEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func deleteEntityHandler(ctx router.HTTPContext, c db.Connector) {
+func deleteEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing params")
 		return
@@ -309,9 +352,9 @@ func deleteEntityHandler(ctx router.HTTPContext, c db.Connector) {
 
 	q := queryForId(entityId)
 
-	entities, err := c.DeleteEntities(requestEntityType, q)
+	entities, err := es.DeleteEntities(requestEntityType, q, ctx.Username())
 	if err != nil {
-		if _, ok := err.(db.ErrDelete); ok {
+		if _, ok := err.(entity.ErrDelete); ok {
 			ctx.APIError(router.ErrInternal, "Error deleting entity: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when deleting entity: %s", err)
@@ -329,7 +372,7 @@ func deleteEntityHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func postEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+func postEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param")
 		return
@@ -343,7 +386,7 @@ func postEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 
 	requestEntityType := args[0]
 
-	var entities []db.Entity
+	var entities []etre.Entity
 	err := json.NewDecoder(ctx.Request.Body).Decode(&entities)
 	if err != nil {
 		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
@@ -360,9 +403,9 @@ func postEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 		}
 	}
 
-	ids, err := c.CreateEntities(requestEntityType, entities)
+	ids, err := es.CreateEntities(requestEntityType, entities, ctx.Username())
 	if err != nil {
-		if _, ok := err.(db.ErrCreate); ok {
+		if _, ok := err.(entity.ErrCreate); ok {
 			ctx.APIError(router.ErrInternal, "Error creating entities: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when creating entities: %s", err)
@@ -380,7 +423,7 @@ func postEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func getEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+func getEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: id")
 		return
@@ -407,14 +450,19 @@ func getEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 		return
 	}
 
-	entities, err := c.ReadEntities(requestEntityType, q)
+	entities, err := es.ReadEntities(requestEntityType, q)
 	if err != nil {
-		if _, ok := err.(db.ErrRead); ok {
+		if _, ok := err.(entity.ErrRead); ok {
 			ctx.APIError(router.ErrInternal, "Error reading entities: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when reading entities: %s", err)
 		}
 
+		return
+	}
+
+	if entities == nil {
+		ctx.APIError(router.ErrNotFound, "No entities match query: %s", requestLabelSelector)
 		return
 	}
 
@@ -428,7 +476,7 @@ func getEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func putEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+func putEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: id")
 		return
@@ -456,21 +504,20 @@ func putEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 	}
 
 	// Decode request update
-	var requestUpdate db.Entity
+	var requestUpdate etre.Entity
 	err = json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
 	if err != nil {
 		ctx.APIError(router.ErrInternal, "Can't decode request body (error: %s)", err)
 		return
 	}
 
-	entities, err := c.UpdateEntities(requestEntityType, q, requestUpdate)
+	entities, err := es.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
 	if err != nil {
-		if _, ok := err.(db.ErrUpdate); ok {
+		if _, ok := err.(entity.ErrUpdate); ok {
 			ctx.APIError(router.ErrInternal, "Error updating entities: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when updating entities: %s", err)
 		}
-
 		return
 	}
 
@@ -483,7 +530,7 @@ func putEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 	fmt.Fprintln(ctx.Response, string(out))
 }
 
-func deleteEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
+func deleteEntitiesHandler(ctx router.HTTPContext, es entity.Store) {
 	if len(ctx.Arguments) != 2 {
 		ctx.APIError(router.ErrMissingParam, "Missing param: id")
 		return
@@ -510,9 +557,9 @@ func deleteEntitiesHandler(ctx router.HTTPContext, c db.Connector) {
 		return
 	}
 
-	entities, err := c.DeleteEntities(requestEntityType, q)
+	entities, err := es.DeleteEntities(requestEntityType, q, ctx.Username())
 	if err != nil {
-		if _, ok := err.(db.ErrDelete); ok {
+		if _, ok := err.(entity.ErrDelete); ok {
 			ctx.APIError(router.ErrInternal, "Error deleting entities: %s", err)
 		} else {
 			ctx.APIError(router.ErrInternal, "Uknown error when deleting entities: %s", err)
@@ -550,7 +597,7 @@ func queryForId(id string) query.Query {
 // some float numbers and integer numbers, we cast all floats to ints. This
 // means that floats with non-zero decimal values, such as 3.14 (type float),
 // will get truncated to 3i (type int) in this case.
-func ConvertFloat64ToInt(entity db.Entity) {
+func ConvertFloat64ToInt(entity etre.Entity) {
 	for k, v := range entity {
 		if reflect.TypeOf(v).Kind() == reflect.Float64 {
 			entity[k] = int(v.(float64))

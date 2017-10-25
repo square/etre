@@ -2,5 +2,81 @@
 	"ImportPath": "github.com/square/etre",
 	"GoVersion": "go1.7",
 	"GodepVersion": "v77",
-	"Deps": []
+	"Packages": [
+		"./..."
+	],
+	"Deps": [
+		{
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "1.0.2",
+			"Rev": "a3f95b5c423586578a4e099b11a46c2479628cac"
+		},
+		{
+			"ImportPath": "github.com/go-test/deep",
+			"Rev": "f49763a6ea0a91026be26f8213bebee726b4185f"
+		},
+		{
+			"ImportPath": "github.com/golang/glog",
+			"Rev": "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
+		},
+		{
+			"ImportPath": "github.com/gorilla/websocket",
+			"Comment": "v1.0.0-21-g2d1e454",
+			"Rev": "2d1e4548da234d9cb742cc3628556fef86aafbac"
+		},
+		{
+			"ImportPath": "github.com/rs/xid",
+			"Comment": "v1.1",
+			"Rev": "02dd45c33376f85d1064355dc790dcc4850596b1"
+		},
+		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "d8f5ea21b9295e315e612b4bcf4bedea93454d4d"
+		},
+		{
+			"ImportPath": "gopkg.in/mgo.v2",
+			"Comment": "r2016.08.01-5-g3f83fa5",
+			"Rev": "3f83fa5005286a7fe593b055f0d7771a7dce4655"
+		},
+		{
+			"ImportPath": "gopkg.in/mgo.v2/bson",
+			"Comment": "r2016.08.01-5-g3f83fa5",
+			"Rev": "3f83fa5005286a7fe593b055f0d7771a7dce4655"
+		},
+		{
+			"ImportPath": "gopkg.in/mgo.v2/internal/json",
+			"Comment": "r2016.08.01-5-g3f83fa5",
+			"Rev": "3f83fa5005286a7fe593b055f0d7771a7dce4655"
+		},
+		{
+			"ImportPath": "gopkg.in/mgo.v2/internal/sasl",
+			"Comment": "r2016.08.01-5-g3f83fa5",
+			"Rev": "3f83fa5005286a7fe593b055f0d7771a7dce4655"
+		},
+		{
+			"ImportPath": "gopkg.in/mgo.v2/internal/scram",
+			"Comment": "r2016.08.01-5-g3f83fa5",
+			"Rev": "3f83fa5005286a7fe593b055f0d7771a7dce4655"
+		},
+		{
+			"ImportPath": "gopkg.in/yaml.v2",
+			"Rev": "cd8b52f8269e0feb286dfeef29f8fe4d5b397e0b"
+		},
+		{
+			"ImportPath": "k8s.io/apimachinery/pkg/labels",
+			"Rev": "dc1f89aff9a7509782bde3b68824c8043a3e58cc"
+		},
+		{
+			"ImportPath": "k8s.io/apimachinery/pkg/selection",
+			"Rev": "dc1f89aff9a7509782bde3b68824c8043a3e58cc"
+		},
+		{
+			"ImportPath": "k8s.io/apimachinery/pkg/util/sets",
+			"Rev": "dc1f89aff9a7509782bde3b68824c8043a3e58cc"
+		},
+		{
+			"ImportPath": "k8s.io/apimachinery/pkg/util/validation",
+			"Rev": "dc1f89aff9a7509782bde3b68824c8043a3e58cc"
+		}
+	]
 }

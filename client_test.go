@@ -15,6 +15,8 @@ import (
 	"github.com/square/etre"
 )
 
+// @todo: the tests here are racey (run with --race to see)
+
 var httpClient *http.Client
 
 // The httptest.Server uses these globals. setup() will reset them to defaults.
@@ -865,14 +867,14 @@ func TestCDCClient(t *testing.T) {
 	// way to be consistent is to cmp json marshaled to json marshaled.
 	v := map[string]interface{}{
 		"control": "start",
-		"startTs": startTs,
+		"startTs": startTs.UnixNano() / int64(time.Millisecond),
 	}
 	bytes, _ := json.Marshal(v)
-	t.Logf("%s", string(bytes))
 	var expectStart map[string]interface{}
 	json.Unmarshal(bytes, &expectStart)
 	if diff := deep.Equal(gotStart, expectStart); diff != nil {
-		t.Logf("%#v", gotStart)
+		t.Logf("gotStart: %#v", gotStart)
+		t.Logf("expectStart: %s", string(bytes))
 		t.Error(diff)
 	}
 

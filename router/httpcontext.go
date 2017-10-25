@@ -12,10 +12,11 @@ import (
 
 // HTTPContext is an object that is passed around during the handling of the request.
 type HTTPContext struct {
-	Response  http.ResponseWriter // HTTP Response object.
-	Request   *http.Request       // HTTP Request object.
-	Arguments []string            // Arguments matched by the wildcard portions ({}) in the URL pattern.
-	router    *Router
+	Response       http.ResponseWriter // HTTP Response object.
+	Request        *http.Request       // HTTP Request object.
+	Arguments      []string            // Arguments matched by the wildcard portions ({}) in the URL pattern.
+	router         *Router
+	usernameHeader string // the http header that the requestor's username is set in
 }
 
 // WriteJSON writes a response as the JSON object.
@@ -51,4 +52,8 @@ func (ctx HTTPContext) APIError(errorType, message string, messageArgs ...interf
 // UnsupportedAPIMethod writes an error message regarding unsupported HTTP method.
 func (ctx HTTPContext) UnsupportedAPIMethod() {
 	ctx.APIError(ErrBadRequest, "Unsupported method %s.", ctx.Request.Method)
+}
+
+func (ctx HTTPContext) Username() string {
+	return ctx.Request.Header.Get(ctx.usernameHeader)
 }
