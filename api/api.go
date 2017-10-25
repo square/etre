@@ -431,7 +431,7 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 		if err != nil {
 			n += 1
 		}
-		wr = make([]etre.WriteResult, len(diffs))
+		wr = make([]etre.WriteResult, n)
 		for i, diff := range diffs {
 			// _id from db is a bson.ObjectId, which we need to encode
 			// as a hex string.
@@ -444,7 +444,7 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 			}
 		}
 		if err != nil {
-			wr[len(wr)+1] = etre.WriteResult{
+			wr[len(wr)-1] = etre.WriteResult{
 				Error: err.Error(),
 			}
 		}
@@ -453,7 +453,7 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 		if err != nil {
 			n += 1
 		}
-		wr = make([]etre.WriteResult, len(ids))
+		wr = make([]etre.WriteResult, n)
 		for i, id := range ids {
 			wr[i] = etre.WriteResult{
 				Id:  id,
@@ -461,7 +461,7 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 			}
 		}
 		if err != nil {
-			wr[len(wr)+1] = etre.WriteResult{
+			wr[len(wr)-1] = etre.WriteResult{
 				Error: err.Error(),
 			}
 		}
@@ -519,9 +519,10 @@ func validParams(ctx *HTTPContext, needEntityId bool) bool {
 	//   "59efdf425669fc0217553d1d",
 	// }
 	ctx.EntityType = ctx.Arguments[1]
+	// @todo: validate ^
 	if needEntityId {
 		if len(ctx.Arguments) != 3 {
-			ctx.APIError(ErrMissingParam.New("missing entityId param"))
+			ctx.APIError(ErrMissingParam.New("missing entityId param, got: %s", ctx.Arguments))
 			return false
 		}
 
