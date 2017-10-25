@@ -3,6 +3,7 @@
 package entity_test
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,11 +15,11 @@ import (
 	"github.com/square/etre/test/mock"
 
 	"github.com/go-test/deep"
+	"gopkg.in/mgo.v2/bson"
 )
 
-var seedEntities = []etre.Entity{
-	etre.Entity{"_id": "aaa", "x": 2, "y": "hello", "z": []interface{}{"foo", "bar"}},
-}
+var seedEntities []etre.Entity
+var seedIds []string
 
 // @todo: make the host/port configurable
 var url = "localhost:3000"
@@ -33,18 +34,22 @@ func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 	conn = db.NewConnector(url, timeout, nil, nil)
 	_, err := conn.Connect()
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	es, err := entity.NewStore(conn, database, entityTypes, cdcm, d)
 
-	// Create test data
-	_, err = es.CreateEntities(entityType, seedEntities, username)
+	// Create test data. c.CreateEntities() modfies seedEntities: it sets
+	// _id, _type, and _rev. So reset the slice for every test.
+	seedEntities = []etre.Entity{
+		etre.Entity{"x": 2, "y": "hello", "z": []interface{}{"foo", "bar"}},
+	}
+	seedIds, err = es.CreateEntities(entityType, seedEntities, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
-			t.Errorf("Error creating entities: %s", err)
+			t.Fatalf("Error creating entities: %s", err)
 		} else {
-			t.Errorf("Uknown error when creating entities: %s", err)
+			t.Fatalf("Uknown error when creating entities: %s", err)
 		}
 	}
 
@@ -93,9 +98,9 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	defer teardown(t, es)
 
 	testData := []etre.Entity{
-		etre.Entity{"_id": "tjf", "x": 0},
-		etre.Entity{"_id": "abc", "y": 1},
-		etre.Entity{"_id": "fes", "z": 2, "setId": "343", "setOp": "something", "setSize": 1},
+		etre.Entity{"x": 0},
+		etre.Entity{"y": 1},
+		etre.Entity{"z": 2, "setId": "343", "setOp": "something", "setSize": 1},
 	}
 	// Note: teardown will delete this test data
 	ids, err := es.CreateEntities(entityType, testData, username)
@@ -117,14 +122,14 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	// Verify that the last CDC event we create is as expected.
 	expectedEvent := etre.CDCEvent{
 		EventId:    lastEvent.EventId, // can't get this anywhere else
-		EntityId:   "fes",
+		EntityId:   ids[len(ids)-1],
 		EntityType: entityType,
 		Rev:        0,
 		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
 		Op:         "i",
 		Old:        nil,
-		New:        &etre.Entity{"_id": "fes", "_rev": 0, "z": 2},
+		New:        &etre.Entity{"_id": bson.ObjectIdHex(ids[len(ids)-1]), "_rev": 0, "z": 2, "_type": "nodes"},
 		SetId:      "343",
 		SetOp:      "something",
 		SetSize:    1,
@@ -135,6 +140,8 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 }
 
 func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
+	t.Skip("need to create unique index on z on to make this fail again")
+
 	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
 	defer teardown(t, es)
 
@@ -347,7 +354,7 @@ func TestUpdateEntities(t *testing.T) {
 
 	// Create another entity to test we can update multiple documents
 	testData := []etre.Entity{
-		etre.Entity{"_id": "zzz", "x": 3, "y": "hello"},
+		etre.Entity{"x": 3, "y": "hello"},
 	}
 	// Note: teardown will delete this data
 	_, err := es.CreateEntities(entityType, testData, username)
@@ -394,16 +401,17 @@ func TestUpdateEntities(t *testing.T) {
 	}
 
 	// Verify that the last CDC event we create is as expected.
+	lastEntityId := diff[len(diff)-1]["_id"].(bson.ObjectId)
 	expectedEvent := etre.CDCEvent{
 		EventId:    lastEvent.EventId, // can't get this anywhere else
-		EntityId:   "zzz",
+		EntityId:   hex.EncodeToString([]byte(lastEntityId)),
 		EntityType: entityType,
 		Rev:        1,
 		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
 		Op:         "u",
-		Old:        &etre.Entity{"_id": "zzz", "_rev": 0, "y": "hello"},
-		New:        &etre.Entity{"_id": "zzz", "_rev": 1, "y": "goodbye"},
+		Old:        &etre.Entity{"_id": lastEntityId, "_rev": 0, "y": "hello", "_type": "nodes"},
+		New:        &etre.Entity{"_id": lastEntityId, "_rev": 1, "y": "goodbye"},
 		SetId:      "343",
 		SetOp:      "something",
 		SetSize:    1,
@@ -447,11 +455,11 @@ func TestDeleteEntities(t *testing.T) {
 	// Each entity has "a" in it so we can query for documents with "a" and
 	// delete them
 	testData := []etre.Entity{
-		etre.Entity{"_id": "ddd", "a": 1},
-		etre.Entity{"_id": "eee", "a": 1, "b": 2},
-		etre.Entity{"_id": "fff", "a": 1, "b": 2, "c": 3},
+		etre.Entity{"a": 1},
+		etre.Entity{"a": 1, "b": 2},
+		etre.Entity{"a": 1, "b": 2, "c": 3},
 	}
-	_, err := es.CreateEntities(entityType, testData, username)
+	ids, err := es.CreateEntities(entityType, testData, username)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -481,20 +489,29 @@ func TestDeleteEntities(t *testing.T) {
 	}
 
 	// Test correct entities were deleted
-	if diff := deep.Equal(actualDeletedEntities, testData); diff != nil {
+	expect := make([]etre.Entity, len(testData))
+	for i, id := range ids {
+		expect[i] = testData[i]
+		// These were set by Etre on insert:
+		expect[i]["_id"] = bson.ObjectIdHex(id)
+		expect[i]["_rev"] = 0
+		expect[i]["_type"] = entityType
+	}
+	if diff := deep.Equal(actualDeletedEntities, expect); diff != nil {
 		t.Error(diff)
 	}
 
 	// Verify that the last CDC event we create is as expected.
+	lastEntityId := actualDeletedEntities[len(actualDeletedEntities)-1]["_id"].(bson.ObjectId)
 	expectedEvent := etre.CDCEvent{
 		EventId:    lastEvent.EventId, // can't get this anywhere else
-		EntityId:   "fff",
+		EntityId:   hex.EncodeToString([]byte(lastEntityId)),
 		EntityType: entityType,
 		Rev:        1,
 		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
 		Op:         "d",
-		Old:        &etre.Entity{"_id": "fff", "_rev": 0, "a": 1, "b": 2, "c": 3},
+		Old:        &etre.Entity{"_id": lastEntityId, "_rev": 0, "a": 1, "b": 2, "c": 3, "_type": "nodes"},
 		New:        nil,
 	}
 	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {

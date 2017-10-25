@@ -15,6 +15,7 @@ import (
 	"github.com/square/etre/router"
 
 	"github.com/gorilla/websocket"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const (
@@ -237,6 +238,11 @@ func getEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	requestEntityType := args[0]
 	entityId := args[1]
 
+	if !bson.IsObjectIdHex(entityId) {
+		ctx.APIError(router.ErrInvalidParam, "invalid entityId")
+		return
+	}
+
 	q := queryForId(entityId)
 
 	entities, err := es.ReadEntities(requestEntityType, q)
@@ -292,6 +298,11 @@ func putEntityHandler(ctx router.HTTPContext, es entity.Store) {
 		return
 	}
 
+	if !bson.IsObjectIdHex(entityId) {
+		ctx.APIError(router.ErrInvalidParam, "invalid entityId")
+		return
+	}
+
 	q := queryForId(entityId)
 
 	entities, err := es.UpdateEntities(requestEntityType, q, requestUpdate, ctx.Username())
@@ -333,6 +344,11 @@ func deleteEntityHandler(ctx router.HTTPContext, es entity.Store) {
 	}
 	requestEntityType := args[0]
 	entityId := args[1]
+
+	if !bson.IsObjectIdHex(entityId) {
+		ctx.APIError(router.ErrInvalidParam, "invalid entityId")
+		return
+	}
 
 	q := queryForId(entityId)
 
@@ -569,7 +585,7 @@ func queryForId(id string) query.Query {
 			query.Predicate{
 				Label:    "_id",
 				Operator: "=",
-				Value:    id,
+				Value:    bson.ObjectIdHex(id),
 			},
 		},
 	}

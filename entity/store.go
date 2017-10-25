@@ -29,6 +29,7 @@
 package entity
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -123,7 +124,6 @@ func (s *store) DeleteEntityLabel(entityType string, id string, label string) (e
 		return nil, err
 	}
 	defer ms.Close()
-
 	c := ms.DB(s.database).C(entityType)
 
 	// ReturnNew: false is the default option. Will return the original document
@@ -137,7 +137,7 @@ func (s *store) DeleteEntityLabel(entityType string, id string, label string) (e
 	// We call Select so that Apply will return the orginal deleted label (and
 	// "_id" field, which is included by default) rather than returning the
 	// entire original document
-	_, err = c.Find(bson.M{"_id": id}).Select(bson.M{label: 1}).Apply(change, &diff)
+	_, err = c.Find(bson.M{"_id": bson.ObjectIdHex(id)}).Select(bson.M{label: 1}).Apply(change, &diff)
 	if err != nil {
 		return nil, ErrDeleteLabel{DbError: err}
 	}
@@ -165,12 +165,23 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, s.entityTypes))
 	}
 
+	for i, e := range entities {
+		if _, ok := e["_id"]; ok {
+			return nil, fmt.Errorf("_id set in entity[%d]; _id cannot be set on insert", i)
+		}
+		if _, ok := e["_type"]; ok {
+			return nil, fmt.Errorf("_type set in entity[%d]; _type cannot be set on insert", i)
+		}
+		if _, ok := e["_rev"]; ok {
+			return nil, fmt.Errorf("_rev set in entity[%d]; _rev cannot be set on insert", i)
+		}
+	}
+
 	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
 	defer ms.Close()
-
 	c := ms.DB(s.database).C(entityType)
 
 	// Notify the delay manager that a change is starting, and then notify the
@@ -181,36 +192,35 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer func() { s.d.EndChange(changeId) }()
+	defer s.d.EndChange(changeId)
 
 	// A slice of IDs we generate to insert along with entities into DB
-	insertedObjectIDs := make([]string, 0, len(entities))
+	insertedObjectIds := make([]string, 0, len(entities))
 
 	for _, e := range entities {
-		if _, ok := e["_id"]; !ok {
-			// Create ID if one wasn't passed in with entity. Mgo driver does not
-			// return the one mongo creates, so create it ourself.
-			e["_id"] = bson.NewObjectId().String()
-		}
-
-		// Set the entity revision to 0.
+		// Mgo driver does not return the ObjectId that Mongo creates, so create it ourself.
+		id := bson.NewObjectId()
+		e["_id"] = id
+		e["_type"] = entityType
 		e["_rev"] = 0
 
 		// Remove the set* fields from the entity, but keep track of them because we
 		// will need them for the CDC event.
 		e, setId, setOp, setSize := removeSetFields(e)
 
-		err := c.Insert(e)
-		if err != nil {
-			return insertedObjectIDs, ErrCreate{DbError: err, N: len(insertedObjectIDs)}
+		if err := c.Insert(e); err != nil {
+			return insertedObjectIds, ErrCreate{DbError: err, N: len(insertedObjectIds)}
 		}
 
-		insertedObjectIDs = append(insertedObjectIDs, e["_id"].(string))
+		// bson.ObjectId.String() yields "ObjectId("abc")", but we need to report only "abc",
+		// so re-encode the raw bytes to a hex string. This make GET /entity/{t}/abc work.
+		insertedObjectIds = append(insertedObjectIds, hex.EncodeToString([]byte(id)))
 
 		// Create a CDC event.
+		eventId := bson.NewObjectId()
 		event := etre.CDCEvent{
-			EventId:    bson.NewObjectId().String(),
-			EntityId:   e["_id"].(string),
+			EventId:    hex.EncodeToString([]byte(eventId)),
+			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: entityType,
 			Rev:        e["_rev"].(int),
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
@@ -224,11 +234,11 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 		}
 		err = s.cdcs.Write(event)
 		if err != nil {
-			return insertedObjectIDs, err
+			return insertedObjectIds, err
 		}
 	}
 
-	return insertedObjectIDs, nil
+	return insertedObjectIds, nil
 }
 
 // ReadEntities queries the db and returns a slice of Entity objects if
@@ -239,15 +249,14 @@ func (s *store) ReadEntities(entityType string, q query.Query) ([]etre.Entity, e
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, s.entityTypes))
 	}
 
-	mgoQuery := translateQuery(q)
-
 	ms, err := s.conn.Connect()
 	if err != nil {
 		return nil, err
 	}
 	defer ms.Close()
-
 	c := ms.DB(s.database).C(entityType)
+
+	mgoQuery := translateQuery(q)
 
 	var entities []etre.Entity
 	err = c.Find(mgoQuery).All(&entities)
@@ -344,9 +353,10 @@ func (s *store) UpdateEntities(t string, q query.Query, u etre.Entity, user stri
 		u["_rev"] = newRev
 
 		// Create a CDC event.
+		eventId := bson.NewObjectId()
 		event := etre.CDCEvent{
-			EventId:    bson.NewObjectId().String(),
-			EntityId:   id,
+			EventId:    hex.EncodeToString([]byte(eventId)),
+			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: t,
 			Rev:        newRev,
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
@@ -420,17 +430,23 @@ func (s *store) DeleteEntities(t string, q query.Query, user string) ([]etre.Ent
 	// Query for each document and delete it
 	for _, id := range ids {
 		var deletedEntity etre.Entity
-		_, err := entityType.Find(bson.M{"_id": id}).Apply(change, &deletedEntity)
+		_, err := entityType.FindId(id).Apply(change, &deletedEntity)
 		if err != nil {
-			return deletedEntities, ErrDelete{DbError: err}
+			switch err {
+			case mgo.ErrNotFound:
+				// ignore
+			default:
+				return deletedEntities, ErrDelete{DbError: err}
+			}
 		}
 
 		deletedEntities = append(deletedEntities, deletedEntity)
 
 		// Create a CDC event.
+		eventId := bson.NewObjectId()
 		event := etre.CDCEvent{
-			EventId:    bson.NewObjectId().String(),
-			EntityId:   id,
+			EventId:    hex.EncodeToString([]byte(eventId)),
+			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: t,
 			Rev:        deletedEntity["_rev"].(int) + 1, // +1 since we get the old document back
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
@@ -466,20 +482,20 @@ func translateQuery(q query.Query) bson.M {
 }
 
 // idsForQuery gets all ids of docs that satisfy query
-func idsForQuery(c *mgo.Collection, q bson.M) ([]string, error) {
-	var resultIDs []map[string]string
+func idsForQuery(c *mgo.Collection, q bson.M) ([]bson.ObjectId, error) {
+	var resultIds []map[string]bson.ObjectId
 	// Select only "_id" field in returned results
-	err := c.Find(q).Select(bson.M{"_id": 1}).All(&resultIDs)
+	err := c.Find(q).Select(bson.M{"_id": 1}).All(&resultIds)
 	if err != nil {
 		// Return raw, low-level error to allow caller wrap into higher level
 		// error.
 		return nil, err
 	}
 
-	ids := make([]string, len(resultIDs))
+	ids := make([]bson.ObjectId, len(resultIds))
 
 	for i := range ids {
-		ids[i] = resultIDs[i]["_id"]
+		ids[i] = resultIds[i]["_id"]
 	}
 
 	return ids, nil
@@ -494,7 +510,11 @@ func idsForQuery(c *mgo.Collection, q bson.M) ([]string, error) {
 //     https://docs.mongodb.com/v3.0/tutorial/project-fields-from-query-results/
 //
 func selectMap(e etre.Entity) map[string]int {
-	selectMap := make(map[string]int)
+	selectMap := map[string]int{
+		"_id":   1,
+		"_type": 1,
+		"_rev":  1,
+	}
 	for k, _ := range e {
 		selectMap[k] = 1
 	}
@@ -506,12 +526,11 @@ func selectMap(e etre.Entity) map[string]int {
 // validEntityType checks if the entityType passed in is in the entityType list of the connector
 func validEntityType(s *store, c string) bool {
 	for _, entityType := range s.entityTypes {
-		if c != entityType {
-			return false
+		if c == entityType {
+			return true
 		}
 	}
-
-	return true
+	return false
 }
 
 func removeSetFields(e etre.Entity) (etre.Entity, string, string, int) {

@@ -947,20 +947,27 @@ func TestCDCClient(t *testing.T) {
 	//
 
 	// Recv ping, wait 101ms, send pong
+	waitForPing := make(chan struct{})
 	go func() {
 		var ping map[string]interface{}
-		if err := wsConn.ReadJSON(&ping); err != nil {
+		var err error
+
+		err = wsConn.ReadJSON(&ping)
+		if err != nil {
 			t.Error(err)
 			return
 		}
 		time.Sleep(101 * time.Millisecond)
 		ping["control"] = "pong"
 		ping["dstTs"] = time.Now().UnixNano()
-		if err := wsConn.WriteJSON(ping); err != nil {
-			t.Logf("%#v", ping)
+		t.Logf("%#v", ping)
+		err = wsConn.WriteJSON(ping)
+		if err != nil {
 			t.Error(err)
 			return
 		}
+
+		close(waitForPing)
 	}()
 
 	lag := ec.Ping(time.Duration(1 * time.Second))
@@ -973,6 +980,8 @@ func TestCDCClient(t *testing.T) {
 		t.Errorf("got zero lag, exected > 100ms values: %#v", lag)
 	}
 
+	<-waitForPing
+
 	//
 	// Send client an error
 	//
@@ -983,7 +992,8 @@ func TestCDCClient(t *testing.T) {
 		"control": "error",
 		"error":   "fake error",
 	}
-	if err := wsConn.WriteJSON(errorMsg); err != nil {
+	err = wsConn.WriteJSON(errorMsg)
+	if err != nil {
 		t.Fatal(err)
 		return
 	}
