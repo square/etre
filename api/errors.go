@@ -60,3 +60,9 @@ var ErrBadRequest = etre.Error{
 	HTTPStatus: http.StatusBadRequest,
 	Message:    "bad request",
 }
+
+var ErrCDCDisabled = etre.Error{
+	Type:       "cdc-disabled",
+	HTTPStatus: http.StatusNotImplemented,
+	Message:    "CDC disabled",
+}

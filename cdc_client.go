@@ -3,6 +3,7 @@ package etre
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"sync"
@@ -97,9 +98,11 @@ func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 		return nil, err
 	}
 	c.debug("connecting to %s", c.addr)
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		return nil, err
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, apiError(resp, body)
 	}
 	c.wsConn = conn
 
