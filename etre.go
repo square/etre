@@ -92,12 +92,6 @@ type WriteResult struct {
 	Error string `json:"error,omitempty"` // human-readable error string
 }
 
-type Set struct {
-	SetOp   string `json:"setOp"`
-	SetId   string `json:"setId"`
-	SetSize uint   `json:"setSize"`
-}
-
 type CDCEvent struct {
 	EventId    string  `json:"eventId" bson:"eventId"`
 	EntityId   string  `json:"entityId" bson:"entityId"`     // _id of entity

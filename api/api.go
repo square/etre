@@ -9,11 +9,12 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/gorilla/websocket"
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
+
+	"github.com/gorilla/websocket"
 	"gopkg.in/mgo.v2/bson"
 )
 
