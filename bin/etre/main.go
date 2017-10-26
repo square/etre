@@ -97,7 +97,7 @@ var flagConfig string
 var default_addr = "127.0.0.1:8080"
 var default_database_url = "localhost"
 var default_database = "etre"
-var default_entity_types = []string{"node"}
+var default_entity_types = []string{"node"} // @todo: remove
 var default_database_timeout_seconds = 5
 var default_cdc_collection = "cdc"
 var default_delay_collection = "delay"
@@ -201,7 +201,7 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Create DB Connection Pool.
+	// Create DB Connection Pool
 	// //////////////////////////////////////////////////////////////////////
 	conn := db.NewConnector(config.Datasource.URL, config.Datasource.Timeout, tlsConfig, dbCredentials)
 
@@ -213,7 +213,7 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// CDC Store.
+	// CDC Store
 	// //////////////////////////////////////////////////////////////////////
 	wrp := cdc.RetryPolicy{
 		RetryCount: config.CDC.WriteRetryCount,
@@ -232,7 +232,7 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Delayer.
+	// Delayer
 	// //////////////////////////////////////////////////////////////////////
 	var dm cdc.Delayer
 	if config.Delay.StaticDelay >= 0 {
@@ -252,7 +252,7 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Entity Store.
+	// Entity Store
 	// //////////////////////////////////////////////////////////////////////
 	entityStore, err := entity.NewStore(
 		conn,
@@ -267,7 +267,7 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Create and Run Poller.
+	// Create and Run Poller
 	// //////////////////////////////////////////////////////////////////////
 	poller := cdc.NewPoller(
 		cdcs,

@@ -19,13 +19,13 @@
 #   source:
 #   mechanism:
 # entity:
-#   entity_types:
-#     - nodes
+#   types:
+#     - node
 # cdc:
 #   collection: cdc
 #   fallbackFile:
 #   write_retry_count: 3
-#   write_retry_wait = 50 # milliseconds
+#   write_retry_wait: 50 # milliseconds
 # delay:
 #   collection: delay
 #   static_delay_ms: -1 # milliseconds

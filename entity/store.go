@@ -202,7 +202,7 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 		id := bson.NewObjectId()
 		e["_id"] = id
 		e["_type"] = entityType
-		e["_rev"] = 0
+		e["_rev"] = uint(0)
 
 		// Remove the set* fields from the entity, but keep track of them because we
 		// will need them for the CDC event.
