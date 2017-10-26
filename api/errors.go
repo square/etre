@@ -9,9 +9,8 @@ import (
 )
 
 // These are default API-level error responses that should not be modified.
-// See api.go for how they're used. They're written back to clients in
-// router.APIError() which uses the fields to write a custom etre.Error and
-// set the HTTP status code.
+// See api.go for how they're used. The API writes them back to clients. It
+// uses the fields to create a custom etre.Error and set the HTTP status code.
 
 var ErrDuplicateEntity = etre.Error{
 	Type:       "dupe-entity",

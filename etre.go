@@ -149,6 +149,10 @@ func (e Error) String() string {
 	return fmt.Sprintf("Etre error %s: %s", e.Type, e.Message)
 }
 
+func (e Error) Error() string {
+	return e.String()
+}
+
 var (
 	ErrTypeMismatch  = errors.New("entity _type and Client entity type are different")
 	ErrIdSet         = errors.New("entity _id is set but not allowed on insert")

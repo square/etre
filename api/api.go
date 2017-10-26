@@ -5,8 +5,8 @@ package api
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 
 	"github.com/square/etre"
@@ -15,6 +15,7 @@ import (
 	"github.com/square/etre/query"
 
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -24,359 +25,317 @@ var (
 )
 
 // API provides controllers for endpoints it registers with a router.
-// @todo: instead of writing our own router, use the echo package
-// (https://github.com/labstack/echo). That should help make the API
-// code a lot more concise.
 type API struct {
-	addr   string
-	router *Router
-	es     entity.Store
-	ff     cdc.FeedFactory
+	addr string
+	es   entity.Store
+	ff   cdc.FeedFactory
+	// --
+	echo *echo.Echo
 }
 
 // NewAPI makes a new API.
-func NewAPI(addr string, router *Router, es entity.Store, ff cdc.FeedFactory) *API {
+func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 	api := &API{
-		addr:   addr,
-		router: router,
-		es:     es,
-		ff:     ff,
+		addr: addr,
+		es:   es,
+		ff:   ff,
+		echo: echo.New(),
 	}
 
-	api.router.AddRoute(etre.API_ROOT+"/entity/"+slugPattern, api.entityHandler, "api-entity")
-	api.router.AddRoute(etre.API_ROOT+"/entity/"+slugPattern+"/"+slugPattern, api.entityHandler, "api-entity")
-	api.router.AddRoute(etre.API_ROOT+"/entity/"+slugPattern+"/"+slugPattern+"/labels", api.entityLabelsHandler, "api-entity-labels")
-	api.router.AddRoute(etre.API_ROOT+"/entity/"+slugPattern+"/"+slugPattern+"/labels/"+labelsPattern, api.entityDeleteLabelHandler, "api-entity-delete-label")
-	api.router.AddRoute(etre.API_ROOT+"/entities/"+slugPattern, api.entitiesHandler, "api-entities")
-	api.router.AddRoute(etre.API_ROOT+"/query", api.queryHandler, "query-entity")
-	api.router.AddRoute(etre.API_ROOT+"/stats", api.statsHandler, "api-stats")
-	api.router.AddRoute(etre.API_ROOT+"/changes", api.changesHandler, "api-changes")
+	// /////////////////////////////////////////////////////////////////////
+	// Query
+	// /////////////////////////////////////////////////////////////////////
+	api.echo.GET(etre.API_ROOT+"/entities/:type", api.getEntitiesHandler)
+	api.echo.POST(etre.API_ROOT+"/query", api.queryHandler)
+
+	// /////////////////////////////////////////////////////////////////////
+	// Bulk
+	// /////////////////////////////////////////////////////////////////////
+	api.echo.POST(etre.API_ROOT+"/entities/:type", api.postEntitiesHandler)
+	api.echo.PUT(etre.API_ROOT+"/entities/:type", api.putEntitiesHandler)
+	api.echo.DELETE(etre.API_ROOT+"/entities/:type", api.deleteEntitiesHandler)
+
+	// /////////////////////////////////////////////////////////////////////
+	// Entity
+	// /////////////////////////////////////////////////////////////////////
+	api.echo.POST(etre.API_ROOT+"/entity/:type", api.postEntityHandler)
+	api.echo.GET(etre.API_ROOT+"/entity/:type/:id", api.getEntityHandler)
+	api.echo.PUT(etre.API_ROOT+"/entity/:type/:id", api.putEntityHandler)
+	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id", api.deleteEntityHandler)
+	api.echo.GET(etre.API_ROOT+"/entity/:type/:id/labels", api.entityLabelsHandler)
+	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id/lables/:labels", api.entityDeleteLabelHandler)
+
+	// /////////////////////////////////////////////////////////////////////
+	// Stats
+	// /////////////////////////////////////////////////////////////////////
+	api.echo.GET(etre.API_ROOT+"/stats", api.statsHandler)
+
+	// /////////////////////////////////////////////////////////////////////
+	// Changes
+	// /////////////////////////////////////////////////////////////////////
+	api.echo.GET(etre.API_ROOT+"/changes", api.changesHandler)
 
 	return api
 }
 
-func (api *API) Router() *Router {
-	return api.router
+// ServeHTTP allows the API to statisfy the http.HandlerFunc interface.
+func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	api.echo.ServeHTTP(w, r)
 }
 
-// //////////////////////////////////////////////////////////////////////////
+// Use adds middleware to the echo web server in the API. See
+// https://echo.labstack.com/middleware for more details.
+func (api *API) Use(middleware ...echo.MiddlewareFunc) {
+	api.echo.Use(middleware...)
+}
+
+// /////////////////////////////////////////////////////////////////////////////
 // Controllers
-// //////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////
 
-// {POST,GET,PUT,DELETE} /entity/{_id}
-// Managing a single entity
-func (api *API) entityHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "POST":
-		api.postEntityHandler(ctx)
-	case "GET":
-		api.getEntityHandler(ctx)
-	case "PUT":
-		api.putEntityHandler(ctx)
-	case "DELETE":
-		api.deleteEntityHandler(ctx)
-	default:
-		ctx.UnsupportedAPIMethod()
+// -----------------------------------------------------------------------------
+// Query
+// -----------------------------------------------------------------------------
+
+func (api *API) getEntitiesHandler(c echo.Context) error {
+	if err := validateParams(c, false); err != nil {
+		return handleError(err)
 	}
-}
+	entityType := c.Param("type")
 
-// GET /entity/{_id}/labels
-// Getting all labels for a single entity
-func (api *API) entityLabelsHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "GET":
-		// TODO: fill in
-	default:
-		ctx.UnsupportedAPIMethod()
-	}
-}
-
-// DELETE /entity/{_id}/labels/{label}
-// Delete a label from a single entity
-func (api *API) entityDeleteLabelHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "DELETE":
-		// TODO: fill in
-	default:
-		ctx.UnsupportedAPIMethod()
-	}
-}
-
-// {POST,GET,PUT,DELETE} /entity/{_id}/labels/{label}
-// Manage one or more entities
-func (api *API) entitiesHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "POST":
-		api.postEntitiesHandler(ctx)
-	case "GET":
-		api.getEntitiesHandler(ctx)
-	case "PUT":
-		api.putEntitiesHandler(ctx)
-	case "DELETE":
-		api.deleteEntitiesHandler(ctx)
-	default:
-		ctx.UnsupportedAPIMethod()
-	}
-}
-
-// POST /query
-// Handles an edge case of having a query >2k characters
-func (api *API) queryHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "POST":
-		// TODO: fill in
-	default:
-		ctx.UnsupportedAPIMethod()
-	}
-}
-
-// {GET,DELETE} /stats
-// Manage stats
-func (api *API) statsHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "GET":
-		// TODO: fill in
-	case "DELETE":
-		// TODO: fill in
-	default:
-		ctx.UnsupportedAPIMethod()
-	}
-}
-
-// --------------------------------------------------------------------------
-// Single
-// --------------------------------------------------------------------------
-
-func (api *API) postEntityHandler(ctx HTTPContext) {
-	if !validParams(&ctx, false) {
-		return
+	// Translate URL query to query struct.
+	requestLabelSelector := c.QueryParam("query")
+	if requestLabelSelector == "" {
+		return handleError(ErrInvalidQuery.New("query string is empty"))
 	}
 
-	var entity etre.Entity
-	err := json.NewDecoder(ctx.Request.Body).Decode(&entity)
+	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		ctx.APIError(ErrInternal.New("cannot decode reponse body: %v", err))
-		return
+		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
-	ConvertFloat64ToInt(entity)
-
-	for k, v := range entity {
-		if !validValueType(v) {
-			ctx.APIError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
-			return
-		}
-	}
-
-	ids, err := api.es.CreateEntities(ctx.EntityType, []etre.Entity{entity}, ctx.Username())
-	if ids == nil && err != nil {
-		ctx.APIError(ErrDb.New(err.Error()))
-		return
-	}
-	wr := api.WriteResults(ids, err)
-	ctx.WriteCreated(wr[0])
-}
-
-func (api *API) getEntityHandler(ctx HTTPContext) {
-	if !validParams(&ctx, true) {
-		return
-	}
-
-	q := queryForId(ctx.EntityId)
-
-	entities, err := api.es.ReadEntities(ctx.EntityType, q)
+	entities, err := api.es.ReadEntities(entityType, q)
 	if err != nil {
-		ctx.APIError(ErrDb.New("database error: %s", err))
-		return
+		return handleError(ErrDb.New("database error: %s", err))
 	}
 
-	if len(entities) == 0 {
-		ctx.WriteNotFound()
-	} else {
-		ctx.WriteOK(entities[0])
-	}
+	return c.JSON(http.StatusOK, entities)
 }
 
-func (api *API) putEntityHandler(ctx HTTPContext) {
-	if !validParams(&ctx, true) {
-		return
-	}
-
-	var requestUpdate etre.Entity
-	err := json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
-	if err != nil {
-		ctx.APIError(ErrInternal.New("cannot decode reponse body: %v", err))
-		return
-	}
-
-	q := queryForId(ctx.EntityId)
-
-	entities, err := api.es.UpdateEntities(ctx.EntityType, q, requestUpdate, ctx.Username())
-	if entities == nil && err != nil {
-		ctx.APIError(ErrDb.New(err.Error()))
-		return
-	}
-	wr := api.WriteResults(entities, err)
-	ctx.WriteOK(wr[0])
-}
-
-func (api *API) deleteEntityHandler(ctx HTTPContext) {
-	if !validParams(&ctx, true) {
-		return
-	}
-
-	q := queryForId(ctx.EntityId)
-
-	entities, err := api.es.DeleteEntities(ctx.EntityType, q, ctx.Username())
-	if entities == nil && err != nil {
-		ctx.APIError(ErrDb.New(err.Error()))
-		return
-	}
-	wr := api.WriteResults(entities, err)
-	ctx.WriteOK(wr[0])
+// Handles an edge case of having a query >2k characters.
+func (api *API) queryHandler(c echo.Context) error {
+	// @todo: implement this
+	return nil
 }
 
 // --------------------------------------------------------------------------
 // Bulk
 // --------------------------------------------------------------------------
 
-func (api *API) postEntitiesHandler(ctx HTTPContext) {
-	if !validParams(&ctx, false) {
-		return
+func (api *API) postEntitiesHandler(c echo.Context) error {
+	if err := validateParams(c, false); err != nil {
+		return handleError(err)
 	}
+	entityType := c.Param("type")
 
+	// Get entities from request payload.
 	var entities []etre.Entity
-	err := json.NewDecoder(ctx.Request.Body).Decode(&entities)
-	if err != nil {
-		ctx.APIError(ErrInternal.New("cannot decode reponse body: %v", err))
-		return
+	if err := c.Bind(&entities); err != nil {
+		return handleError(ErrInternal.New(err.Error()))
 	}
 
 	for _, e := range entities {
 		ConvertFloat64ToInt(e)
-
 		for k, v := range e {
 			if !validValueType(v) {
-				ctx.APIError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
-				return
+				return handleError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
+					"Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
 			}
 		}
 	}
 
-	ids, err := api.es.CreateEntities(ctx.EntityType, entities, ctx.Username())
+	ids, err := api.es.CreateEntities(entityType, entities, getUsername(c))
 	if ids == nil && err != nil {
-		ctx.APIError(ErrDb.New(err.Error()))
-		return
+		return handleError(ErrDb.New(err.Error()))
 	}
 	wr := api.WriteResults(ids, err)
-	ctx.WriteCreated(wr)
+
+	return c.JSON(http.StatusCreated, wr)
 }
 
-func (api *API) getEntitiesHandler(ctx HTTPContext) {
-	if !validParams(&ctx, false) {
-		return
+func (api *API) putEntitiesHandler(c echo.Context) error {
+	if err := validateParams(c, false); err != nil {
+		return handleError(err)
 	}
+	entityType := c.Param("type")
 
-	// Translate URL query to query struct
-	queryParam := ctx.Request.Form["query"]
-	if queryParam == nil {
-		ctx.APIError(ErrMissingParam.New("missing param: query"))
-		return
-	}
-
-	requestLabelSelector := queryParam[0]
+	// Translate URL query to query struct.
+	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		ctx.APIError(ErrInvalidQuery.New("query string is empty"))
-		return
+		return handleError(ErrInvalidQuery.New("query string is empty"))
 	}
 
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		ctx.APIError(ErrInvalidQuery.New("invalid query: %s", err))
-		return
+		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
-	entities, err := api.es.ReadEntities(ctx.EntityType, q)
-	if err != nil {
-		ctx.APIError(ErrDb.New("database error: %s", err))
-		return
-	}
-
-	ctx.WriteOK(entities)
-}
-
-func (api *API) putEntitiesHandler(ctx HTTPContext) {
-	if !validParams(&ctx, false) {
-		return
-	}
-
-	// Translate URL query to query struct
-	queryParam := ctx.Request.Form["query"]
-	if queryParam == nil {
-		ctx.APIError(ErrMissingParam.New("missing param: query"))
-		return
-	}
-
-	requestLabelSelector := queryParam[0]
-	if requestLabelSelector == "" {
-		ctx.APIError(ErrInvalidQuery.New("query string is empty"))
-		return
-	}
-
-	q, err := query.Translate(requestLabelSelector)
-	if err != nil {
-		ctx.APIError(ErrInvalidQuery.New("invalid query: %s", err))
-		return
-	}
-
-	// Decode request update
+	// Get entities from request payload.
 	var requestUpdate etre.Entity
-	err = json.NewDecoder(ctx.Request.Body).Decode(&requestUpdate)
-	if err != nil {
-		ctx.APIError(ErrInternal.New("cannot decode reponse body: %v", err))
-		return
+	if err := c.Bind(&requestUpdate); err != nil {
+		return handleError(ErrInternal.New(err.Error()))
 	}
 
-	entities, err := api.es.UpdateEntities(ctx.EntityType, q, requestUpdate, ctx.Username())
+	entities, err := api.es.UpdateEntities(entityType, q, requestUpdate, getUsername(c))
 	if entities == nil && err != nil {
-		ctx.APIError(ErrDb.New(err.Error()))
-		return
+		return handleError(ErrDb.New(err.Error()))
 	}
 	wr := api.WriteResults(entities, err)
-	ctx.WriteOK(wr)
+
+	return c.JSON(http.StatusOK, wr)
 }
 
-func (api *API) deleteEntitiesHandler(ctx HTTPContext) {
-	if !validParams(&ctx, false) {
-		return
+func (api *API) deleteEntitiesHandler(c echo.Context) error {
+	if err := validateParams(c, false); err != nil {
+		return handleError(err)
 	}
+	entityType := c.Param("type")
 
-	// Translate URL query to query struct
-	queryParam := ctx.Request.Form["query"]
-	if queryParam == nil {
-		ctx.APIError(ErrMissingParam.New("missing param: query"))
-		return
-	}
-
-	requestLabelSelector := queryParam[0]
+	// Translate URL query to query struct.
+	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		ctx.APIError(ErrInvalidQuery.New("query string is empty"))
-		return
+		return handleError(ErrInvalidQuery.New("query string is empty"))
 	}
 
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		ctx.APIError(ErrInvalidQuery.New("invalid query: %s", err))
-		return
+		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
-	entities, err := api.es.DeleteEntities(ctx.EntityType, q, ctx.Username())
+	entities, err := api.es.DeleteEntities(entityType, q, getUsername(c))
 	if entities == nil && err != nil {
-		ctx.APIError(ErrDb.New(err.Error()))
-		return
+		return handleError(ErrDb.New(err.Error()))
 	}
 	wr := api.WriteResults(entities, err)
-	ctx.WriteOK(wr)
+
+	return c.JSON(http.StatusOK, wr)
+}
+
+// -----------------------------------------------------------------------------
+// Enitity
+// -----------------------------------------------------------------------------
+
+func (api *API) postEntityHandler(c echo.Context) error {
+	if err := validateParams(c, false); err != nil {
+		return handleError(err)
+	}
+	entityType := c.Param("type")
+
+	// Get entity from request payload.
+	var entity etre.Entity
+	if err := c.Bind(&entity); err != nil {
+		return handleError(ErrInternal.New(err.Error()))
+	}
+
+	ConvertFloat64ToInt(entity)
+	for k, v := range entity {
+		if !validValueType(v) {
+			return handleError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
+				"Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
+		}
+	}
+
+	ids, err := api.es.CreateEntities(entityType, []etre.Entity{entity}, getUsername(c))
+	if ids == nil && err != nil {
+		return handleError(ErrDb.New(err.Error()))
+	}
+	wr := api.WriteResults(ids, err)
+
+	return c.JSON(http.StatusCreated, wr[0])
+}
+
+func (api *API) getEntityHandler(c echo.Context) error {
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+	entityType := c.Param("type")
+	entityId := c.Param("id")
+
+	q := queryForId(entityId)
+
+	entities, err := api.es.ReadEntities(entityType, q)
+	if err != nil {
+		return handleError(ErrDb.New(err.Error()))
+	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	} else {
+		return c.JSON(http.StatusOK, entities[0])
+	}
+}
+
+func (api *API) putEntityHandler(c echo.Context) error {
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+	entityType := c.Param("type")
+	entityId := c.Param("id")
+
+	// Get entities from request payload.
+	var requestUpdate etre.Entity
+	if err := c.Bind(&requestUpdate); err != nil {
+		return handleError(ErrInternal.New(err.Error()))
+	}
+
+	q := queryForId(entityId)
+
+	entities, err := api.es.UpdateEntities(entityType, q, requestUpdate, getUsername(c))
+	if entities == nil && err != nil {
+		return handleError(ErrDb.New(err.Error()))
+	}
+	wr := api.WriteResults(entities, err)
+
+	return c.JSON(http.StatusOK, wr[0])
+}
+
+func (api *API) deleteEntityHandler(c echo.Context) error {
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+	entityType := c.Param("type")
+	entityId := c.Param("id")
+
+	q := queryForId(entityId)
+
+	entities, err := api.es.DeleteEntities(entityType, q, getUsername(c))
+	if entities == nil && err != nil {
+		return handleError(ErrDb.New(err.Error()))
+	}
+	wr := api.WriteResults(entities, err)
+
+	return c.JSON(http.StatusOK, wr[0])
+}
+
+// Getting all labels for a single entity.
+func (api *API) entityLabelsHandler(c echo.Context) error {
+	// @todo: implement this
+	return nil
+}
+
+// Delete a label from a single entity.
+func (api *API) entityDeleteLabelHandler(c echo.Context) error {
+	// @todo: implement this
+	return nil
+}
+
+// --------------------------------------------------------------------------
+// Stats
+// --------------------------------------------------------------------------
+
+func (api *API) statsHandler(c echo.Context) error {
+	// @todo: implement this
+	return nil
 }
 
 // --------------------------------------------------------------------------
@@ -388,32 +347,24 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-// GET /changes
-// Consume change feed
-func (api *API) changesHandler(ctx HTTPContext) {
-	switch ctx.Request.Method {
-	case "GET":
-		if api.ff == nil {
-			ctx.APIError(ErrCDCDisabled)
-			return
-		}
-
-		// Upgrade to a WebSocket connection.
-		wsConn, err := upgrader.Upgrade(ctx.Response, ctx.Request, nil)
-		if err != nil {
-			ctx.APIError(ErrInternal.New(err.Error()))
-			return
-		}
-
-		// Create and run a feed.
-		f := api.ff.MakeWebsocket(wsConn)
-		if err := f.Run(); err != nil {
-			ctx.APIError(ErrInternal.New(err.Error()))
-			return
-		}
-	default:
-		ctx.UnsupportedAPIMethod()
+func (api *API) changesHandler(c echo.Context) error {
+	if api.ff == nil {
+		return handleError(ErrCDCDisabled)
 	}
+
+	// Upgrade to a WebSocket connection.
+	wsConn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		return handleError(ErrInternal.New(err.Error()))
+	}
+
+	// Create and run a feed.
+	f := api.ff.MakeWebsocket(wsConn)
+	if err := f.Run(); err != nil {
+		return handleError(ErrInternal.New(err.Error()))
+	}
+
+	return nil
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -518,30 +469,45 @@ func validValueType(v interface{}) bool {
 	return reflect.TypeOf(v).Kind() == reflect.String || reflect.TypeOf(v).Kind() == reflect.Int
 }
 
-func validParams(ctx *HTTPContext, needEntityId bool) bool {
-	// Arguments = []string{
-	//  "/api/v1/entity/nodes/59efdf425669fc0217553d1d",
-	//  "nodes",
-	//   "59efdf425669fc0217553d1d",
-	// }
-	ctx.EntityType = ctx.Arguments[1]
-	// @todo: validate ^
+func validateParams(c echo.Context, needEntityId bool) error {
+	if c.Param("type") == "" {
+		return ErrMissingParam.New("missing type param")
+	}
+
 	if needEntityId {
-		if len(ctx.Arguments) != 3 {
-			ctx.APIError(ErrMissingParam.New("missing entityId param, got: %s", ctx.Arguments))
-			return false
+		id := c.Param("id")
+		if id == "" {
+			return ErrMissingParam.New("missing id param")
 		}
 
-		ctx.EntityId = ctx.Arguments[2]
-		if ctx.EntityId == "" {
-			ctx.APIError(ErrMissingParam.New("entityId param is empty"))
-			return false
-		}
-
-		if !bson.IsObjectIdHex(ctx.EntityId) {
-			ctx.APIError(ErrInvalidParam.New("invalid entityId: %s", ctx.EntityId))
-			return false
+		if !bson.IsObjectIdHex(id) {
+			return handleError(ErrInvalidParam.New("invalid id: %s", id))
 		}
 	}
-	return true
+
+	return nil
+}
+
+func getUsername(c echo.Context) string {
+	username := "?"
+	if val := c.Get("username"); val != nil {
+		if u, ok := val.(string); ok {
+			username = u
+		}
+	}
+	return username
+}
+
+func handleError(err error) *echo.HTTPError {
+	switch v := err.(type) {
+	case etre.Error:
+		return echo.NewHTTPError(v.HTTPStatus, err)
+	default:
+		switch err {
+		default:
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+	}
+
+	return nil
 }
