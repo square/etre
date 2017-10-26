@@ -393,6 +393,11 @@ var upgrader = websocket.Upgrader{
 func (api *API) changesHandler(ctx HTTPContext) {
 	switch ctx.Request.Method {
 	case "GET":
+		if api.ff == nil {
+			ctx.APIError(ErrCDCDisabled)
+			return
+		}
+
 		// Upgrade to a WebSocket connection.
 		wsConn, err := upgrader.Upgrade(ctx.Response, ctx.Request, nil)
 		if err != nil {

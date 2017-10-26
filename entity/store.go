@@ -63,7 +63,7 @@ type store struct {
 	database    string
 	entityTypes []string
 	cdcs        cdc.Store
-	d           cdc.Delayer
+	dm          cdc.Delayer
 }
 
 // Map of Kubernetes Selection Operator to mongoDB Operator.
@@ -86,12 +86,13 @@ var operatorMap = map[string]string{
 var reservedNames = []string{"entity", "entities"}
 
 // NewStore creates a Store.
-func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc.Store, d cdc.Delayer) (Store, error) {
+func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc.Store, dm cdc.Delayer) (Store, error) {
 	// Ensure no entityType name is a reserved word
+	// @todo: move higher, in main.go, and expose (or document) which words are reserved
 	for _, r := range reservedNames {
 		for _, c := range entityTypes {
 			if r == c {
-				return nil, errors.New(fmt.Sprintf("Entity type (%s) cannot be a reserved word (%s).", c, r))
+				return nil, errors.New(fmt.Sprintf("entity type %s is a reserved word", c))
 			}
 		}
 	}
@@ -101,7 +102,7 @@ func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc
 		database:    database,
 		entityTypes: entityTypes,
 		cdcs:        cdcs,
-		d:           d,
+		dm:          dm,
 	}, nil
 }
 
@@ -187,12 +188,12 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
 	changeId := xid.New().String()
-	err = s.d.BeginChange(changeId)
+	err = s.dm.BeginChange(changeId)
 	if err != nil {
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer s.d.EndChange(changeId)
+	defer s.dm.EndChange(changeId)
 
 	// A slice of IDs we generate to insert along with entities into DB
 	insertedObjectIds := make([]string, 0, len(entities))
@@ -320,12 +321,12 @@ func (s *store) UpdateEntities(t string, q query.Query, u etre.Entity, user stri
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
 	changeId := xid.New().String()
-	err = s.d.BeginChange(changeId)
+	err = s.dm.BeginChange(changeId)
 	if err != nil {
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer func() { s.d.EndChange(changeId) }()
+	defer func() { s.dm.EndChange(changeId) }()
 
 	// diffs is a slice made up of a diff for each doc updated
 	diffs := make([]etre.Entity, 0, len(ids))
@@ -420,12 +421,12 @@ func (s *store) DeleteEntities(t string, q query.Query, user string) ([]etre.Ent
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
 	changeId := xid.New().String()
-	err = s.d.BeginChange(changeId)
+	err = s.dm.BeginChange(changeId)
 	if err != nil {
 		return nil, err
 	}
 	// @todo: don't ignore error...this should report an exception or something
-	defer func() { s.d.EndChange(changeId) }()
+	defer func() { s.dm.EndChange(changeId) }()
 
 	// Query for each document and delete it
 	for _, id := range ids {

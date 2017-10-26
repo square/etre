@@ -16,6 +16,7 @@ import (
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
+	"github.com/square/etre/test/mock"
 
 	"gopkg.in/yaml.v2"
 )
@@ -99,7 +100,7 @@ var default_database_url = "localhost"
 var default_database = "etre"
 var default_entity_types = []string{"node"} // @todo: remove
 var default_database_timeout_seconds = 5
-var default_cdc_collection = "cdc"
+var default_cdc_collection = "" // disabled
 var default_delay_collection = "delay"
 var default_cdc_fallback_file = ""
 var default_cdc_write_retry_count = 3
@@ -213,42 +214,76 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// CDC Store
+	// CDC Store, Delayer, and Poller (if enabled)
 	// //////////////////////////////////////////////////////////////////////
-	wrp := cdc.RetryPolicy{
-		RetryCount: config.CDC.WriteRetryCount,
-		RetryWait:  config.CDC.WriteRetryWait,
-	}
-	cdcs := cdc.NewStore(
-		conn,
-		config.Datasource.Database,
-		config.CDC.Collection,
-		config.CDC.FallbackFile,
-		wrp,
-	)
-	if err != nil {
-		log.Println(err)
-		os.Exit(1)
+	var cdcs cdc.Store
+	var dm cdc.Delayer
+	var poller cdc.Poller
+	if config.CDC.Collection != "" {
+		log.Printf("CDC enabled on %s.%s\n", config.Datasource.Database, config.CDC.Collection)
+
+		// Store
+		wrp := cdc.RetryPolicy{
+			RetryCount: config.CDC.WriteRetryCount,
+			RetryWait:  config.CDC.WriteRetryWait,
+		}
+		cdcs = cdc.NewStore(
+			conn,
+			config.Datasource.Database,
+			config.CDC.Collection,
+			config.CDC.FallbackFile,
+			wrp,
+		)
+
+		// Delayer
+		var err error
+		if config.Delay.StaticDelay >= 0 {
+			dm, err = cdc.NewStaticDelayer(
+				config.Delay.StaticDelay,
+			)
+		} else {
+			dm, err = cdc.NewDynamicDelayer(
+				conn,
+				config.Datasource.Database,
+				config.Delay.Collection,
+			)
+		}
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+
+		// Poller
+		poller = cdc.NewPoller(
+			cdcs,
+			dm,
+			config.Feed.StreamerBufferSize,
+			time.NewTicker(time.Duration(config.Feed.PollInterval)*time.Millisecond),
+		)
+		go func() {
+			if err := poller.Run(); err != nil {
+				log.Fatalf("poller error: %s", err)
+			}
+		}()
+	} else {
+		log.Println("CDC disabled (config.cdc.collection not set)")
+
+		// The CDC store and delayer must not be nil because the entity store
+		// always updates them. But when CDC is disabled, the updates are no-ops.
+		cdcs = &mock.CDCStore{}
+		dm = &mock.Delayer{}
+
+		// This results in a nil FeedFactory (below) which causes the /changes
+		// controller returns http code 501 (StatusNotImplemented).
+		poller = nil // cdc disabled
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Delayer
+	// Feed Factory
 	// //////////////////////////////////////////////////////////////////////
-	var dm cdc.Delayer
-	if config.Delay.StaticDelay >= 0 {
-		dm, err = cdc.NewStaticDelayer(
-			config.Delay.StaticDelay,
-		)
-	} else {
-		dm, err = cdc.NewDynamicDelayer(
-			conn,
-			config.Datasource.Database,
-			config.Delay.Collection,
-		)
-	}
-	if err != nil {
-		log.Println(err)
-		os.Exit(1)
+	var feedFactory cdc.FeedFactory
+	if poller != nil {
+		feedFactory = cdc.NewFeedFactory(poller, cdcs)
 	}
 
 	// //////////////////////////////////////////////////////////////////////
@@ -265,27 +300,6 @@ func main() {
 		log.Println(err)
 		os.Exit(1)
 	}
-
-	// //////////////////////////////////////////////////////////////////////
-	// Create and Run Poller
-	// //////////////////////////////////////////////////////////////////////
-	poller := cdc.NewPoller(
-		cdcs,
-		dm,
-		config.Feed.StreamerBufferSize,
-		time.NewTicker(time.Duration(config.Feed.PollInterval)*time.Millisecond),
-	)
-	go func() {
-		err = poller.Run()
-		if err != nil {
-			log.Println(err)
-		}
-	}()
-
-	// //////////////////////////////////////////////////////////////////////
-	// Feed Factory
-	// //////////////////////////////////////////////////////////////////////
-	feedFactory := cdc.NewFeedFactory(poller, cdcs)
 
 	// //////////////////////////////////////////////////////////////////////
 	// Launch App (initialize router/API, start server)
