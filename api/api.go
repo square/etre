@@ -50,7 +50,7 @@ func NewAPI(addr string, router *Router, es entity.Store, ff cdc.FeedFactory) *A
 	api.router.AddRoute(etre.API_ROOT+"/entities/"+slugPattern, api.entitiesHandler, "api-entities")
 	api.router.AddRoute(etre.API_ROOT+"/query", api.queryHandler, "query-entity")
 	api.router.AddRoute(etre.API_ROOT+"/stats", api.statsHandler, "api-stats")
-	api.router.AddRoute(etre.API_ROOT+"changes", api.changesHandler, "api-changes")
+	api.router.AddRoute(etre.API_ROOT+"/changes", api.changesHandler, "api-changes")
 
 	return api
 }
