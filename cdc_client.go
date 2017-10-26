@@ -342,6 +342,7 @@ func (c *cdcClient) debug(fmt string, v ...interface{}) {
 type MockCDCClient struct {
 	StartFunc func(time.Time) (<-chan CDCEvent, error)
 	StopFunc  func()
+	PingFunc  func(time.Duration) Latency
 	ErrorFunc func() error
 }
 
@@ -357,6 +358,13 @@ func (c MockCDCClient) Stop() {
 		c.StopFunc()
 	}
 	return
+}
+
+func (c MockCDCClient) Ping(timeout time.Duration) Latency {
+	if c.PingFunc != nil {
+		return c.PingFunc(timeout)
+	}
+	return Latency{}
 }
 
 func (c MockCDCClient) Error() error {

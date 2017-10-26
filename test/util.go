@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 )
 
@@ -29,12 +30,12 @@ func MakeHTTPRequest(httpVerb, url string, payload []byte, respStruct interface{
 	}
 	defer res.Body.Close()
 
+	body, err := ioutil.ReadAll(res.Body)
+
 	// Decode response into respSruct
-	if respStruct != nil {
-		decoder := json.NewDecoder(res.Body)
-		err = decoder.Decode(respStruct)
-		if err != nil {
-			return statusCode, fmt.Errorf("Can't decode response body (error: %s)", err)
+	if respStruct != nil && len(body) > 0 {
+		if err := json.Unmarshal(body, &respStruct); err != nil {
+			return statusCode, fmt.Errorf("Can't decode response body: %s: %s", err, string(body))
 		}
 	}
 

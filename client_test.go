@@ -29,7 +29,7 @@ var (
 	gotBody   []byte
 )
 var ( // response data in order of precedence
-	respError *etre.ErrorResponse
+	respError *etre.Error
 	respData  interface{}
 )
 var respStatusCode int
@@ -101,10 +101,9 @@ func TestWriteError(t *testing.T) {
 	}
 
 	// Add an error
-	wr[0].ErrorCode = etre.ERRCODE_DUPLICATE
 	wr[0].Error = "duplicate entity"
 	if err := etre.WriteError(wr, en); err == nil {
-		t.Errorf("no errori, expected etre.ERRCODE_DUPLICATE")
+		t.Errorf("no error, expected \"duplicate entry\"")
 	}
 }
 
@@ -287,7 +286,7 @@ func TestQueryHandledError(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respError = &etre.ErrorResponse{
+	respError = &etre.Error{
 		Type:    "fake_error",
 		Message: "this is a fake error",
 	}
@@ -300,7 +299,7 @@ func TestQueryHandledError(t *testing.T) {
 		t.Fatal("err is nil, expected an error")
 	}
 
-	// The etre.ErrorResponse.Message should bubble up
+	// The etre.Error.Message should bubble up
 	if !strings.Contains(err.Error(), respError.Message) {
 		t.Errorf("error does not contain '%s': %s", respError.Message, err)
 	}
@@ -318,7 +317,7 @@ func TestQueryUnhandledError(t *testing.T) {
 	respStatusCode = http.StatusInternalServerError
 
 	// Like TestQueryHandledError above, but simulating a more severe error,
-	// like a panic, that makes the API not return an etre.etre.ErrorResponse
+	// like a panic, that makes the API not return an etre.etre.Error
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
 	if err == nil {
@@ -378,7 +377,7 @@ func TestInsertAPIError(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respError = &etre.ErrorResponse{
+	respError = &etre.Error{
 		Type:    "fake_error",
 		Message: "this is a fake error",
 	}
@@ -396,7 +395,7 @@ func TestInsertAPIError(t *testing.T) {
 		t.Fatal("err is nil, expected an error")
 	}
 
-	// The etre.ErrorResponse.Message should bubble up
+	// The etre.Error.Message should bubble up
 	if !strings.Contains(err.Error(), respError.Message) {
 		t.Errorf("error does not contain '%s': %s", respError.Message, err)
 	}
@@ -509,7 +508,7 @@ func TestUpdateAPIError(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respError = &etre.ErrorResponse{
+	respError = &etre.Error{
 		Type:    "fake_error",
 		Message: "this is a fake error",
 	}
@@ -528,7 +527,7 @@ func TestUpdateAPIError(t *testing.T) {
 		t.Fatal("err is nil, expected an error")
 	}
 
-	// The etre.ErrorResponse.Message should bubble up
+	// The etre.Error.Message should bubble up
 	if !strings.Contains(err.Error(), respError.Message) {
 		t.Errorf("error does not contain '%s': %s", respError.Message, err)
 	}
