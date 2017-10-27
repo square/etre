@@ -16,6 +16,9 @@
 # Vim temporary swap files
 *.swp
 
+# Ignore the venor directory
+vendor/
+
 tags
 coverage.out
 bin/etre/etre
