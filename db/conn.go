@@ -46,7 +46,7 @@ func (c *connectionPool) Connect() (*mgo.Session, error) {
 
 	// If a session already exists (and we can ping mongo), return a copy of it.
 	if c.session != nil {
-		if c.session.Ping() == nil {
+		if err := c.session.Ping(); err == nil {
 			return c.session.Copy(), nil
 		}
 	}

@@ -60,8 +60,8 @@ func setup(t *testing.T) {
 				return deleteEntities, deleteErr
 			},
 		}
-		defaultAPI := api.NewAPI(addr, &api.Router{}, es, &mock.FeedFactory{})
-		defaultServer = httptest.NewServer(defaultAPI.Router())
+		defaultAPI := api.NewAPI(addr, es, &mock.FeedFactory{})
+		defaultServer = httptest.NewServer(defaultAPI)
 		t.Logf("started test HTTP server: %s\n", defaultServer.URL)
 	}
 
@@ -213,8 +213,19 @@ func TestGetEntityHandlerMissingIDError(t *testing.T) {
 
 	// Omit ID from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/"
-	expectErr := "missing entityId param"
-	testBadRequestError(t, "GET", url, expectErr)
+
+	var respErr etre.Error
+	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This is technically an invalid route, so Echo returns a standard 404 message
+	// and never calls out to our handler (that's why we don't check the contents
+	// of the error message here).
+	if statusCode != http.StatusNotFound {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
 }
 
 func TestGetEntityHandlerNotFoundError(t *testing.T) {
@@ -299,8 +310,19 @@ func TestPutEntityHandlerMissingIDError(t *testing.T) {
 
 	// Omit ID from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/"
-	expectErr := "missing entityId param"
-	testBadRequestError(t, "PUT", url, expectErr)
+
+	var respErr etre.Error
+	statusCode, err := test.MakeHTTPRequest("PUT", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This is technically an invalid route, so Echo returns a standard 404 message
+	// and never calls out to our handler (that's why we don't check the contents
+	// of the error message here).
+	if statusCode != http.StatusNotFound {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
 }
 
 func TestPutEntityHandlerPayloadError(t *testing.T) {
@@ -373,8 +395,19 @@ func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
 
 	// Omit ID from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/"
-	expectErr := "missing entityId param"
-	testBadRequestError(t, "DELETE", url, expectErr)
+
+	var respErr etre.Error
+	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This is technically an invalid route, so Echo returns a standard 404 message
+	// and never calls out to our handler (that's why we don't check the contents
+	// of the error message here).
+	if statusCode != http.StatusNotFound {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -525,8 +558,8 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	expectErr := "missing param: query"
-	testBadRequestError(t, "GET", url, expectErr)
+	expectErr := "query string is empty"
+	testBadRequestError(t, "DELETE", url, expectErr)
 }
 
 func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
@@ -624,8 +657,8 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	expectErr := "missing param: query"
-	testBadRequestError(t, "PUT", url, expectErr)
+	expectErr := "query string is empty"
+	testBadRequestError(t, "DELETE", url, expectErr)
 }
 
 func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
@@ -720,7 +753,7 @@ func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
 
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	expectErr := "missing param: query"
+	expectErr := "query string is empty"
 	testBadRequestError(t, "DELETE", url, expectErr)
 }
 
@@ -729,7 +762,7 @@ func TestDeleteEntitiesHandlerEmptyQueryError(t *testing.T) {
 	defer teardown(t)
 
 	// Omit query string from URL
-	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query"
+	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType
 	expectErr := "query string is empty"
 	testBadRequestError(t, "DELETE", url, expectErr)
 }

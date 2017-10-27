@@ -18,6 +18,8 @@ import (
 	"github.com/square/etre/entity"
 	"github.com/square/etre/test/mock"
 
+	"github.com/labstack/echo"
+	"github.com/labstack/echo/middleware"
 	"gopkg.in/yaml.v2"
 )
 
@@ -302,20 +304,30 @@ func main() {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Launch App (initialize router/API, start server)
+	// API
 	// //////////////////////////////////////////////////////////////////////
-	router := &api.Router{
-		UsernameHeader: config.Server.UsernameHeader,
-	}
-	api := api.NewAPI(config.Server.Addr, router, entityStore, feedFactory)
+	api := api.NewAPI(config.Server.Addr, entityStore, feedFactory)
+
+	// If you want to add custom middleware for authentication, authorization,
+	// etc., you should do that here. See https://echo.labstack.com/middleware
+	// for more details.
+	api.Use((func(h echo.HandlerFunc) echo.HandlerFunc {
+		// This middleware will always set the username of the request to be
+		// "admin". You can change this as necessary.
+		return func(c echo.Context) error {
+			c.Set("username", "admin")
+			return h(c)
+		}
+	}))
+	api.Use(middleware.Recover())
 
 	// Start the web server.
 	if config.Server.TLSCert != "" && config.Server.TLSKey != "" {
 		log.Println("Listening on ", config.Server.Addr, " with TLS enabled")
-		err = http.ListenAndServeTLS(config.Server.Addr, config.Server.TLSCert, config.Server.TLSKey, api.Router())
+		err = http.ListenAndServeTLS(config.Server.Addr, config.Server.TLSCert, config.Server.TLSKey, api)
 	} else {
 		log.Println("Listening on ", config.Server.Addr, " with TLS disabled")
-		err = http.ListenAndServe(config.Server.Addr, api.Router())
+		err = http.ListenAndServe(config.Server.Addr, api)
 	}
 	if err != nil {
 		log.Println(err)
