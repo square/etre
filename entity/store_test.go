@@ -78,7 +78,7 @@ func teardown(t *testing.T, es entity.Store) {
 func TestCreateNewStoreError(t *testing.T) {
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	expectedErrMsg := fmt.Sprintf("Entity type (%s) cannot be a reserved word", invalidEntityType)
+	expectedErrMsg := fmt.Sprintf("entity type %s is a reserved word", invalidEntityType)
 	_, err := entity.NewStore(&mock.Connector{}, database, []string{invalidEntityType}, &mock.CDCStore{}, &mock.Delayer{})
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
@@ -507,7 +507,7 @@ func TestDeleteEntities(t *testing.T) {
 		EventId:    lastEvent.EventId, // can't get this anywhere else
 		EntityId:   hex.EncodeToString([]byte(lastEntityId)),
 		EntityType: entityType,
-		Rev:        1,
+		Rev:        uint(1),
 		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
 		Op:         "d",

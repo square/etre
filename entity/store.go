@@ -203,7 +203,7 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 		id := bson.NewObjectId()
 		e["_id"] = id
 		e["_type"] = entityType
-		e["_rev"] = uint(0)
+		e["_rev"] = 0
 
 		// Remove the set* fields from the entity, but keep track of them because we
 		// will need them for the CDC event.
@@ -223,7 +223,7 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 			EventId:    hex.EncodeToString([]byte(eventId)),
 			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: entityType,
-			Rev:        e["_rev"].(uint),
+			Rev:        uint(e["_rev"].(int)),
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
 			User:       user,
 			Op:         "i",
@@ -349,7 +349,7 @@ func (s *store) UpdateEntities(t string, q query.Query, u etre.Entity, user stri
 		diffs = append(diffs, diff)
 
 		// Add id and rev to the old entity for the CDC event.
-		newRev := diff["_rev"].(uint) + 1 // +1 since we get the old document back
+		newRev := diff["_rev"].(int) + 1 // +1 since we get the old document back
 		u["_id"] = id
 		u["_rev"] = newRev
 
@@ -359,7 +359,7 @@ func (s *store) UpdateEntities(t string, q query.Query, u etre.Entity, user stri
 			EventId:    hex.EncodeToString([]byte(eventId)),
 			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: t,
-			Rev:        newRev,
+			Rev:        uint(newRev),
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
 			User:       user,
 			Op:         "u",
@@ -449,7 +449,7 @@ func (s *store) DeleteEntities(t string, q query.Query, user string) ([]etre.Ent
 			EventId:    hex.EncodeToString([]byte(eventId)),
 			EntityId:   hex.EncodeToString([]byte(id)),
 			EntityType: t,
-			Rev:        deletedEntity["_rev"].(uint) + 1, // +1 since we get the old document back
+			Rev:        uint(deletedEntity["_rev"].(int) + 1), // +1 since we get the old document back
 			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
 			User:       user,
 			Op:         "d",
