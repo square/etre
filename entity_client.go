@@ -97,7 +97,7 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	)
 	if len(query) < 2000 {
 		query = url.QueryEscape(query) // always escape the query
-		resp, bytes, err = c.do("GET", "/entities/"+c.entityType+"?"+query, nil)
+		resp, bytes, err = c.do("GET", "/entities/"+c.entityType+"?query="+query, nil)
 	} else {
 		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
 		resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
@@ -305,6 +305,9 @@ func (c entityClient) url(endpoint string) string {
 }
 
 func apiError(resp *http.Response, bytes []byte) error {
+	if resp == nil {
+		return fmt.Errorf("no response from API; check API logs for errors")
+	}
 	var errResp Error
 	if len(bytes) > 0 {
 		json.Unmarshal(bytes, &errResp)

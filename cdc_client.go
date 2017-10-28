@@ -100,9 +100,12 @@ func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 	c.debug("connecting to %s", c.addr)
 	conn, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		defer resp.Body.Close()
-		body, _ := ioutil.ReadAll(resp.Body)
-		return nil, apiError(resp, body)
+		if resp != nil {
+			defer resp.Body.Close()
+			body, _ := ioutil.ReadAll(resp.Body)
+			return nil, apiError(resp, body)
+		}
+		return nil, fmt.Errorf("websocket.DefaultDialer.Dial(%s): %s", u.String(), err)
 	}
 	c.wsConn = conn
 

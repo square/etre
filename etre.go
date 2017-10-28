@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 )
 
 const (
@@ -51,14 +52,15 @@ var metaLabels = map[string]bool{
 	"_type":    true,
 }
 
+// Labels returns all labels, sorted, including meta-labels (_id, _type, etc.)
 func (e Entity) Labels() []string {
-	labels := make([]string, 0, len(e))
+	labels := make([]string, len(e))
+	i := 0
 	for label := range e {
-		if metaLabels[label] {
-			continue
-		}
-		labels = append(labels, label)
+		labels[i] = label
+		i++
 	}
+	sort.Strings(labels)
 	return labels
 }
 
@@ -73,12 +75,12 @@ func (e Entity) String(label string) string {
 	return ""
 }
 
+// QueryFilter represents filtering options for EntityClient.Query().
 type QueryFilter struct {
-	// ReturnLabels defines labels included in matching entities. An empty map
-	// returns all labels. Else, only labels in the map with a true value are
-	// returned. The internal ID (_id) is always returned unless explicitly
-	// excluded by being set in the map with a false value.
-	ReturnLabels map[string]bool // keyed on label
+	// ReturnLabels defines labels included in matching entities. An empty slice
+	// returns all labels, including meta-labels. Else, only labels in the slice
+	// are returned.
+	ReturnLabels []string
 }
 
 // WriteResult represents the result of a write operation (insert, update, delete)
