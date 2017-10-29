@@ -4,48 +4,49 @@ package mock
 
 import (
 	"github.com/square/etre"
+	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 )
 
 type EntityStore struct {
-	DeleteEntityLabelFunc func(string, string, string) (etre.Entity, error)
-	CreateEntitiesFunc    func(string, []etre.Entity, string) ([]string, error)
-	ReadEntitiesFunc      func(string, query.Query) ([]etre.Entity, error)
-	UpdateEntitiesFunc    func(string, query.Query, etre.Entity, string) ([]etre.Entity, error)
-	DeleteEntitiesFunc    func(string, query.Query, string) ([]etre.Entity, error)
+	ReadEntitiesFunc      func(string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
+	DeleteEntityLabelFunc func(entity.WriteOp, string) (etre.Entity, error)
+	CreateEntitiesFunc    func(entity.WriteOp, []etre.Entity) ([]string, error)
+	UpdateEntitiesFunc    func(entity.WriteOp, query.Query, etre.Entity) ([]etre.Entity, error)
+	DeleteEntitiesFunc    func(entity.WriteOp, query.Query) ([]etre.Entity, error)
 }
 
-func (s *EntityStore) DeleteEntityLabel(entityType string, id string, label string) (etre.Entity, error) {
+func (s *EntityStore) DeleteEntityLabel(wo entity.WriteOp, label string) (etre.Entity, error) {
 	if s.DeleteEntityLabelFunc != nil {
-		return s.DeleteEntityLabelFunc(entityType, id, label)
+		return s.DeleteEntityLabelFunc(wo, label)
 	}
 	return nil, nil
 }
 
-func (s *EntityStore) CreateEntities(entityType string, entities []etre.Entity, user string) ([]string, error) {
+func (s *EntityStore) CreateEntities(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 	if s.CreateEntitiesFunc != nil {
-		return s.CreateEntitiesFunc(entityType, entities, user)
+		return s.CreateEntitiesFunc(wo, entities)
 	}
 	return nil, nil
 }
 
-func (s *EntityStore) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
+func (s *EntityStore) ReadEntities(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 	if s.ReadEntitiesFunc != nil {
-		return s.ReadEntitiesFunc(entityType, q)
+		return s.ReadEntitiesFunc(entityType, q, f)
 	}
 	return nil, nil
 }
 
-func (s *EntityStore) UpdateEntities(t string, q query.Query, u etre.Entity, user string) ([]etre.Entity, error) {
+func (s *EntityStore) UpdateEntities(wo entity.WriteOp, q query.Query, u etre.Entity) ([]etre.Entity, error) {
 	if s.UpdateEntitiesFunc != nil {
-		return s.UpdateEntitiesFunc(t, q, u, user)
+		return s.UpdateEntitiesFunc(wo, q, u)
 	}
 	return nil, nil
 }
 
-func (s *EntityStore) DeleteEntities(t string, q query.Query, user string) ([]etre.Entity, error) {
+func (s *EntityStore) DeleteEntities(wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
 	if s.DeleteEntitiesFunc != nil {
-		return s.DeleteEntitiesFunc(t, q, user)
+		return s.DeleteEntitiesFunc(wo, q)
 	}
 	return nil, nil
 }

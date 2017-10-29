@@ -29,17 +29,38 @@ const (
 type Entity map[string]interface{}
 
 func (e Entity) Id() string {
-	return e["_id"].(string)
+	return e[META_LABEL_ID].(string)
 }
 
 func (e Entity) Type() string {
-	return e["_type"].(string)
+	return e[META_LABEL_TYPE].(string)
 }
 
 // Has returns true of the entity has the label, regardless of its value.
 func (e Entity) Has(label string) bool {
 	_, ok := e[label]
 	return ok
+}
+
+// A Set is a user-defined logical grouping of writes (insert, update, delete).
+type Set struct {
+	Id   string
+	Op   string
+	Size int
+}
+
+func (e Entity) Set() Set {
+	set := Set{}
+	if _, ok := e["_setId"]; ok {
+		set.Id = e["_setId"].(string)
+	}
+	if _, ok := e["_setOp"]; ok {
+		set.Op = e["_setOp"].(string)
+	}
+	if _, ok := e["_setSize"]; ok {
+		set.Size = e["_setSize"].(int)
+	}
+	return set
 }
 
 var metaLabels = map[string]bool{
@@ -50,6 +71,10 @@ var metaLabels = map[string]bool{
 	"_setSize": true,
 	"_ts":      true,
 	"_type":    true,
+}
+
+func IsMetalabel(label string) bool {
+	return metaLabels[label]
 }
 
 // Labels returns all labels, sorted, including meta-labels (_id, _type, etc.)

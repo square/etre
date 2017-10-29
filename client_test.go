@@ -174,6 +174,7 @@ func TestQueryOK(t *testing.T) {
 
 	// Normal query that returns status code 200 and respData
 	query := "x=y"
+	expectQuery := "query=" + query
 	got, err := ec.Query(query, etre.QueryFilter{})
 	if err != nil {
 		t.Fatal(err)
@@ -184,8 +185,8 @@ func TestQueryOK(t *testing.T) {
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if gotQuery != query {
-		t.Errorf("got query %s, expected %s", gotQuery, query)
+	if gotQuery != expectQuery {
+		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
 	}
 	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)

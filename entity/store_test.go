@@ -4,7 +4,6 @@ package entity_test
 
 import (
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -29,6 +28,10 @@ var username = "kate"
 var entityTypes = []string{entityType}
 var timeout = 5
 var conn db.Connector
+var wo = entity.WriteOp{
+	EntityType: entityType,
+	User:       username,
+}
 
 func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 	conn = db.NewConnector(url, timeout, nil, nil)
@@ -44,7 +47,7 @@ func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 	seedEntities = []etre.Entity{
 		etre.Entity{"x": 2, "y": "hello", "z": []interface{}{"foo", "bar"}},
 	}
-	seedIds, err = es.CreateEntities(entityType, seedEntities, username)
+	seedIds, err = es.CreateEntities(wo, seedEntities)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Fatalf("Error creating entities: %s", err)
@@ -62,7 +65,7 @@ func teardown(t *testing.T, es entity.Store) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = es.DeleteEntities(entityType, q, username)
+	_, err = es.DeleteEntities(wo, q)
 	if err != nil {
 		if _, ok := err.(entity.ErrDelete); ok {
 			t.Errorf("Error deleting entities: %s", err)
@@ -80,8 +83,8 @@ func TestCreateNewStoreError(t *testing.T) {
 	invalidEntityType := "entities"
 	expectedErrMsg := fmt.Sprintf("entity type %s is a reserved word", invalidEntityType)
 	_, err := entity.NewStore(&mock.Connector{}, database, []string{invalidEntityType}, &mock.CDCStore{}, &mock.Delayer{})
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	if !strings.Contains(err.Error(), "reserved word") {
+		t.Errorf("err = %s, expected to contain 'reserved word'", err)
 	}
 }
 
@@ -100,10 +103,10 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	testData := []etre.Entity{
 		etre.Entity{"x": 0},
 		etre.Entity{"y": 1},
-		etre.Entity{"z": 2, "setId": "343", "setOp": "something", "setSize": 1},
+		etre.Entity{"z": 2, "_setId": "343", "_setOp": "something", "_setSize": 1},
 	}
 	// Note: teardown will delete this test data
-	ids, err := es.CreateEntities(entityType, testData, username)
+	ids, err := es.CreateEntities(wo, testData)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -129,12 +132,13 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 		User:       username,
 		Op:         "i",
 		Old:        nil,
-		New:        &etre.Entity{"_id": bson.ObjectIdHex(ids[len(ids)-1]), "_rev": 0, "z": 2, "_type": "nodes"},
+		New:        &etre.Entity{"_id": bson.ObjectIdHex(ids[len(ids)-1]), "_type": entityType, "_rev": 0, "z": 2, "_setId": "343", "_setOp": "something", "_setSize": 1},
 		SetId:      "343",
 		SetOp:      "something",
 		SetSize:    1,
 	}
 	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {
+		t.Logf("got: %#v", lastEvent)
 		t.Error(diff)
 	}
 }
@@ -152,7 +156,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 		etre.Entity{"_id": "bar", "z": 2},
 	}
 	// Note: teardown will delete this test data
-	actual, err := es.CreateEntities(entityType, testData, username)
+	actual, err := es.CreateEntities(wo, testData)
 
 	expect := []string{"foo", "bar"}
 
@@ -184,10 +188,15 @@ func TestCreateEntitiesInvalidEntityType(t *testing.T) {
 		etre.Entity{"z": 2},
 	}
 
-	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err := es.CreateEntities(invalidEntityType, testData, username)
+	wo := entity.WriteOp{
+		EntityType: invalidEntityType,
+		User:       username,
+	}
+	_, err := es.CreateEntities(wo, testData)
+
+	expectedErrMsg := "Invalid entity type: " + invalidEntityType
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
@@ -218,7 +227,7 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		actual, err := es.ReadEntities(entityType, q)
+		actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 		if err != nil {
 			if _, ok := err.(entity.ErrRead); ok {
 				t.Errorf("Error reading entities: %s", err)
@@ -244,7 +253,7 @@ func TestReadEntitiesWithComplexQuery(t *testing.T) {
 
 	expect := seedEntities
 
-	actual, err := es.ReadEntities(entityType, q)
+	actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
 		if _, ok := err.(entity.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -270,7 +279,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 		etre.Entity{"a": 1, "b": 2, "c": 3},
 	}
 	// Note: teardown will delete this test data
-	_, err := es.CreateEntities(entityType, testData, username)
+	_, err := es.CreateEntities(wo, testData)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -283,7 +292,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	entities, err := es.ReadEntities(entityType, q)
+	entities, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
 		if _, ok := err.(entity.ErrRead); ok {
 			t.Errorf("Error reading entities: %s", err)
@@ -308,7 +317,7 @@ func TestReadEntitiesNotFound(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	actual, err := es.ReadEntities(entityType, q)
+	actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 
 	if len(actual) != 0 {
 		t.Errorf("An empty list was expected, actual: %v", actual)
@@ -331,10 +340,11 @@ func TestReadEntitiesInvalidEntityType(t *testing.T) {
 		t.Error(err)
 	}
 
-	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err = es.ReadEntities(invalidEntityType, q)
+	_, err = es.ReadEntities(invalidEntityType, q, etre.QueryFilter{})
+
+	expectedErrMsg := "Invalid entity type: " + invalidEntityType
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
@@ -353,38 +363,37 @@ func TestUpdateEntities(t *testing.T) {
 	defer teardown(t, es)
 
 	// Create another entity to test we can update multiple documents
+	// Note: teardown will delete this data
 	testData := []etre.Entity{
 		etre.Entity{"x": 3, "y": "hello"},
 	}
-	// Note: teardown will delete this data
-	_, err := es.CreateEntities(entityType, testData, username)
+	_, err := es.CreateEntities(wo, testData)
 	if err != nil {
-		if _, ok := err.(entity.ErrCreate); ok {
-			t.Errorf("Error creating entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when creating entities: %s", err)
-		}
+		t.Fatal(err)
 	}
 
 	q, err := query.Translate("y=hello")
 	if err != nil {
 		t.Error(err)
 	}
-	u := etre.Entity{"y": "goodbye", "setId": "343", "setOp": "something", "setSize": 1}
+	u := etre.Entity{"y": "goodbye"}
 
-	expectNumUpdated := 2
+	wo := entity.WriteOp{
+		EntityType: entityType,
+		User:       username,
+		SetOp:      "something",
+		SetId:      "343",
+		SetSize:    1,
+	}
 
-	diff, err := es.UpdateEntities(entityType, q, u, username)
+	diff, err := es.UpdateEntities(wo, q, u)
 	if err != nil {
-		if _, ok := err.(entity.ErrUpdate); ok {
-			t.Errorf("Error updating entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when updating entities: %s", err)
-		}
+		t.Fatal(err)
 	}
 
 	// Test number of entities updated
 	actualNumUpdated := len(diff)
+	expectNumUpdated := 2
 	if actualNumUpdated != expectNumUpdated {
 		t.Errorf("Actual num updated: %v, Expect num updated: %v", actualNumUpdated, expectNumUpdated)
 	}
@@ -410,8 +419,8 @@ func TestUpdateEntities(t *testing.T) {
 		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
 		Op:         "u",
-		Old:        &etre.Entity{"_id": lastEntityId, "_rev": 0, "y": "hello", "_type": "nodes"},
-		New:        &etre.Entity{"_id": lastEntityId, "_rev": 1, "y": "goodbye"},
+		Old:        &etre.Entity{"_id": lastEntityId, "_type": entityType, "_rev": 0, "y": "hello"},
+		New:        &etre.Entity{"_id": lastEntityId, "_type": entityType, "_rev": 1, "y": "goodbye"},
 		SetId:      "343",
 		SetOp:      "something",
 		SetSize:    1,
@@ -431,10 +440,15 @@ func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
 	}
 	u := etre.Entity{"y": "goodbye"}
 
-	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err = es.UpdateEntities(invalidEntityType, q, u, username)
+	wo := entity.WriteOp{
+		EntityType: invalidEntityType,
+		User:       username,
+	}
+	_, err = es.UpdateEntities(wo, q, u)
+
+	expectedErrMsg := "Invalid entity type: " + invalidEntityType
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
@@ -459,7 +473,7 @@ func TestDeleteEntities(t *testing.T) {
 		etre.Entity{"a": 1, "b": 2},
 		etre.Entity{"a": 1, "b": 2, "c": 3},
 	}
-	ids, err := es.CreateEntities(entityType, testData, username)
+	ids, err := es.CreateEntities(wo, testData)
 	if err != nil {
 		if _, ok := err.(entity.ErrCreate); ok {
 			t.Errorf("Error creating entities: %s", err)
@@ -472,7 +486,7 @@ func TestDeleteEntities(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	actualDeletedEntities, err := es.DeleteEntities(entityType, q, username)
+	actualDeletedEntities, err := es.DeleteEntities(wo, q)
 	if err != nil {
 		if _, ok := err.(entity.ErrDelete); ok {
 			t.Errorf("Error deleting entities: %s", err)
@@ -511,7 +525,7 @@ func TestDeleteEntities(t *testing.T) {
 		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
 		Op:         "d",
-		Old:        &etre.Entity{"_id": lastEntityId, "_rev": 0, "a": 1, "b": 2, "c": 3, "_type": "nodes"},
+		Old:        &etre.Entity{"_id": lastEntityId, "_type": entityType, "_rev": 0, "a": 1, "b": 2, "c": 3},
 		New:        nil,
 	}
 	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {
@@ -528,10 +542,15 @@ func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
 		t.Error(err)
 	}
 
-	expectedErrMsg := "Invalid entityType name"
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	_, err = es.DeleteEntities(invalidEntityType, q, username)
+	wo := entity.WriteOp{
+		EntityType: invalidEntityType,
+		User:       username,
+	}
+	_, err = es.DeleteEntities(wo, q)
+
+	expectedErrMsg := "Invalid entity type: " + invalidEntityType
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
