@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // EntityClient represents a entity type-specific client. No interface method has
@@ -97,7 +98,12 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	)
 	if len(query) < 2000 {
 		query = url.QueryEscape(query) // always escape the query
-		resp, bytes, err = c.do("GET", "/entities/"+c.entityType+"?query="+query, nil)
+		url := "/entities/" + c.entityType + "?query=" + query
+		if len(filter.ReturnLabels) > 0 {
+			rl := strings.Join(filter.ReturnLabels, ",")
+			url += "&labels=" + rl
+		}
+		resp, bytes, err = c.do("GET", url, nil)
 	} else {
 		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
 		resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))

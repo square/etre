@@ -25,8 +25,10 @@ type Context struct {
 	// Set automatically in es.Run()
 	Options      config.Options // command line options (--addr, etc.)
 	EntityType   string
-	ReturnLabels []string
-	Query        string
+	ReturnLabels []string // query
+	Query        string   // query
+	EntityId     string   // --update and --delete
+	Patches      []string // --update
 }
 
 type EntityClientFactory interface {
@@ -40,7 +42,10 @@ type Factories struct {
 type Hooks struct {
 	AfterParseOptions func(*config.Options)
 	BeforeQuery       func(*Context) error
-	Response          func(Context, []etre.Entity, error)
+	AfterQuery        func(Context, []etre.Entity, error)
+	BeforeDelete      func(ctx *Context) error
+	BeforeUpdate      func(cxt *Context) error
+	WriteResult       func(Context, etre.WriteResult, error)
 }
 
 func init() {

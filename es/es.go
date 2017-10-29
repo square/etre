@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/square/etre"
 	"github.com/square/etre/es/app"
@@ -40,9 +41,6 @@ func Run(ctx app.Context) {
 	if def.IFS == "" {
 		def.IFS = config.DEFAULT_IFS
 	}
-	if def.OutputFormat == "" {
-		def.OutputFormat = config.DEFAULT_OUTPUT_FORMAT
-	}
 	if def.Timeout == 0 {
 		def.Timeout = config.DEFAULT_TIMEOUT
 	}
@@ -50,23 +48,55 @@ func Run(ctx app.Context) {
 	// Parse env vars and cmd line options, override default config
 	cmdLine = config.ParseCommandLine(def)
 
-	// Parse args: entity[.labels] query
-	if len(cmdLine.Args) == 0 {
+	// es --version and exit
+	if cmdLine.Options.Version {
+		fmt.Println("es v0.0.0")
+		os.Exit(0)
+	}
+
+	// Print help and exit if --help or nothing given on cmd line
+	if cmdLine.Options.Help || (len(cmdLine.Args) == 0 && (!cmdLine.Options.Delete && !cmdLine.Options.Update)) {
 		config.Help()
 		os.Exit(0)
 	}
-	if len(cmdLine.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Not enough arguments: entity and query are required\n")
+
+	// Validate cmd line options and args
+	if cmdLine.Options.Delete && cmdLine.Options.Update {
 		config.Help()
+		fmt.Fprintf(os.Stderr, "--update and --delete are mutually exclusive\n")
 		os.Exit(1)
 	}
-	ctx.EntityType, ctx.ReturnLabels, ctx.Query = config.ParseArgs(cmdLine.Args)
+
+	if cmdLine.Options.Delete { // --delete
+		if len(cmdLine.Args) < 2 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Not enough arguments for --delete: entity and id are required\n")
+			os.Exit(1)
+		}
+		if len(cmdLine.Args) > 2 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Too many arguments for --delete: specify only entity and id (got %d arguments: %s)\n",
+				len(cmdLine.Args), cmdLine.Args)
+			os.Exit(1)
+		}
+	} else if cmdLine.Options.Update { // --update
+		if len(cmdLine.Args) < 3 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Not enough arguments for --update: entity, id, and patches are required\n")
+			os.Exit(1)
+		}
+	} else { // query
+		if len(cmdLine.Args) < 2 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Not enough arguments for query: entity and query are required\n")
+			os.Exit(1)
+		}
+	}
 
 	// Finalize options
 	var o config.Options = cmdLine.Options
 	if o.Debug {
 		app.Debug("options: %#v\n", o)
-		app.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
 	}
 
 	if ctx.Hooks.AfterParseOptions != nil {
@@ -83,25 +113,11 @@ func Run(ctx app.Context) {
 	ctx.Options = o
 
 	// //////////////////////////////////////////////////////////////////////
-	// Help and version
-	// //////////////////////////////////////////////////////////////////////
-
-	// es with no args (Args[0] = "es" itself). Print short request help
-	// because Ryan is very busy.
-	if len(os.Args) == 1 || o.Help {
-		config.Help()
-		os.Exit(0)
-	}
-
-	// es --version or es version
-	if o.Version {
-		fmt.Println("es v0.0.0")
-		os.Exit(0)
-	}
-
-	// //////////////////////////////////////////////////////////////////////
 	// Make etre.EntityClient
 	// //////////////////////////////////////////////////////////////////////
+
+	// cmdLine.Args validated above
+	ctx.EntityType = cmdLine.Args[0]
 
 	if ctx.Options.Addr == "" {
 		fmt.Fprintf(os.Stderr, "Etre API address is not set."+
@@ -131,8 +147,80 @@ func Run(ctx app.Context) {
 	}
 
 	// //////////////////////////////////////////////////////////////////////
+	// Update and exit, if --update
+	// //////////////////////////////////////////////////////////////////////
+
+	if o.Update {
+		// cmdLine.Args validated above
+		ctx.EntityId = cmdLine.Args[1]
+		ctx.Patches = cmdLine.Args[2:]
+
+		if ctx.Hooks.BeforeUpdate != nil {
+			if o.Debug {
+				app.Debug("calling hook BeforeUpdate")
+			}
+			ctx.Hooks.BeforeUpdate(&ctx)
+		}
+
+		patch := etre.Entity{}
+		for _, kv := range ctx.Patches {
+			p := strings.SplitAfterN(kv, "=", 2)
+			if len(p) != 2 {
+				fmt.Fprintf(os.Stderr, "Invalid patch: %s: split on = yielded %d parts, expected 2", patch, len(p))
+				os.Exit(1)
+			}
+			patch[p[0]] = p[1]
+		}
+		if o.Debug {
+			app.Debug("patch: %#v", patch)
+		}
+
+		wr, err := ec.UpdateOne(ctx.EntityId, patch)
+
+		if ctx.Hooks.WriteResult != nil {
+			if o.Debug {
+				app.Debug("calling hook WriteResult")
+			}
+			ctx.Hooks.WriteResult(ctx, wr, err)
+		}
+
+		return
+	}
+
+	// //////////////////////////////////////////////////////////////////////
+	// Delete and exit, if --delete
+	// //////////////////////////////////////////////////////////////////////
+
+	if o.Delete {
+		// cmdLine.Args validated above
+		ctx.EntityId = cmdLine.Args[1]
+
+		if ctx.Hooks.BeforeDelete != nil {
+			if o.Debug {
+				app.Debug("calling hook BeforeDelete")
+			}
+			ctx.Hooks.BeforeDelete(&ctx)
+		}
+
+		wr, err := ec.DeleteOne(ctx.EntityId)
+
+		if ctx.Hooks.WriteResult != nil {
+			if o.Debug {
+				app.Debug("calling hook WriteResult")
+			}
+			ctx.Hooks.WriteResult(ctx, wr, err)
+		}
+
+		return
+	}
+
+	// //////////////////////////////////////////////////////////////////////
 	// Query
 	// //////////////////////////////////////////////////////////////////////
+
+	// Parse args: entity[.labels] query
+	ctx.EntityType, ctx.ReturnLabels, ctx.Query = config.ParseArgs(cmdLine.Args)
+	app.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
 
 	if ctx.Hooks.BeforeQuery != nil {
 		if o.Debug {
@@ -157,11 +245,11 @@ func Run(ctx app.Context) {
 	// //////////////////////////////////////////////////////////////////////
 
 	// If Response hook set, let it handle the reponse.
-	if ctx.Hooks.Response != nil {
+	if ctx.Hooks.AfterQuery != nil {
 		if o.Debug {
-			app.Debug("calling hook Response")
+			app.Debug("calling hook AfterQuery")
 		}
-		ctx.Hooks.Response(ctx, entities, err)
+		ctx.Hooks.AfterQuery(ctx, entities, err)
 		return
 	}
 
@@ -176,13 +264,21 @@ func Run(ctx app.Context) {
 		return
 	}
 
-	switch ctx.Options.OutputFormat {
-	case "line":
+	if ctx.Options.JSON {
+		bytes, err := json.Marshal(entities)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(ctx.Out, string(bytes))
+	} else {
 		// Yay, entities! If no return labels were specified, then Etre will have
 		// returned complete entities (i.e. all labels), so default to that.
 		returnLabels := ctx.ReturnLabels
+		withLabels := ctx.Options.Labels
 		if len(ctx.ReturnLabels) == 0 {
 			returnLabels = entities[0].Labels() // all labels, sorted
+			withLabels = true
 		}
 		lastLabel := len(returnLabels) - 1 // don't print IFS after last label
 
@@ -197,19 +293,16 @@ func Run(ctx app.Context) {
 		// return labels, they'll get all labels (above), sorted by label name.
 		for _, e := range entities {
 			for n, label := range returnLabels {
-				fmt.Print(e[label])
+				if withLabels {
+					fmt.Print(label, ":", e[label])
+				} else {
+					fmt.Print(e[label])
+				}
 				if n < lastLabel { // "b,a,t" not "b,a,t,"
 					fmt.Print(ctx.Options.IFS)
 				}
 			}
 			fmt.Println()
 		}
-	case "json":
-		bytes, err := json.Marshal(entities)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintln(ctx.Out, string(bytes))
 	}
 }

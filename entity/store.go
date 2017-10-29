@@ -51,7 +51,7 @@ type Store interface {
 
 	// Managing Multiple entities
 	CreateEntities(string, []etre.Entity, string) ([]string, error)
-	ReadEntities(string, query.Query) ([]etre.Entity, error)
+	ReadEntities(string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
 	UpdateEntities(string, query.Query, etre.Entity, string) ([]etre.Entity, error)
 	DeleteEntities(string, query.Query, string) ([]etre.Entity, error)
 }
@@ -245,7 +245,7 @@ func (s *store) CreateEntities(entityType string, entities []etre.Entity, user s
 // ReadEntities queries the db and returns a slice of Entity objects if
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
-func (s *store) ReadEntities(entityType string, q query.Query) ([]etre.Entity, error) {
+func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 	if !validEntityType(s, entityType) {
 		return nil, errors.New(fmt.Sprintf("Invalid entityType name (%s). Valid entityType names: %s.", entityType, s.entityTypes))
 	}
@@ -260,7 +260,16 @@ func (s *store) ReadEntities(entityType string, q query.Query) ([]etre.Entity, e
 	mgoQuery := translateQuery(q)
 
 	entities := []etre.Entity{}
-	err = c.Find(mgoQuery).All(&entities)
+	if len(f.ReturnLabels) == 0 {
+		err = c.Find(mgoQuery).All(&entities)
+	} else {
+		selectMap := map[string]int{}
+		selectMap["_id"] = 0 // Mongo requires _id to be explicitly excluded
+		for _, rl := range f.ReturnLabels {
+			selectMap[rl] = 1
+		}
+		err = c.Find(mgoQuery).Select(selectMap).All(&entities)
+	}
 	if err != nil {
 		return nil, ErrRead{DbError: err}
 	}

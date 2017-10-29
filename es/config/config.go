@@ -18,10 +18,9 @@ import (
 )
 
 const (
-	DEFAULT_CONFIG_FILES  = "/etc/etre/es.yaml,~/.es.yaml"
-	DEFAULT_IFS           = ","
-	DEFAULT_OUTPUT_FORMAT = "line"
-	DEFAULT_TIMEOUT       = 10000 // 10s
+	DEFAULT_CONFIG_FILES = "/etc/etre/es.yaml,~/.es.yaml"
+	DEFAULT_IFS          = ","
+	DEFAULT_TIMEOUT      = 10000 // 10s
 )
 
 var (
@@ -30,16 +29,21 @@ var (
 
 // Options represents typical command line options: --addr, --config, etc.
 type Options struct {
-	Addr         string `arg:"env" yaml:"addr"`
-	Config       string `arg:"env"`
-	Debug        bool
-	Env          string
-	Help         bool
-	IFS          string `arg:"env" yaml:"ifs"`
-	OutputFormat string `arg:"env" yaml:"output-format"`
-	Ping         bool
-	Timeout      uint `arg:"env" yaml:"timeout"`
-	Version      bool
+	Addr    string `arg:"env" yaml:"addr"`
+	Config  string `arg:"env"`
+	Debug   bool
+	Delete  bool
+	Env     string
+	Help    bool
+	JSON    bool   `arg:"env" yaml:"json"`
+	IFS     string `arg:"env" yaml:"ifs"`
+	Labels  bool   `arg:"env" yaml:"labels"`
+	Ping    bool
+	Old     bool `arg:"env" yaml:"old"`
+	Strict  bool `arg:"env" yaml:"strict"`
+	Timeout uint `arg:"env" yaml:"timeout"`
+	Update  bool
+	Version bool
 }
 
 // CommandLine represents options (--addr, etc.) and args: entity type, return
@@ -80,19 +84,33 @@ func ParseCommandLine(def Options) CommandLine {
 }
 
 func Help() {
-	fmt.Printf("Usage: es [flags] entity[.label,...] query\n\n"+
-		"Flags:\n"+
-		"  --addr          Address of Request Managers (https://local.domain:8080)\n"+
-		"  --config        Config files (default: %s)\n"+
-		"  --debug         Print debug to stderr\n"+
-		"  --env           Environment (dev, staging, production)\n"+
-		"  --help          Print help\n"+
-		"  --ifs           Internal field separator to print between label values for line output (default: %s)\n"+
-		"  --output-format Output format to print entities: line or json (default: %s)\n"+
-		"  --ping          Ping addr\n"+
-		"  --timeout       API timeout, milliseconds (default: %d)\n"+
-		"  --version       Print version\n",
-		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_OUTPUT_FORMAT, DEFAULT_TIMEOUT)
+	fmt.Printf("Usage:\n"+
+		"   Query: es [options] entity[.label,...] query\n"+
+		"  Update: es [options] --update entity id\n"+
+		"  Delete: es [options] --update entity id patches\n\n"+
+		"Args:\n"+
+		"  entity     Valid entity type (Etre API config.entity.types)\n"+
+		"  label      Comma-separated list of labels to return, like: host.zone,env\n"+
+		"  query      Query string, like: env=production, zone in (east, west)\n"+
+		"  id         Internal ID (_id) of an entity, like: 507f1f77bcf86cd799439011\n"+
+		"  patches    New label=value pairs, like: zone=west status=online\n\n"+
+		"Options:\n"+
+		"  --addr     Etre API address (example: http://localhost:8080)\n"+
+		"  --config   Config files (default: %s)\n"+
+		"  --debug    Print debug to stderr\n"+
+		"  --delete   Delete one entity by id\n"+
+		"  --env      Environment (dev, staging, production)\n"+
+		"  --help     Print help\n"+
+		"  --ifs      Character to print between label values (default: %s)\n"+
+		"  --json     Print entities as JSON\n"+
+		"  --labels   Print label: before value\n"+
+		"  --ping     Ping addr\n"+
+		"  --old      Print old values on --update\n"+
+		"  --strict   Error if --delete does not match an entity\n"+
+		"  --timeout  API timeout, milliseconds (default: %d)\n"+
+		"  --update   Apply patches to one entity by id\n"+
+		"  --version  Print version\n\n",
+		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_TIMEOUT)
 }
 
 func ParseConfigFiles(files string, debug bool) Options {

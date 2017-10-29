@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
@@ -119,7 +120,14 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
-	entities, err := api.es.ReadEntities(entityType, q)
+	// Query Filter
+	f := etre.QueryFilter{}
+	csvReturnLabels := c.QueryParam("labels")
+	if csvReturnLabels != "" {
+		f.ReturnLabels = strings.Split(csvReturnLabels, ",")
+	}
+
+	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
 		return handleError(ErrDb.New("database error: %s", err))
 	}
@@ -268,7 +276,14 @@ func (api *API) getEntityHandler(c echo.Context) error {
 
 	q := queryForId(entityId)
 
-	entities, err := api.es.ReadEntities(entityType, q)
+	// Query Filter
+	f := etre.QueryFilter{}
+	csvReturnLabels := c.QueryParam("labels")
+	if csvReturnLabels != "" {
+		f.ReturnLabels = strings.Split(csvReturnLabels, ",")
+	}
+
+	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
