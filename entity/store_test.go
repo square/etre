@@ -310,7 +310,7 @@ func TestReadEntitiesNotFound(t *testing.T) {
 	}
 	actual, err := es.ReadEntities(entityType, q)
 
-	if actual != nil {
+	if len(actual) != 0 {
 		t.Errorf("An empty list was expected, actual: %v", actual)
 	}
 	if err != nil {

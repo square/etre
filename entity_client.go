@@ -20,7 +20,7 @@ type EntityClient interface {
 	Insert([]Entity) ([]WriteResult, error)
 
 	// Update is a bulk operation that patches entities that match the query.
-	Update(query string, patch []Entity) ([]WriteResult, error)
+	Update(query string, patch Entity) ([]WriteResult, error)
 
 	// UpdateOne patches the given entity by internal ID.
 	UpdateOne(id string, patch Entity) (WriteResult, error)
@@ -132,7 +132,7 @@ func (c entityClient) Insert(entities []Entity) ([]WriteResult, error) {
 	return c.write(entities, "POST", "/entities/"+c.entityType)
 }
 
-func (c entityClient) Update(query string, patch []Entity) ([]WriteResult, error) {
+func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) {
 	if query == "" {
 		return nil, ErrNoQuery
 	}
@@ -140,13 +140,11 @@ func (c entityClient) Update(query string, patch []Entity) ([]WriteResult, error
 	if len(patch) == 0 {
 		return nil, ErrNoEntity
 	}
-	for _, e := range patch {
-		if _, ok := e[META_LABEL_ID]; !ok {
-			return nil, ErrIdNotSet
-		}
-		if entityType, ok := e[META_LABEL_TYPE]; ok && entityType != c.entityType {
-			return nil, ErrTypeMismatch
-		}
+	if _, ok := patch[META_LABEL_ID]; ok {
+		return nil, ErrIdSet
+	}
+	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
+		return nil, ErrTypeMismatch
 	}
 	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query)
 }
@@ -155,7 +153,14 @@ func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	wr, err := c.Update("_id="+id, []Entity{patch})
+	if _, ok := patch[META_LABEL_ID]; ok {
+		return WriteResult{}, ErrIdSet
+	}
+	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
+		return WriteResult{}, ErrTypeMismatch
+	}
+
+	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -222,12 +227,12 @@ func (c entityClient) EntityType() string {
 
 // --------------------------------------------------------------------------
 
-func (c entityClient) write(entities []Entity, method, endpoint string) ([]WriteResult, error) {
+func (c entityClient) write(payload interface{}, method, endpoint string) ([]WriteResult, error) {
 	// If entities (insert and update), marshal them. If not (delete), pass nil.
 	var bytes []byte
 	var err error
-	if entities != nil && len(entities) > 0 {
-		bytes, err = json.Marshal(entities)
+	if payload != nil {
+		bytes, err = json.Marshal(payload)
 		if err != nil {
 			return nil, err
 		}
