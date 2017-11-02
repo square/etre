@@ -498,15 +498,15 @@ func writeOp(c echo.Context) entity.WriteOp {
 	}
 
 	setOp := c.QueryParam("setOp")
-	if setOp == "" {
+	if setOp != "" {
 		wo.SetOp = setOp
 	}
 	setId := c.QueryParam("setId")
-	if setId == "" {
+	if setId != "" {
 		wo.SetId = setId
 	}
 	setSize := c.QueryParam("setSize")
-	if setSize == "" {
+	if setSize != "" {
 		i, _ := strconv.Atoi(setSize)
 		wo.SetSize = i
 	}
