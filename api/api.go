@@ -66,9 +66,10 @@ func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id/lables/:labels", api.entityDeleteLabelHandler)
 
 	// /////////////////////////////////////////////////////////////////////
-	// Stats
+	// Stats and status
 	// /////////////////////////////////////////////////////////////////////
 	api.echo.GET(etre.API_ROOT+"/stats", api.statsHandler)
+	api.echo.GET(etre.API_ROOT+"/status", api.statusHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Changes
@@ -87,6 +88,10 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // https://echo.labstack.com/middleware for more details.
 func (api *API) Use(middleware ...echo.MiddlewareFunc) {
 	api.echo.Use(middleware...)
+}
+
+func (api *API) Router() *echo.Echo {
+	return api.echo
 }
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -336,6 +341,13 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 func (api *API) statsHandler(c echo.Context) error {
 	// @todo: implement this
 	return nil
+}
+
+func (api *API) statusHandler(c echo.Context) error {
+	status := map[string]interface{}{
+		"ok": true,
+	}
+	return c.JSON(http.StatusOK, status)
 }
 
 // --------------------------------------------------------------------------
