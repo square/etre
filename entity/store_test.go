@@ -81,7 +81,6 @@ func teardown(t *testing.T, es entity.Store) {
 func TestCreateNewStoreError(t *testing.T) {
 	// This is invalid because it's a reserved name
 	invalidEntityType := "entities"
-	expectedErrMsg := fmt.Sprintf("entity type %s is a reserved word", invalidEntityType)
 	_, err := entity.NewStore(&mock.Connector{}, database, []string{invalidEntityType}, &mock.CDCStore{}, &mock.Delayer{})
 	if !strings.Contains(err.Error(), "reserved word") {
 		t.Errorf("err = %s, expected to contain 'reserved word'", err)

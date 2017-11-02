@@ -67,6 +67,11 @@ type entityClient struct {
 	httpClient *http.Client
 }
 
+const (
+	oneWR   = true
+	multiWR = false
+)
+
 // NewEntityClient creates a new type-specific Etre API client that makes requests
 // with the given http.Client. An Etre client is bound to the specified entity
 // type. Use an etre.EntityClients map to pass multiple type-specific clients. Like
@@ -135,7 +140,7 @@ func (c entityClient) Insert(entities []Entity) ([]WriteResult, error) {
 			return nil, ErrTypeMismatch
 		}
 	}
-	return c.write(entities, "POST", "/entities/"+c.entityType)
+	return c.write(entities, "POST", "/entities/"+c.entityType, multiWR)
 }
 
 func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) {
@@ -152,21 +157,18 @@ func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) 
 	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
 		return nil, ErrTypeMismatch
 	}
-	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query)
+	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query, multiWR)
 }
 
 func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	if _, ok := patch[META_LABEL_ID]; ok {
-		return WriteResult{}, ErrIdSet
-	}
 	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
 		return WriteResult{}, ErrTypeMismatch
 	}
 
-	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id)
+	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id, oneWR)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -178,14 +180,14 @@ func (c entityClient) Delete(query string) ([]WriteResult, error) {
 		return nil, ErrNoQuery
 	}
 	query = url.QueryEscape(query) // always escape the query
-	return c.write(nil, "DELETE", "/entities/"+c.entityType+"?"+query)
+	return c.write(nil, "DELETE", "/entities/"+c.entityType+"?query="+query, multiWR)
 }
 
 func (c entityClient) DeleteOne(id string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	wr, err := c.Delete("_id=" + id)
+	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id, oneWR)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -220,7 +222,7 @@ func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) 
 	if label == "" {
 		return WriteResult{}, ErrNoLabel
 	}
-	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
+	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label, oneWR)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -233,7 +235,7 @@ func (c entityClient) EntityType() string {
 
 // --------------------------------------------------------------------------
 
-func (c entityClient) write(payload interface{}, method, endpoint string) ([]WriteResult, error) {
+func (c entityClient) write(payload interface{}, method, endpoint string, oneWR bool) ([]WriteResult, error) {
 	// If entities (insert and update), marshal them. If not (delete), pass nil.
 	var bytes []byte
 	var err error
@@ -259,8 +261,16 @@ func (c entityClient) write(payload interface{}, method, endpoint string) ([]Wri
 
 	// On success, there should always be a list of write results.
 	var wr []WriteResult
-	if err := json.Unmarshal(bytes, &wr); err != nil {
-		return nil, err
+	if oneWR {
+		var one WriteResult
+		if err := json.Unmarshal(bytes, &one); err != nil {
+			return nil, err
+		}
+		wr = []WriteResult{one}
+	} else {
+		if err := json.Unmarshal(bytes, &wr); err != nil {
+			return nil, err
+		}
 	}
 
 	return wr, nil
@@ -314,12 +324,15 @@ func apiError(resp *http.Response, bytes []byte) error {
 	if resp == nil {
 		return fmt.Errorf("no response from API; check API logs for errors")
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrEntityNotFound
+	}
 	var errResp Error
 	if len(bytes) > 0 {
 		json.Unmarshal(bytes, &errResp)
 	}
 	if errResp.Type == "" {
-		return fmt.Errorf("API error: code %d (no error response object); check API logs for errors", resp.StatusCode)
+		return fmt.Errorf("HTTP status %d; check API log for errors", resp.StatusCode)
 	}
 	return fmt.Errorf("API error: %s (type: %s code: %d)",
 		errResp.Message, errResp.Type, resp.StatusCode)

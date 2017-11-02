@@ -75,8 +75,8 @@ func Run(ctx app.Context) {
 		}
 		if len(cmdLine.Args) > 2 {
 			config.Help()
-			fmt.Fprintf(os.Stderr, "Too many arguments for --delete: specify only entity and id (got %d arguments: %s)\n",
-				len(cmdLine.Args), cmdLine.Args)
+			fmt.Fprintf(os.Stderr, "Too many arguments for --delete: specify only entity and id (%d extra arguments: %s)\n",
+				len(cmdLine.Args[2:]), cmdLine.Args[2:])
 			os.Exit(1)
 		}
 	} else if cmdLine.Options.Update { // --update
@@ -164,9 +164,9 @@ func Run(ctx app.Context) {
 
 		patch := etre.Entity{}
 		for _, kv := range ctx.Patches {
-			p := strings.SplitAfterN(kv, "=", 2)
+			p := strings.SplitN(kv, "=", 2)
 			if len(p) != 2 {
-				fmt.Fprintf(os.Stderr, "Invalid patch: %s: split on = yielded %d parts, expected 2", patch, len(p))
+				fmt.Fprintf(os.Stderr, "Invalid patch: %s: split on = yielded %d parts, expected 2\n", patch, len(p))
 				os.Exit(1)
 			}
 			patch[p[0]] = p[1]
@@ -176,6 +176,13 @@ func Run(ctx app.Context) {
 		}
 
 		wr, err := ec.UpdateOne(ctx.EntityId, patch)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "API error: %s\n", err)
+			os.Exit(1)
+		}
+		if o.Debug {
+			app.Debug("wr: %#v (%v)", wr, err)
+		}
 
 		if ctx.Hooks.WriteResult != nil {
 			if o.Debug {
@@ -184,6 +191,16 @@ func Run(ctx app.Context) {
 			ctx.Hooks.WriteResult(ctx, wr, err)
 		}
 
+		if wr.Error != "" {
+			fmt.Fprintf(os.Stderr, "API write error: %s\n", wr.Error)
+			os.Exit(1)
+		}
+		if ctx.Options.Old {
+			for _, label := range wr.Diff.Labels() {
+				fmt.Printf("# %s=%v\n", label, wr.Diff[label])
+			}
+		}
+		fmt.Printf("OK, updated %s %s\n", ctx.EntityType, ctx.EntityId)
 		return
 	}
 
@@ -203,6 +220,9 @@ func Run(ctx app.Context) {
 		}
 
 		wr, err := ec.DeleteOne(ctx.EntityId)
+		if o.Debug {
+			app.Debug("wr: %#v (%v)", wr, err)
+		}
 
 		if ctx.Hooks.WriteResult != nil {
 			if o.Debug {
@@ -211,6 +231,32 @@ func Run(ctx app.Context) {
 			ctx.Hooks.WriteResult(ctx, wr, err)
 		}
 
+		if err != nil {
+			switch err {
+			case etre.ErrEntityNotFound:
+				if ctx.Options.Strict {
+					fmt.Fprintf(os.Stderr, "Not found: %s %s does not exist\n", ctx.EntityType, ctx.EntityId)
+					os.Exit(1)
+				} else {
+					fmt.Printf("OK, but %s %s did not exist\n", ctx.EntityType, ctx.EntityId)
+					return
+				}
+			default:
+				fmt.Fprintf(os.Stderr, "API error: %s\n", err)
+				os.Exit(1)
+			}
+		}
+
+		if wr.Error != "" {
+			fmt.Fprintf(os.Stderr, "API write error: %s\n", wr.Error)
+			os.Exit(1)
+		}
+		if ctx.Options.Old {
+			for _, label := range wr.Diff.Labels() {
+				fmt.Printf("# %s=%v\n", label, wr.Diff[label])
+			}
+		}
+		fmt.Printf("OK, deleted %s %s\n", ctx.EntityType, ctx.EntityId)
 		return
 	}
 
@@ -239,10 +285,6 @@ func Run(ctx app.Context) {
 	if o.Debug {
 		app.Debug("%d entities, err: %v", len(entities), err)
 	}
-
-	// //////////////////////////////////////////////////////////////////////
-	// Handle response
-	// //////////////////////////////////////////////////////////////////////
 
 	// If Response hook set, let it handle the reponse.
 	if ctx.Hooks.AfterQuery != nil {

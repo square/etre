@@ -295,9 +295,9 @@ func (api *API) getEntityHandler(c echo.Context) error {
 
 	if len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
-	} else {
-		return c.JSON(http.StatusOK, entities[0])
 	}
+
+	return c.JSON(http.StatusOK, entities[0])
 }
 
 func (api *API) putEntityHandler(c echo.Context) error {
@@ -319,6 +319,11 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	if entities == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
 	wr := api.WriteResults(entities, err)
 
 	return c.JSON(http.StatusOK, wr[0])
@@ -337,6 +342,11 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 	if entities == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
 	wr := api.WriteResults(entities, err)
 
 	return c.JSON(http.StatusOK, wr[0])
@@ -522,7 +532,8 @@ func queryForId(id string) query.Query {
 // language we use only supports querying by string or int. See more at:
 // github.com/square/etre/query
 func validValueType(v interface{}) bool {
-	return reflect.TypeOf(v).Kind() == reflect.String || reflect.TypeOf(v).Kind() == reflect.Int
+	k := reflect.TypeOf(v).Kind()
+	return k == reflect.String || k == reflect.Int || k == reflect.Bool
 }
 
 func validateParams(c echo.Context, needEntityId bool) error {

@@ -181,14 +181,15 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrTypeMismatch  = errors.New("entity _type and Client entity type are different")
-	ErrIdSet         = errors.New("entity _id is set but not allowed on insert")
-	ErrIdNotSet      = errors.New("entity _id is not set")
-	ErrNoEntity      = errors.New("empty entity or id slice; at least one required")
-	ErrNoLabel       = errors.New("empty label slice; at least one required")
-	ErrNoQuery       = errors.New("empty query string")
-	ErrBadData       = errors.New("data from CDC feed is not event or control")
-	ErrCallerBlocked = errors.New("caller blocked")
+	ErrTypeMismatch   = errors.New("entity _type and Client entity type are different")
+	ErrIdSet          = errors.New("entity _id is set but not allowed on insert")
+	ErrIdNotSet       = errors.New("entity _id is not set")
+	ErrNoEntity       = errors.New("empty entity or id slice; at least one required")
+	ErrNoLabel        = errors.New("empty label slice; at least one required")
+	ErrNoQuery        = errors.New("empty query string")
+	ErrBadData        = errors.New("data from CDC feed is not event or control")
+	ErrCallerBlocked  = errors.New("caller blocked")
+	ErrEntityNotFound = errors.New("entity not found")
 )
 
 // WriteError is a convenience function for returning the WriteResult error, if any,
