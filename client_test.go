@@ -131,7 +131,7 @@ func TestQueryAndIdRequired(t *testing.T) {
 	if _, err := ec.Query("", etre.QueryFilter{}); err != etre.ErrNoQuery {
 		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
 	}
-	if _, err := ec.Update("", entities); err != etre.ErrNoQuery {
+	if _, err := ec.Update("", entities[0]); err != etre.ErrNoQuery {
 		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
 	}
 	if _, err := ec.Delete(""); err != etre.ErrNoQuery {
@@ -468,7 +468,6 @@ func TestUpdateOK(t *testing.T) {
 	// Set global vars used by httptest.Server
 	respData = []etre.WriteResult{
 		{
-			Id:  "abc",
 			URI: "http://localhost/entity/abc",
 			Diff: map[string]interface{}{
 				"foo": "foo",
@@ -480,13 +479,10 @@ func TestUpdateOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	// Normal update that returns status code 200 and a write result
-	entities := []etre.Entity{
-		{
-			etre.META_LABEL_ID: "abc", // required
-			"foo":              "bar", // patch foo:foo -> for:bar
-		},
+	entity := etre.Entity{
+		"foo": "bar", // patch foo:foo -> for:bar
 	}
-	got, err := ec.Update("foo=bar", entities)
+	got, err := ec.Update("foo=bar", entity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,13 +512,10 @@ func TestUpdateAPIError(t *testing.T) {
 
 	// Get error on update
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
-	entities := []etre.Entity{
-		{
-			etre.META_LABEL_ID: "abc",
-			"foo":              "bar",
-		},
+	entity := etre.Entity{
+		"foo": "bar",
 	}
-	got, err := ec.Update("foo=bar", entities)
+	got, err := ec.Update("foo=bar", entity)
 	if err == nil {
 		t.Fatal("err is nil, expected an error")
 	}
@@ -544,8 +537,8 @@ func TestUpdateNoEntityError(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	// A zero length slice of entities should return ErrNoEntity
-	entities := []etre.Entity{}
-	got, err := ec.Update("foo=bar", entities)
+	entity := etre.Entity{}
+	got, err := ec.Update("foo=bar", entity)
 	if err != etre.ErrNoEntity {
 		t.Fatalf("err is '%s', expected ErrNoEtity", err)
 	}
@@ -559,29 +552,25 @@ func TestUpdateMetalabelErrors(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
-	// _id is required on update
-	entities := []etre.Entity{
-		{
-			"foo": "bar",
-		},
+	// _id is not allowed on update patch
+	entity := etre.Entity{
+		etre.META_LABEL_ID: "abc",
+		"foo":              "bar",
 	}
-	got, err := ec.Update("foo=bar", entities)
-	if err != etre.ErrIdNotSet {
-		t.Fatalf("err is '%s', expected ErrIdNotSet", err)
+	got, err := ec.Update("foo=bar", entity)
+	if err != etre.ErrIdSet {
+		t.Fatalf("err is '%s', expected ErrIdSet", err)
 	}
 	if got != nil {
 		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
 	}
 
 	// _type must match Client type (node ^)
-	entities = []etre.Entity{
-		{
-			etre.META_LABEL_ID: "abc",
-			"_type":            "wrong", // wrong
-			"foo":              "bar",
-		},
+	entity = etre.Entity{
+		"_type": "wrong", // wrong
+		"foo":   "bar",
 	}
-	got, err = ec.Update("foo=bar", entities)
+	got, err = ec.Update("foo=bar", entity)
 	if err != etre.ErrTypeMismatch {
 		t.Fatalf("err is '%s', expected ErrTypeMismatch", err)
 	}
@@ -613,8 +602,7 @@ func TestUpdateOneOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	entity := etre.Entity{
-		etre.META_LABEL_ID: "abc", // required
-		"foo":              "bar", // patch foo:foo -> for:bar
+		"foo": "bar", // patch foo:foo -> for:bar
 	}
 	got, err := ec.UpdateOne("abc", entity)
 	if err != nil {
@@ -624,7 +612,7 @@ func TestUpdateOneOK(t *testing.T) {
 	if gotMethod != "PUT" {
 		t.Errorf("got method %s, expected PUT", gotMethod)
 	}
-	expectPath := etre.API_ROOT + "/entities/node"
+	expectPath := etre.API_ROOT + "/entity/node/abc"
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}

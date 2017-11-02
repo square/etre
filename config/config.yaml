@@ -8,7 +8,7 @@
 #   tls-key:
 #   tls-ca:
 #   username_header: username
-# datatsource:
+# datasource:
 #   url: localhost
 #   database: etre
 #   timeout: 5

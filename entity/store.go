@@ -134,7 +134,7 @@ func (s *store) DeleteEntityLabel(entityType string, id string, label string) (e
 		ReturnNew: false,
 	}
 
-	var diff etre.Entity
+	diff := etre.Entity{}
 	// We call Select so that Apply will return the orginal deleted label (and
 	// "_id" field, which is included by default) rather than returning the
 	// entire original document
@@ -259,7 +259,7 @@ func (s *store) ReadEntities(entityType string, q query.Query) ([]etre.Entity, e
 
 	mgoQuery := translateQuery(q)
 
-	var entities []etre.Entity
+	entities := []etre.Entity{}
 	err = c.Find(mgoQuery).All(&entities)
 	if err != nil {
 		return nil, ErrRead{DbError: err}

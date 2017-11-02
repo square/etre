@@ -27,7 +27,7 @@ import (
 
 var flagConfig string
 var default_addr = "127.0.0.1:8080"
-var default_database_url = "localhost"
+var default_datasource_url = "localhost"
 var default_database = "etre"
 var default_entity_types = []string{"node"} // @todo: remove
 var default_database_timeout_seconds = 5
@@ -66,8 +66,8 @@ func main() {
 		Server: config.ServerConfig{
 			Addr: default_addr,
 		},
-		Datasource: config.DatasourceConfig{
-			URL:      default_database_url,
+		Datasource: DatasourceConfig{
+			URL:      default_datasource_url,
 			Database: default_database,
 			Timeout:  default_database_timeout_seconds,
 		},
