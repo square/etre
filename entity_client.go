@@ -127,7 +127,7 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 		resp, bytes, err = c.do("GET", url, nil)
 	} else {
 		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
-		// @todo
+		// @todo: support QueryFilter
 		resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
 	}
 	if err != nil {
@@ -149,14 +149,8 @@ func (c entityClient) Insert(entities []Entity) ([]WriteResult, error) {
 	if len(entities) == 0 {
 		return nil, ErrNoEntity
 	}
-	for _, e := range entities {
-		if _, ok := e[META_LABEL_ID]; ok {
-			return nil, ErrIdSet
-		}
-		if entityType, ok := e[META_LABEL_TYPE]; ok && entityType != c.entityType {
-			return nil, ErrTypeMismatch
-		}
-	}
+	// Let API validate the new entities. Currently, they cannot contain _id,
+	// for example, but let the API be the single source of truth.
 	return c.write(entities, "POST", "/entities/"+c.entityType, multiWR)
 }
 
@@ -168,12 +162,8 @@ func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) 
 	if len(patch) == 0 {
 		return nil, ErrNoEntity
 	}
-	if _, ok := patch[META_LABEL_ID]; ok {
-		return nil, ErrIdSet
-	}
-	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
-		return nil, ErrTypeMismatch
-	}
+	// Let API return error if patch contains (meta)labels that cannot be updated,
+	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
 	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query, multiWR)
 }
 
@@ -181,10 +171,8 @@ func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
-		return WriteResult{}, ErrTypeMismatch
-	}
-
+	// Let API return error if patch contains (meta)labels that cannot be updated,
+	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
 	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id, oneWR)
 	if err != nil {
 		return WriteResult{}, err

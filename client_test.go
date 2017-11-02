@@ -423,42 +423,6 @@ func TestInsertNoEntityError(t *testing.T) {
 	}
 }
 
-func TestInsertMetalabelErrors(t *testing.T) {
-	setup(t)
-
-	ec := etre.NewEntityClient("node", ts.URL, httpClient)
-
-	// _id is not allowed on insert
-	entities := []etre.Entity{
-		{
-			"_id": "abc", // not allowed
-			"foo": "bar",
-		},
-	}
-	got, err := ec.Insert(entities)
-	if err != etre.ErrIdSet {
-		t.Fatalf("err is '%s', expected ErrIdSet", err)
-	}
-	if got != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
-
-	// _type must match Client type (node ^)
-	entities = []etre.Entity{
-		{
-			"_type": "wrong", // wrong
-			"foo":   "bar",
-		},
-	}
-	got, err = ec.Insert(entities)
-	if err != etre.ErrTypeMismatch {
-		t.Fatalf("err is '%s', expected ErrTypeMismatch", err)
-	}
-	if got != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
-}
-
 // //////////////////////////////////////////////////////////////////////////
 // Update
 // //////////////////////////////////////////////////////////////////////////
@@ -542,38 +506,6 @@ func TestUpdateNoEntityError(t *testing.T) {
 	got, err := ec.Update("foo=bar", entity)
 	if err != etre.ErrNoEntity {
 		t.Fatalf("err is '%s', expected ErrNoEtity", err)
-	}
-	if got != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
-}
-
-func TestUpdateMetalabelErrors(t *testing.T) {
-	setup(t)
-
-	ec := etre.NewEntityClient("node", ts.URL, httpClient)
-
-	// _id is not allowed on update patch
-	entity := etre.Entity{
-		etre.META_LABEL_ID: "abc",
-		"foo":              "bar",
-	}
-	got, err := ec.Update("foo=bar", entity)
-	if err != etre.ErrIdSet {
-		t.Fatalf("err is '%s', expected ErrIdSet", err)
-	}
-	if got != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
-
-	// _type must match Client type (node ^)
-	entity = etre.Entity{
-		"_type": "wrong", // wrong
-		"foo":   "bar",
-	}
-	got, err = ec.Update("foo=bar", entity)
-	if err != etre.ErrTypeMismatch {
-		t.Fatalf("err is '%s', expected ErrTypeMismatch", err)
 	}
 	if got != nil {
 		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
