@@ -117,7 +117,8 @@ func Run(ctx app.Context) {
 	// //////////////////////////////////////////////////////////////////////
 
 	// cmdLine.Args validated above
-	ctx.EntityType = cmdLine.Args[0]
+	entityType := strings.SplitN(cmdLine.Args[0], ".", 2)
+	ctx.EntityType = entityType[0]
 
 	if ctx.Options.Addr == "" {
 		fmt.Fprintf(os.Stderr, "Etre API address is not set."+
@@ -266,7 +267,9 @@ func Run(ctx app.Context) {
 
 	// Parse args: entity[.labels] query
 	ctx.EntityType, ctx.ReturnLabels, ctx.Query = config.ParseArgs(cmdLine.Args)
-	app.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
+	if o.Debug {
+		app.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
+	}
 
 	if ctx.Hooks.BeforeQuery != nil {
 		if o.Debug {
@@ -297,12 +300,15 @@ func Run(ctx app.Context) {
 
 	// Else, do the default: print the entities, if no error.
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "API error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 
 	// No entities? No fun. :-(
 	if len(entities) == 0 {
+		if ctx.Options.Strict {
+			os.Exit(1)
+		}
 		return
 	}
 
