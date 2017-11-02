@@ -66,7 +66,7 @@ func main() {
 		Server: config.ServerConfig{
 			Addr: default_addr,
 		},
-		Datasource: DatasourceConfig{
+		Datasource: config.DatasourceConfig{
 			URL:      default_datasource_url,
 			Database: default_database,
 			Timeout:  default_database_timeout_seconds,

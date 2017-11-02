@@ -39,9 +39,12 @@ type Options struct {
 	IFS     string `arg:"env" yaml:"ifs"`
 	Labels  bool   `arg:"env" yaml:"labels"`
 	Ping    bool
-	Old     bool `arg:"env" yaml:"old"`
-	Strict  bool `arg:"env" yaml:"strict"`
-	Timeout uint `arg:"env" yaml:"timeout"`
+	Old     bool   `arg:"env" yaml:"old"`
+	SetOp   string `arg:"--set-op,env:SET_OP"`
+	SetId   string `arg:"--set-id,env:SET_ID"`
+	SetSize int    `arg:"--set-size,env:SET_SIZE"`
+	Strict  bool   `arg:"env" yaml:"strict"`
+	Timeout uint   `arg:"env" yaml:"timeout"`
 	Update  bool
 	Version bool
 }
@@ -106,7 +109,10 @@ func Help() {
 		"  --labels   Print label: before value\n"+
 		"  --ping     Ping addr\n"+
 		"  --old      Print old values on --update\n"+
-		"  --strict   Error if --delete does not match an entity\n"+
+		"  --set-id   User-defined set ID for --update and --delete\n"+
+		"  --set-op   User-defined set op for --update and --delete\n"+
+		"  --set-size User-defined set size for --update and --delete (must be > 0)\n"+
+		"  --strict   Error if query or --delete does not match entities\n"+
 		"  --timeout  API timeout, milliseconds (default: %d)\n"+
 		"  --update   Apply patches to one entity by id\n"+
 		"  --version  Print version\n\n",

@@ -41,6 +41,16 @@ type EntityClient interface {
 
 	// EntityType returns the entity type of the client.
 	EntityType() string
+
+	// WithSet returns a new EntityClient that uses the given Set for all write operations.
+	// The Set cannot be removed. Therefore, when the set is complete, discard the new
+	// EntityClient (let its reference count become zero). On insert, the given Set is added
+	// to entities that do not have explicit set labels (_setOp, _setId, and _setSize).
+	// On update and delete, the given Set is passed as URL query parameteres (setOp, setId,
+	// and setSize). Sets do not apply to queries. The Set is not checked or validated; the
+	// caller must ensure that Set.Size is greater than zero and Set.Op and Set.Id are nonempty
+	// strings.
+	WithSet(Set) EntityClient
 }
 
 // EntityClients represents type-specific entity clients keyed on user-defined const
@@ -65,6 +75,7 @@ type entityClient struct {
 	entityType string
 	addr       string
 	httpClient *http.Client
+	set        Set
 }
 
 const (
@@ -86,12 +97,17 @@ func NewEntityClient(entityType, addr string, httpClient *http.Client) EntityCli
 	return c
 }
 
+func (c entityClient) WithSet(set Set) EntityClient {
+	// This func makes use of copy on write:
+	new := c      // new = c (same memory address)
+	new.set = set // on write to new, new becomes its own var (different memory address)
+	return new
+}
+
 func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
 	if query == "" {
 		return nil, ErrNoQuery
 	}
-
-	// @todo: translate filter to query params
 
 	// Do the normal GET /entities?query unless query is ~2k because make URL
 	// length is about that. In that case, switch to alternate endpoint to
@@ -111,6 +127,7 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 		resp, bytes, err = c.do("GET", url, nil)
 	} else {
 		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
+		// @todo
 		resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
 	}
 	if err != nil {
@@ -246,6 +263,17 @@ func (c entityClient) write(payload interface{}, method, endpoint string, oneWR 
 		}
 	}
 
+	// Add the set url query params, if set
+	if c.set.Size > 0 {
+		if strings.Contains(endpoint, "?") {
+			// Add to existing query params
+			endpoint += fmt.Sprintf("&setId=%s&setOp=%s&setSize=%d", c.set.Id, c.set.Op, c.set.Size)
+		} else {
+			// No query params yet
+			endpoint += fmt.Sprintf("?setId=%s&setOp=%s&setSize=%d", c.set.Id, c.set.Op, c.set.Size)
+		}
+	}
+
 	// Do low-level HTTP request. An erorr here is probably a network error,
 	// not an API error.
 	resp, bytes, err := c.do(method, endpoint, bytes)
@@ -349,13 +377,14 @@ func apiError(resp *http.Response, bytes []byte) error {
 type MockEntityClient struct {
 	QueryFunc       func(string, QueryFilter) ([]Entity, error)
 	InsertFunc      func([]Entity) ([]WriteResult, error)
-	UpdateFunc      func(query string, patch []Entity) ([]WriteResult, error)
+	UpdateFunc      func(query string, patch Entity) ([]WriteResult, error)
 	UpdateOneFunc   func(id string, patch Entity) (WriteResult, error)
 	DeleteFunc      func(query string) ([]WriteResult, error)
 	DeleteOneFunc   func(id string) (WriteResult, error)
 	LabelsFunc      func(id string) ([]string, error)
 	DeleteLabelFunc func(id string, label string) (WriteResult, error)
 	EntityTypeFunc  func() string
+	WithSetFunc     func(Set) EntityClient
 }
 
 func (c MockEntityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
@@ -372,7 +401,7 @@ func (c MockEntityClient) Insert(entities []Entity) ([]WriteResult, error) {
 	return nil, nil
 }
 
-func (c MockEntityClient) Update(query string, patch []Entity) ([]WriteResult, error) {
+func (c MockEntityClient) Update(query string, patch Entity) ([]WriteResult, error) {
 	if c.UpdateFunc != nil {
 		return c.UpdateFunc(query, patch)
 	}
@@ -419,4 +448,11 @@ func (c MockEntityClient) EntityType() string {
 		return c.EntityTypeFunc()
 	}
 	return ""
+}
+
+func (c MockEntityClient) WithSet(set Set) EntityClient {
+	if c.WithSetFunc != nil {
+		return c.WithSetFunc(set)
+	}
+	return c
 }

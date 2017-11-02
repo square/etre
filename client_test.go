@@ -588,13 +588,11 @@ func TestUpdateOneOK(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			Id:  "abc",
-			URI: "http://localhost/entity/abc",
-			Diff: map[string]interface{}{
-				"foo": "foo",
-			},
+	respData = etre.WriteResult{
+		Id:  "abc",
+		URI: "http://localhost/entity/abc",
+		Diff: map[string]interface{}{
+			"foo": "foo",
 		},
 	}
 
@@ -617,7 +615,7 @@ func TestUpdateOneOK(t *testing.T) {
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if diff := deep.Equal(got, respData.([]etre.WriteResult)[0]); diff != nil {
+	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
 		t.Error(diff)
 	}
 }
@@ -655,11 +653,60 @@ func TestDeleteOK(t *testing.T) {
 		t.Errorf("got method %s, expected DELETE", gotMethod)
 	}
 	expectPath := etre.API_ROOT + "/entities/node"
+	expectQuery := "query=" + query
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if gotQuery != query {
-		t.Errorf("got query %s, expected %s", gotQuery, query)
+	if gotQuery != expectQuery {
+		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
+	}
+	if diff := deep.Equal(got, respData); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestDeleteWithSet(t *testing.T) {
+	setup(t)
+
+	// Set global vars used by httptest.Server
+	respData = []etre.WriteResult{
+		{
+			Id:  "abc",
+			URI: "http://localhost/entity/abc",
+			Diff: map[string]interface{}{
+				"foo": "foo",
+			},
+		},
+	}
+
+	// New etre.Client
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+
+	set := etre.Set{
+		Id:   "setid",
+		Op:   "setop",
+		Size: 3,
+	}
+	ec = ec.WithSet(set)
+
+	// Normal delete that returns status code 200 and a write result
+	query := "foo=bar"
+	got, err := ec.Delete(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify call and response
+	if gotMethod != "DELETE" {
+		t.Errorf("got method %s, expected DELETE", gotMethod)
+	}
+	expectPath := etre.API_ROOT + "/entities/node"
+	expectQuery := "query=" + query + "&setId=setid&setOp=setop&setSize=3"
+	if gotPath != expectPath {
+		t.Errorf("got path %s, expected %s", gotPath, expectPath)
+	}
+	if gotQuery != expectQuery {
+		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
 	}
 	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
@@ -674,13 +721,11 @@ func TestDeleteOneOK(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			Id:  "abc",
-			URI: "http://localhost/entity/abc",
-			Diff: map[string]interface{}{
-				"foo": "foo",
-			},
+	respData = etre.WriteResult{
+		Id:  "abc",
+		URI: "http://localhost/entity/abc",
+		Diff: map[string]interface{}{
+			"foo": "foo",
 		},
 	}
 
@@ -695,15 +740,51 @@ func TestDeleteOneOK(t *testing.T) {
 	if gotMethod != "DELETE" {
 		t.Errorf("got method %s, expected DELETE", gotMethod)
 	}
-	expectPath := etre.API_ROOT + "/entities/node"
+	expectPath := etre.API_ROOT + "/entity/node/abc"
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	expectQuery := etre.META_LABEL_ID + "=abc"
+	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestDeleteOneWithSet(t *testing.T) {
+	setup(t)
+
+	respData = etre.WriteResult{
+		Id:  "abc",
+		URI: "http://localhost/entity/abc",
+		Diff: map[string]interface{}{
+			"foo": "foo",
+		},
+	}
+
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+
+	set := etre.Set{
+		Id:   "setid",
+		Op:   "setop",
+		Size: 2,
+	}
+	ec = ec.WithSet(set)
+
+	got, err := ec.DeleteOne("abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != "DELETE" {
+		t.Errorf("got method %s, expected DELETE", gotMethod)
+	}
+	expectPath := etre.API_ROOT + "/entity/node/abc"
+	expectQuery := "setId=setid&setOp=setop&setSize=2"
+	if gotPath != expectPath {
+		t.Errorf("got path %s, expected %s", gotPath, expectPath)
+	}
 	if gotQuery != expectQuery {
 		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
 	}
-	if diff := deep.Equal(got, respData.([]etre.WriteResult)[0]); diff != nil {
+	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
 		t.Error(diff)
 	}
 }
@@ -742,13 +823,11 @@ func TestDeleteLabelOK(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			Id:  "abc",
-			URI: "http://localhost/entity/abc",
-			Diff: map[string]interface{}{
-				"foo": "foo",
-			},
+	respData = etre.WriteResult{
+		Id:  "abc",
+		URI: "http://localhost/entity/abc",
+		Diff: map[string]interface{}{
+			"foo": "foo",
 		},
 	}
 
@@ -767,7 +846,7 @@ func TestDeleteLabelOK(t *testing.T) {
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if diff := deep.Equal(got, respData.([]etre.WriteResult)[0]); diff != nil {
+	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
 		t.Error(diff)
 	}
 }

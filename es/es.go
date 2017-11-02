@@ -93,10 +93,24 @@ func Run(ctx app.Context) {
 		}
 	}
 
+	var set etre.Set
+	if cmdLine.Options.SetSize > 0 || cmdLine.Options.SetOp != "" || cmdLine.Options.SetId != "" {
+		if cmdLine.Options.SetSize == 0 || cmdLine.Options.SetOp == "" || cmdLine.Options.SetId == "" {
+			fmt.Fprintf(os.Stderr, "All three --set options (or environment variables: SET_OP, SET_ID, SET_SIZE) must be specified\n")
+			os.Exit(1)
+		}
+		set = etre.Set{
+			Op:   cmdLine.Options.SetOp,
+			Id:   cmdLine.Options.SetId,
+			Size: cmdLine.Options.SetSize,
+		}
+	}
+
 	// Finalize options
 	var o config.Options = cmdLine.Options
 	if o.Debug {
 		app.Debug("options: %#v\n", o)
+		app.Debug("set: %#v\n", set)
 	}
 
 	if ctx.Hooks.AfterParseOptions != nil {
@@ -135,6 +149,10 @@ func Run(ctx app.Context) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error making etre.EntityClient: %s", err)
 		os.Exit(1)
+	}
+
+	if set.Size > 0 {
+		ec = ec.WithSet(set)
 	}
 
 	// //////////////////////////////////////////////////////////////////////
@@ -201,7 +219,7 @@ func Run(ctx app.Context) {
 				fmt.Printf("# %s=%v\n", label, wr.Diff[label])
 			}
 		}
-		fmt.Printf("OK, updated %s %s\n", ctx.EntityType, ctx.EntityId)
+		fmt.Printf("OK, updated %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
 		return
 	}
 
@@ -239,7 +257,7 @@ func Run(ctx app.Context) {
 					fmt.Fprintf(os.Stderr, "Not found: %s %s does not exist\n", ctx.EntityType, ctx.EntityId)
 					os.Exit(1)
 				} else {
-					fmt.Printf("OK, but %s %s did not exist\n", ctx.EntityType, ctx.EntityId)
+					fmt.Printf("OK, but %s %s did not exist%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
 					return
 				}
 			default:
@@ -257,7 +275,7 @@ func Run(ctx app.Context) {
 				fmt.Printf("# %s=%v\n", label, wr.Diff[label])
 			}
 		}
-		fmt.Printf("OK, deleted %s %s\n", ctx.EntityType, ctx.EntityId)
+		fmt.Printf("OK, deleted %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
 		return
 	}
 
@@ -353,4 +371,12 @@ func Run(ctx app.Context) {
 			fmt.Println()
 		}
 	}
+}
+
+func setInfo(set etre.Set) string {
+	if set.Size == 0 {
+		return ""
+	}
+	// Appended to an "OK, ..." message
+	return fmt.Sprintf(" (set %s %s)", set.Op, set.Id)
 }
