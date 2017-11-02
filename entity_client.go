@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // EntityClient represents a entity type-specific client. No interface method has
@@ -40,6 +41,16 @@ type EntityClient interface {
 
 	// EntityType returns the entity type of the client.
 	EntityType() string
+
+	// WithSet returns a new EntityClient that uses the given Set for all write operations.
+	// The Set cannot be removed. Therefore, when the set is complete, discard the new
+	// EntityClient (let its reference count become zero). On insert, the given Set is added
+	// to entities that do not have explicit set labels (_setOp, _setId, and _setSize).
+	// On update and delete, the given Set is passed as URL query parameteres (setOp, setId,
+	// and setSize). Sets do not apply to queries. The Set is not checked or validated; the
+	// caller must ensure that Set.Size is greater than zero and Set.Op and Set.Id are nonempty
+	// strings.
+	WithSet(Set) EntityClient
 }
 
 // EntityClients represents type-specific entity clients keyed on user-defined const
@@ -64,7 +75,13 @@ type entityClient struct {
 	entityType string
 	addr       string
 	httpClient *http.Client
+	set        Set
 }
+
+const (
+	oneWR   = true
+	multiWR = false
+)
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
 // with the given http.Client. An Etre client is bound to the specified entity
@@ -80,12 +97,17 @@ func NewEntityClient(entityType, addr string, httpClient *http.Client) EntityCli
 	return c
 }
 
+func (c entityClient) WithSet(set Set) EntityClient {
+	// This func makes use of copy on write:
+	new := c      // new = c (same memory address)
+	new.set = set // on write to new, new becomes its own var (different memory address)
+	return new
+}
+
 func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
 	if query == "" {
 		return nil, ErrNoQuery
 	}
-
-	// @todo: translate filter to query params
 
 	// Do the normal GET /entities?query unless query is ~2k because make URL
 	// length is about that. In that case, switch to alternate endpoint to
@@ -97,9 +119,15 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	)
 	if len(query) < 2000 {
 		query = url.QueryEscape(query) // always escape the query
-		resp, bytes, err = c.do("GET", "/entities/"+c.entityType+"?"+query, nil)
+		url := "/entities/" + c.entityType + "?query=" + query
+		if len(filter.ReturnLabels) > 0 {
+			rl := strings.Join(filter.ReturnLabels, ",")
+			url += "&labels=" + rl
+		}
+		resp, bytes, err = c.do("GET", url, nil)
 	} else {
 		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
+		// @todo: support QueryFilter
 		resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
 	}
 	if err != nil {
@@ -121,15 +149,9 @@ func (c entityClient) Insert(entities []Entity) ([]WriteResult, error) {
 	if len(entities) == 0 {
 		return nil, ErrNoEntity
 	}
-	for _, e := range entities {
-		if _, ok := e[META_LABEL_ID]; ok {
-			return nil, ErrIdSet
-		}
-		if entityType, ok := e[META_LABEL_TYPE]; ok && entityType != c.entityType {
-			return nil, ErrTypeMismatch
-		}
-	}
-	return c.write(entities, "POST", "/entities/"+c.entityType)
+	// Let API validate the new entities. Currently, they cannot contain _id,
+	// for example, but let the API be the single source of truth.
+	return c.write(entities, "POST", "/entities/"+c.entityType, multiWR)
 }
 
 func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) {
@@ -140,27 +162,18 @@ func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) 
 	if len(patch) == 0 {
 		return nil, ErrNoEntity
 	}
-	if _, ok := patch[META_LABEL_ID]; ok {
-		return nil, ErrIdSet
-	}
-	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
-		return nil, ErrTypeMismatch
-	}
-	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query)
+	// Let API return error if patch contains (meta)labels that cannot be updated,
+	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
+	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query, multiWR)
 }
 
 func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	if _, ok := patch[META_LABEL_ID]; ok {
-		return WriteResult{}, ErrIdSet
-	}
-	if entityType, ok := patch[META_LABEL_TYPE]; ok && entityType != c.entityType {
-		return WriteResult{}, ErrTypeMismatch
-	}
-
-	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id)
+	// Let API return error if patch contains (meta)labels that cannot be updated,
+	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
+	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id, oneWR)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -172,14 +185,14 @@ func (c entityClient) Delete(query string) ([]WriteResult, error) {
 		return nil, ErrNoQuery
 	}
 	query = url.QueryEscape(query) // always escape the query
-	return c.write(nil, "DELETE", "/entities/"+c.entityType+"?"+query)
+	return c.write(nil, "DELETE", "/entities/"+c.entityType+"?query="+query, multiWR)
 }
 
 func (c entityClient) DeleteOne(id string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	wr, err := c.Delete("_id=" + id)
+	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id, oneWR)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -214,7 +227,7 @@ func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) 
 	if label == "" {
 		return WriteResult{}, ErrNoLabel
 	}
-	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
+	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label, oneWR)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -227,7 +240,7 @@ func (c entityClient) EntityType() string {
 
 // --------------------------------------------------------------------------
 
-func (c entityClient) write(payload interface{}, method, endpoint string) ([]WriteResult, error) {
+func (c entityClient) write(payload interface{}, method, endpoint string, oneWR bool) ([]WriteResult, error) {
 	// If entities (insert and update), marshal them. If not (delete), pass nil.
 	var bytes []byte
 	var err error
@@ -235,6 +248,17 @@ func (c entityClient) write(payload interface{}, method, endpoint string) ([]Wri
 		bytes, err = json.Marshal(payload)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// Add the set url query params, if set
+	if c.set.Size > 0 {
+		if strings.Contains(endpoint, "?") {
+			// Add to existing query params
+			endpoint += fmt.Sprintf("&setId=%s&setOp=%s&setSize=%d", c.set.Id, c.set.Op, c.set.Size)
+		} else {
+			// No query params yet
+			endpoint += fmt.Sprintf("?setId=%s&setOp=%s&setSize=%d", c.set.Id, c.set.Op, c.set.Size)
 		}
 	}
 
@@ -253,8 +277,16 @@ func (c entityClient) write(payload interface{}, method, endpoint string) ([]Wri
 
 	// On success, there should always be a list of write results.
 	var wr []WriteResult
-	if err := json.Unmarshal(bytes, &wr); err != nil {
-		return nil, err
+	if oneWR {
+		var one WriteResult
+		if err := json.Unmarshal(bytes, &one); err != nil {
+			return nil, err
+		}
+		wr = []WriteResult{one}
+	} else {
+		if err := json.Unmarshal(bytes, &wr); err != nil {
+			return nil, err
+		}
 	}
 
 	return wr, nil
@@ -305,12 +337,18 @@ func (c entityClient) url(endpoint string) string {
 }
 
 func apiError(resp *http.Response, bytes []byte) error {
+	if resp == nil {
+		return fmt.Errorf("no response from API; check API logs for errors")
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrEntityNotFound
+	}
 	var errResp Error
 	if len(bytes) > 0 {
 		json.Unmarshal(bytes, &errResp)
 	}
 	if errResp.Type == "" {
-		return fmt.Errorf("API error: code %d (no error response object); check API logs for errors", resp.StatusCode)
+		return fmt.Errorf("HTTP status %d; check API log for errors", resp.StatusCode)
 	}
 	return fmt.Errorf("API error: %s (type: %s code: %d)",
 		errResp.Message, errResp.Type, resp.StatusCode)
@@ -327,13 +365,14 @@ func apiError(resp *http.Response, bytes []byte) error {
 type MockEntityClient struct {
 	QueryFunc       func(string, QueryFilter) ([]Entity, error)
 	InsertFunc      func([]Entity) ([]WriteResult, error)
-	UpdateFunc      func(query string, patch []Entity) ([]WriteResult, error)
+	UpdateFunc      func(query string, patch Entity) ([]WriteResult, error)
 	UpdateOneFunc   func(id string, patch Entity) (WriteResult, error)
 	DeleteFunc      func(query string) ([]WriteResult, error)
 	DeleteOneFunc   func(id string) (WriteResult, error)
 	LabelsFunc      func(id string) ([]string, error)
 	DeleteLabelFunc func(id string, label string) (WriteResult, error)
 	EntityTypeFunc  func() string
+	WithSetFunc     func(Set) EntityClient
 }
 
 func (c MockEntityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
@@ -350,7 +389,7 @@ func (c MockEntityClient) Insert(entities []Entity) ([]WriteResult, error) {
 	return nil, nil
 }
 
-func (c MockEntityClient) Update(query string, patch []Entity) ([]WriteResult, error) {
+func (c MockEntityClient) Update(query string, patch Entity) ([]WriteResult, error) {
 	if c.UpdateFunc != nil {
 		return c.UpdateFunc(query, patch)
 	}
@@ -397,4 +436,11 @@ func (c MockEntityClient) EntityType() string {
 		return c.EntityTypeFunc()
 	}
 	return ""
+}
+
+func (c MockEntityClient) WithSet(set Set) EntityClient {
+	if c.WithSetFunc != nil {
+		return c.WithSetFunc(set)
+	}
+	return c
 }

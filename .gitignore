@@ -22,3 +22,4 @@ vendor/
 tags
 coverage.out
 bin/etre/etre
+es/bin/bin

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
@@ -119,7 +121,14 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
-	entities, err := api.es.ReadEntities(entityType, q)
+	// Query Filter
+	f := etre.QueryFilter{}
+	csvReturnLabels := c.QueryParam("labels")
+	if csvReturnLabels != "" {
+		f.ReturnLabels = strings.Split(csvReturnLabels, ",")
+	}
+
+	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
 		return handleError(ErrDb.New("database error: %s", err))
 	}
@@ -141,7 +150,8 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
 		return handleError(err)
 	}
-	entityType := c.Param("type")
+
+	wo := writeOp(c)
 
 	// Get entities from request payload.
 	var entities []etre.Entity
@@ -159,7 +169,7 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 		}
 	}
 
-	ids, err := api.es.CreateEntities(entityType, entities, getUsername(c))
+	ids, err := api.es.CreateEntities(wo, entities)
 	if ids == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
@@ -172,7 +182,8 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
 		return handleError(err)
 	}
-	entityType := c.Param("type")
+
+	wo := writeOp(c)
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
@@ -191,7 +202,7 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 		return handleError(ErrInternal.New(err.Error()))
 	}
 
-	entities, err := api.es.UpdateEntities(entityType, q, requestUpdate, getUsername(c))
+	entities, err := api.es.UpdateEntities(wo, q, requestUpdate)
 	if entities == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
@@ -204,7 +215,8 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
 		return handleError(err)
 	}
-	entityType := c.Param("type")
+
+	wo := writeOp(c)
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
@@ -217,7 +229,7 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
-	entities, err := api.es.DeleteEntities(entityType, q, getUsername(c))
+	entities, err := api.es.DeleteEntities(wo, q)
 	if entities == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
@@ -234,7 +246,8 @@ func (api *API) postEntityHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
 		return handleError(err)
 	}
-	entityType := c.Param("type")
+
+	wo := writeOp(c)
 
 	// Get entity from request payload.
 	var entity etre.Entity
@@ -250,7 +263,7 @@ func (api *API) postEntityHandler(c echo.Context) error {
 		}
 	}
 
-	ids, err := api.es.CreateEntities(entityType, []etre.Entity{entity}, getUsername(c))
+	ids, err := api.es.CreateEntities(wo, []etre.Entity{entity})
 	if ids == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
@@ -268,24 +281,31 @@ func (api *API) getEntityHandler(c echo.Context) error {
 
 	q := queryForId(entityId)
 
-	entities, err := api.es.ReadEntities(entityType, q)
+	// Query Filter
+	f := etre.QueryFilter{}
+	csvReturnLabels := c.QueryParam("labels")
+	if csvReturnLabels != "" {
+		f.ReturnLabels = strings.Split(csvReturnLabels, ",")
+	}
+
+	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
 
 	if len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
-	} else {
-		return c.JSON(http.StatusOK, entities[0])
 	}
+
+	return c.JSON(http.StatusOK, entities[0])
 }
 
 func (api *API) putEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
 		return handleError(err)
 	}
-	entityType := c.Param("type")
-	entityId := c.Param("id")
+
+	wo := writeOp(c)
 
 	// Get entities from request payload.
 	var requestUpdate etre.Entity
@@ -293,12 +313,17 @@ func (api *API) putEntityHandler(c echo.Context) error {
 		return handleError(ErrInternal.New(err.Error()))
 	}
 
-	q := queryForId(entityId)
+	q := queryForId(wo.EntityId)
 
-	entities, err := api.es.UpdateEntities(entityType, q, requestUpdate, getUsername(c))
+	entities, err := api.es.UpdateEntities(wo, q, requestUpdate)
 	if entities == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
 	wr := api.WriteResults(entities, err)
 
 	return c.JSON(http.StatusOK, wr[0])
@@ -308,15 +333,20 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
 		return handleError(err)
 	}
-	entityType := c.Param("type")
-	entityId := c.Param("id")
 
-	q := queryForId(entityId)
+	wo := writeOp(c)
 
-	entities, err := api.es.DeleteEntities(entityType, q, getUsername(c))
+	q := queryForId(wo.EntityId)
+
+	entities, err := api.es.DeleteEntities(wo, q)
 	if entities == nil && err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
 	wr := api.WriteResults(entities, err)
 
 	return c.JSON(http.StatusOK, wr[0])
@@ -460,6 +490,30 @@ func ConvertFloat64ToInt(entity etre.Entity) {
 // Private funcs
 // //////////////////////////////////////////////////////////////////////////
 
+func writeOp(c echo.Context) entity.WriteOp {
+	wo := entity.WriteOp{
+		User:       getUsername(c),
+		EntityType: c.Param("type"),
+		EntityId:   c.Param("id"),
+	}
+
+	setOp := c.QueryParam("setOp")
+	if setOp != "" {
+		wo.SetOp = setOp
+	}
+	setId := c.QueryParam("setId")
+	if setId != "" {
+		wo.SetId = setId
+	}
+	setSize := c.QueryParam("setSize")
+	if setSize != "" {
+		i, _ := strconv.Atoi(setSize)
+		wo.SetSize = i
+	}
+
+	return wo
+}
+
 // _id is not a valid field name to pass to query.Translate, so we manually
 // create a query object.
 func queryForId(id string) query.Query {
@@ -478,7 +532,8 @@ func queryForId(id string) query.Query {
 // language we use only supports querying by string or int. See more at:
 // github.com/square/etre/query
 func validValueType(v interface{}) bool {
-	return reflect.TypeOf(v).Kind() == reflect.String || reflect.TypeOf(v).Kind() == reflect.Int
+	k := reflect.TypeOf(v).Kind()
+	return k == reflect.String || k == reflect.Int || k == reflect.Bool
 }
 
 func validateParams(c echo.Context, needEntityId bool) error {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 )
 
 const (
@@ -28,17 +29,38 @@ const (
 type Entity map[string]interface{}
 
 func (e Entity) Id() string {
-	return e["_id"].(string)
+	return e[META_LABEL_ID].(string)
 }
 
 func (e Entity) Type() string {
-	return e["_type"].(string)
+	return e[META_LABEL_TYPE].(string)
 }
 
 // Has returns true of the entity has the label, regardless of its value.
 func (e Entity) Has(label string) bool {
 	_, ok := e[label]
 	return ok
+}
+
+// A Set is a user-defined logical grouping of writes (insert, update, delete).
+type Set struct {
+	Id   string
+	Op   string
+	Size int
+}
+
+func (e Entity) Set() Set {
+	set := Set{}
+	if _, ok := e["_setId"]; ok {
+		set.Id = e["_setId"].(string)
+	}
+	if _, ok := e["_setOp"]; ok {
+		set.Op = e["_setOp"].(string)
+	}
+	if _, ok := e["_setSize"]; ok {
+		set.Size = e["_setSize"].(int)
+	}
+	return set
 }
 
 var metaLabels = map[string]bool{
@@ -51,14 +73,19 @@ var metaLabels = map[string]bool{
 	"_type":    true,
 }
 
+func IsMetalabel(label string) bool {
+	return metaLabels[label]
+}
+
+// Labels returns all labels, sorted, including meta-labels (_id, _type, etc.)
 func (e Entity) Labels() []string {
-	labels := make([]string, 0, len(e))
+	labels := make([]string, len(e))
+	i := 0
 	for label := range e {
-		if metaLabels[label] {
-			continue
-		}
-		labels = append(labels, label)
+		labels[i] = label
+		i++
 	}
+	sort.Strings(labels)
 	return labels
 }
 
@@ -73,12 +100,12 @@ func (e Entity) String(label string) string {
 	return ""
 }
 
+// QueryFilter represents filtering options for EntityClient.Query().
 type QueryFilter struct {
-	// ReturnLabels defines labels included in matching entities. An empty map
-	// returns all labels. Else, only labels in the map with a true value are
-	// returned. The internal ID (_id) is always returned unless explicitly
-	// excluded by being set in the map with a false value.
-	ReturnLabels map[string]bool // keyed on label
+	// ReturnLabels defines labels included in matching entities. An empty slice
+	// returns all labels, including meta-labels. Else, only labels in the slice
+	// are returned.
+	ReturnLabels []string
 }
 
 // WriteResult represents the result of a write operation (insert, update, delete)
@@ -154,14 +181,15 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrTypeMismatch  = errors.New("entity _type and Client entity type are different")
-	ErrIdSet         = errors.New("entity _id is set but not allowed on insert")
-	ErrIdNotSet      = errors.New("entity _id is not set")
-	ErrNoEntity      = errors.New("empty entity or id slice; at least one required")
-	ErrNoLabel       = errors.New("empty label slice; at least one required")
-	ErrNoQuery       = errors.New("empty query string")
-	ErrBadData       = errors.New("data from CDC feed is not event or control")
-	ErrCallerBlocked = errors.New("caller blocked")
+	ErrTypeMismatch   = errors.New("entity _type and Client entity type are different")
+	ErrIdSet          = errors.New("entity _id is set but not allowed on insert")
+	ErrIdNotSet       = errors.New("entity _id is not set")
+	ErrNoEntity       = errors.New("empty entity or id slice; at least one required")
+	ErrNoLabel        = errors.New("empty label slice; at least one required")
+	ErrNoQuery        = errors.New("empty query string")
+	ErrBadData        = errors.New("data from CDC feed is not event or control")
+	ErrCallerBlocked  = errors.New("caller blocked")
+	ErrEntityNotFound = errors.New("entity not found")
 )
 
 // WriteError is a convenience function for returning the WriteResult error, if any,

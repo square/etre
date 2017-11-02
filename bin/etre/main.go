@@ -29,7 +29,7 @@ var flagConfig string
 var default_addr = "127.0.0.1:8080"
 var default_datasource_url = "localhost"
 var default_database = "etre"
-var default_entity_types = []string{"node"} // @todo: remove
+var default_entity_types = []string{}
 var default_database_timeout_seconds = 5
 var default_cdc_collection = "" // disabled
 var default_delay_collection = "delay"

@@ -13,6 +13,7 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/test"
 	"github.com/square/etre/test/mock"
@@ -36,7 +37,6 @@ var (
 	seedEntities                          []etre.Entity
 )
 
-var mongoURL = "monogdb://localhost/etre_test?replicaSet=etre"
 var addr = "http://localhost"
 var entityType = "nodes"
 
@@ -47,16 +47,16 @@ var mu = &sync.Mutex{}
 func setup(t *testing.T) {
 	if defaultServer == nil {
 		es := &mock.EntityStore{
-			CreateEntitiesFunc: func(string, []etre.Entity, string) ([]string, error) {
+			CreateEntitiesFunc: func(entity.WriteOp, []etre.Entity) ([]string, error) {
 				return createIds, createErr
 			},
-			ReadEntitiesFunc: func(string, query.Query) ([]etre.Entity, error) {
+			ReadEntitiesFunc: func(string, query.Query, etre.QueryFilter) ([]etre.Entity, error) {
 				return seedEntities, readErr
 			},
-			UpdateEntitiesFunc: func(string, query.Query, etre.Entity, string) ([]etre.Entity, error) {
+			UpdateEntitiesFunc: func(entity.WriteOp, query.Query, etre.Entity) ([]etre.Entity, error) {
 				return updateEntities, updateErr
 			},
-			DeleteEntitiesFunc: func(string, query.Query, string) ([]etre.Entity, error) {
+			DeleteEntitiesFunc: func(entity.WriteOp, query.Query) ([]etre.Entity, error) {
 				return deleteEntities, deleteErr
 			},
 		}
