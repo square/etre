@@ -1,6 +1,7 @@
 package etre
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -41,6 +42,7 @@ type CDCClient interface {
 // Internal implementation of CDCClient over a websocket.
 type cdcClient struct {
 	addr       string
+	tlsConfig  *tls.Config
 	bufferSize int
 	dbg        bool
 	// --
@@ -65,10 +67,11 @@ type cdcClient struct {
 //
 // The client does not automatically ping the server. The caller should run a
 // separate goroutine to periodically call Ping. Every 10-60s is reasonable.
-func NewCDCClient(addr string, bufferSize int, debug bool) CDCClient {
+func NewCDCClient(addr string, tlsConfig *tls.Config, bufferSize int, debug bool) CDCClient {
 	addr += API_ROOT + "/changes"
 	c := &cdcClient{
 		addr:       addr,
+		tlsConfig:  tlsConfig,
 		bufferSize: bufferSize,
 		dbg:        debug,
 		// --
@@ -98,7 +101,10 @@ func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 		return nil, err
 	}
 	c.debug("connecting to %s", c.addr)
-	conn, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	dialer := &websocket.Dialer{
+		TLSClientConfig: c.tlsConfig,
+	}
+	conn, resp, err := dialer.Dial(u.String(), nil)
 	if err != nil {
 		if resp != nil {
 			defer resp.Body.Close()
