@@ -827,7 +827,7 @@ func TestCDCClient(t *testing.T) {
 
 	// Start client
 	url, _ := url.Parse(ts.URL)
-	ec := etre.NewCDCClient("ws://"+url.Host, 10, debug)
+	ec := etre.NewCDCClient("ws://"+url.Host, nil, 10, debug)
 	defer ec.Stop()
 
 	startTs := time.Now()
