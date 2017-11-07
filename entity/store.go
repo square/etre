@@ -559,7 +559,14 @@ func translateQuery(q query.Query) bson.M {
 			mgoQuery[p.Label] = bson.M{"$exists": false}
 		default:
 			if p.Label == etre.META_LABEL_ID {
-				mgoQuery[p.Label] = bson.M{"$eq": bson.ObjectIdHex(p.Value.(string))}
+				switch p.Value.(type) {
+				case string:
+					mgoQuery[p.Label] = bson.M{"$eq": bson.ObjectIdHex(p.Value.(string))}
+				case bson.ObjectId:
+					mgoQuery[p.Label] = bson.M{"$eq": p.Value}
+				default:
+					panic(fmt.Sprintf("invalid _id value type: %T", p.Value))
+				}
 			} else {
 				mgoQuery[p.Label] = bson.M{operatorMap[p.Operator]: p.Value}
 			}
