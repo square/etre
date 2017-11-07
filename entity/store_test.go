@@ -221,22 +221,22 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 	// There's strategically only one Entity we expect to return to make testing easier
 	expect := seedEntities
 
-	for _, l := range labelSelectors {
+	for i, l := range labelSelectors {
 		q, err := query.Translate(l)
 		if err != nil {
-			t.Error(err)
+			t.Fatalf("cannot translate '%s': %s", l, err)
 		}
 		actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 		if err != nil {
 			if _, ok := err.(entity.ErrRead); ok {
-				t.Errorf("Error reading entities: %s", err)
+				t.Errorf("%d Error reading entities: %s", i, err)
 			} else {
-				t.Errorf("Uknown error when reading entities: %s", err)
+				t.Errorf("%d: Unknown error when reading entities: %s", i, err)
 			}
 		}
 
 		if diff := deep.Equal(actual, expect); diff != nil {
-			t.Error(diff)
+			t.Errorf("%d: %+v", i, diff)
 		}
 	}
 }

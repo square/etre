@@ -11,7 +11,7 @@ package query
 import (
 	"strconv"
 
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/square/etre/ksl"
 )
 
 // Query is a list of predicates.
@@ -31,17 +31,16 @@ type Predicate struct {
 func Translate(labelSelectors string) (Query, error) {
 	query := Query{}
 
-	req, err := labels.ParseToRequirements(labelSelectors)
+	req, err := ksl.Parse(labelSelectors)
 	if err != nil {
 		return query, err
 	}
 
 	for _, r := range req {
-		op := string(r.Operator())
 		p := Predicate{
-			Label:    r.Key(),
-			Operator: op,
-			Value:    translateValues(op, r.Values().List()),
+			Label:    r.Label,
+			Operator: r.Op,
+			Value:    translateValues(r.Op, r.Values),
 		}
 		query.Predicates = append(query.Predicates, p)
 	}
@@ -64,10 +63,10 @@ func translateValues(operator string, values []string) interface{} {
 	case "=", "==", "!=":
 		// Values set must contain one value.
 		value = values[0]
-	case "lt", "gt":
+	case ">", ">=", "<", "<=":
 		// Values set must contain only one value, which was interpreted as an integer, so convert from string to integer
 		value, _ = strconv.Atoi(values[0])
-	case "exists", "!":
+	case "exists", "notexists":
 		// Values set must be empty
 		value = []string{}
 	}

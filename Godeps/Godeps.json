@@ -130,31 +130,6 @@
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
 			"Rev": "eb3733d160e74a9c7e442f435eb3bea458e1d19f"
-		},
-		{
-			"ImportPath": "k8s.io/apimachinery/pkg/selection",
-			"Comment": "kubernetes-1.9.0-alpha.1-65-g18a564b",
-			"Rev": "18a564baac720819100827c16fdebcadb05b2d0d"
-		},
-		{
-			"ImportPath": "k8s.io/apimachinery/pkg/util/errors",
-			"Comment": "kubernetes-1.9.0-alpha.1-65-g18a564b",
-			"Rev": "18a564baac720819100827c16fdebcadb05b2d0d"
-		},
-		{
-			"ImportPath": "k8s.io/apimachinery/pkg/util/sets",
-			"Comment": "kubernetes-1.9.0-alpha.1-65-g18a564b",
-			"Rev": "18a564baac720819100827c16fdebcadb05b2d0d"
-		},
-		{
-			"ImportPath": "k8s.io/apimachinery/pkg/util/validation",
-			"Comment": "kubernetes-1.9.0-alpha.1-65-g18a564b",
-			"Rev": "18a564baac720819100827c16fdebcadb05b2d0d"
-		},
-		{
-			"ImportPath": "k8s.io/apimachinery/pkg/util/validation/field",
-			"Comment": "kubernetes-1.9.0-alpha.1-65-g18a564b",
-			"Rev": "18a564baac720819100827c16fdebcadb05b2d0d"
 		}
 	]
 }

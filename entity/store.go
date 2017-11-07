@@ -96,8 +96,10 @@ var operatorMap = map[string]string{
 	"=":     "$eq",
 	"==":    "$eq",
 	"!=":    "$ne",
-	"lt":    "$lt",
-	"gt":    "$gt",
+	"<":     "$lt",
+	"<=":    "$lte",
+	">":     "$gt",
+	">=":    "$gte",
 }
 
 var reservedNames = []string{"entity", "entities"}
@@ -553,7 +555,7 @@ func translateQuery(q query.Query) bson.M {
 		switch p.Operator {
 		case "exists":
 			mgoQuery[p.Label] = bson.M{"$exists": true}
-		case "!":
+		case "notexists":
 			mgoQuery[p.Label] = bson.M{"$exists": false}
 		default:
 			mgoQuery[p.Label] = bson.M{operatorMap[p.Operator]: p.Value}
