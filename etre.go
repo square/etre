@@ -1,3 +1,5 @@
+// Copyright 2017, Square, Inc.
+
 // Package etre provides API clients and low-level primitive data types.
 package etre
 
