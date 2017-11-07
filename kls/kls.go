@@ -1,7 +1,7 @@
 // Copyright 2017, Square, Inc.
 
-// Package ksl provides a light-weight parser for Kubernetes label selectors.
-package ksl
+// Package kls provides a light-weight parser for Kubernetes label selectors.
+package kls
 
 import (
 	"fmt"

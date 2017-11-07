@@ -1,20 +1,20 @@
-package ksl_test
+package kls_test
 
 import (
 	"testing"
 
 	"github.com/go-test/deep"
-	"github.com/square/etre/ksl"
+	"github.com/square/etre/kls"
 )
 
 func TestIn(t *testing.T) {
 	// Basic "x in (<values>)"
 	sel := "x in (1,2,3)"
-	got, err := ksl.Parse(sel)
+	got, err := kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := []ksl.Requirement{
+	expect := []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "in",
@@ -27,11 +27,11 @@ func TestIn(t *testing.T) {
 
 	// "in(<values>)": no space between "in" and value list
 	sel = "x in(1,2,3)"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "in",
@@ -46,11 +46,11 @@ func TestIn(t *testing.T) {
 func TestNotIn(t *testing.T) {
 	// Basic "x notin (<values>)"
 	sel := "x notin (1,2,3)"
-	got, err := ksl.Parse(sel)
+	got, err := kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := []ksl.Requirement{
+	expect := []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "notin",
@@ -63,11 +63,11 @@ func TestNotIn(t *testing.T) {
 
 	// "notin(<values>)": no space between "notin" and value list
 	sel = "x notin(1,2,3)"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "notin",
@@ -82,11 +82,11 @@ func TestNotIn(t *testing.T) {
 func TestEqual(t *testing.T) {
 	// Basic "x = 1"
 	sel := "x = 1"
-	got, err := ksl.Parse(sel)
+	got, err := kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := []ksl.Requirement{
+	expect := []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "=",
@@ -99,11 +99,11 @@ func TestEqual(t *testing.T) {
 
 	// "x=1": no spacing
 	sel = "x=1"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "=",
@@ -116,11 +116,11 @@ func TestEqual(t *testing.T) {
 
 	// Basic "x == 1"
 	sel = "x == 1"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "==",
@@ -133,11 +133,11 @@ func TestEqual(t *testing.T) {
 
 	// "x==1": no spacing
 	sel = "x==1"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "==",
@@ -152,11 +152,11 @@ func TestEqual(t *testing.T) {
 func TestNotEqual(t *testing.T) {
 	// Basic "x != 1"
 	sel := "x != 1"
-	got, err := ksl.Parse(sel)
+	got, err := kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := []ksl.Requirement{
+	expect := []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "!=",
@@ -169,11 +169,11 @@ func TestNotEqual(t *testing.T) {
 
 	// "x!=1": no spacing
 	sel = "x!=1"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "!=",
@@ -190,11 +190,11 @@ func TestInequality(t *testing.T) {
 	for _, op := range ops {
 		// With space
 		sel := "x " + op + " 1"
-		got, err := ksl.Parse(sel)
+		got, err := kls.Parse(sel)
 		if err != nil {
 			t.Fatal(err)
 		}
-		expect := []ksl.Requirement{
+		expect := []kls.Requirement{
 			{
 				Label:  "x",
 				Op:     op,
@@ -207,7 +207,7 @@ func TestInequality(t *testing.T) {
 
 		// No space
 		sel = "x" + op + "1"
-		got, err = ksl.Parse(sel)
+		got, err = kls.Parse(sel)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,11 +221,11 @@ func TestMixed(t *testing.T) {
 
 	// equality, exists
 	sel := "x = y, z"
-	got, err := ksl.Parse(sel)
+	got, err := kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := []ksl.Requirement{
+	expect := []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "=",
@@ -243,11 +243,11 @@ func TestMixed(t *testing.T) {
 
 	// exists, exists, exists
 	sel = "x,y,z"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "exists",
@@ -270,11 +270,11 @@ func TestMixed(t *testing.T) {
 
 	// Everything
 	sel = "x in (1,2), y notin(stage), z = foo, foo!=bar, app == shift, p, !p"
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{
+	expect = []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "in",
@@ -320,11 +320,11 @@ func TestExcessiveSpacing(t *testing.T) {
 
 	// Ignore spacing around everything
 	sel := "  x =    y  , z      "
-	got, err := ksl.Parse(sel)
+	got, err := kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := []ksl.Requirement{
+	expect := []kls.Requirement{
 		{
 			Label:  "x",
 			Op:     "=",
@@ -343,7 +343,7 @@ func TestExcessiveSpacing(t *testing.T) {
 	// Nothing but space is an error. It could mean the query wasn't
 	// auto-generated properly?
 	sel = "                      "
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err == nil {
 		t.Errorf("err is nil, expected an error")
 	}
@@ -354,11 +354,29 @@ func TestExcessiveSpacing(t *testing.T) {
 	// An empty string is not an error. It could imply "everything", i.e.
 	// no requirements.
 	sel = ""
-	got, err = ksl.Parse(sel)
+	got, err = kls.Parse(sel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect = []ksl.Requirement{}
+	expect = []kls.Requirement{}
+	if diff := deep.Equal(got, expect); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestQueryId(t *testing.T) {
+	sel := "_id = 507f191e810c19729de860ea"
+	got, err := kls.Parse(sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect := []kls.Requirement{
+		{
+			Label:  "_id",
+			Op:     "=",
+			Values: []string{"507f191e810c19729de860ea"},
+		},
+	}
 	if diff := deep.Equal(got, expect); diff != nil {
 		t.Error(diff)
 	}
