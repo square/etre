@@ -11,7 +11,7 @@ package query
 import (
 	"strconv"
 
-	"github.com/square/etre/ksl"
+	"github.com/square/etre/kls"
 )
 
 // Query is a list of predicates.
@@ -31,7 +31,7 @@ type Predicate struct {
 func Translate(labelSelectors string) (Query, error) {
 	query := Query{}
 
-	req, err := ksl.Parse(labelSelectors)
+	req, err := kls.Parse(labelSelectors)
 	if err != nil {
 		return query, err
 	}
