@@ -558,7 +558,11 @@ func translateQuery(q query.Query) bson.M {
 		case "notexists":
 			mgoQuery[p.Label] = bson.M{"$exists": false}
 		default:
-			mgoQuery[p.Label] = bson.M{operatorMap[p.Operator]: p.Value}
+			if p.Label == etre.META_LABEL_ID {
+				mgoQuery[p.Label] = bson.M{"$eq": bson.ObjectIdHex(p.Value.(string))}
+			} else {
+				mgoQuery[p.Label] = bson.M{operatorMap[p.Operator]: p.Value}
+			}
 		}
 	}
 	return mgoQuery
