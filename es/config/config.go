@@ -46,7 +46,7 @@ type Options struct {
 	Strict  bool   `arg:"env" yaml:"strict"`
 	Timeout uint   `arg:"env" yaml:"timeout"`
 	Update  bool
-	Version bool
+	Version bool `arg:"-v"`
 }
 
 // CommandLine represents options (--addr, etc.) and args: entity type, return
