@@ -147,7 +147,7 @@ func Run(ctx app.Context) {
 
 	ec, err := ctx.Factories.EntityClient.Make(ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error making etre.EntityClient: %s", err)
+		fmt.Fprintf(os.Stderr, "Error making etre.EntityClient: %s\n", err)
 		os.Exit(1)
 	}
 

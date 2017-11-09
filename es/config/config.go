@@ -20,7 +20,7 @@ import (
 const (
 	DEFAULT_CONFIG_FILES = "/etc/etre/es.yaml,~/.es.yaml"
 	DEFAULT_IFS          = ","
-	DEFAULT_TIMEOUT      = 10000 // 10s
+	DEFAULT_TIMEOUT      = 5000 // 5s
 )
 
 var (
@@ -31,9 +31,9 @@ var (
 type Options struct {
 	Addr    string `arg:"env" yaml:"addr"`
 	Config  string `arg:"env"`
-	Debug   bool
+	Debug   bool   `arg:"env" yaml:"debug"`
 	Delete  bool
-	Env     string
+	Env     string `arg:"env" yaml:"env"`
 	Help    bool
 	JSON    bool   `arg:"env" yaml:"json"`
 	IFS     string `arg:"env" yaml:"ifs"`

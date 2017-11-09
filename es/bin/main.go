@@ -5,6 +5,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/square/etre"
 	"github.com/square/etre/es"
@@ -15,7 +16,10 @@ import (
 type ecFactory struct{}
 
 func (f ecFactory) Make(ctx app.Context) (etre.EntityClient, error) {
-	ec := etre.NewEntityClient(ctx.EntityType, ctx.Options.Addr, &http.Client{})
+	httpClient := &http.Client{
+		Timeout: time.Duration(ctx.Options.Timeout) * time.Millisecond,
+	}
+	ec := etre.NewEntityClient(ctx.EntityType, ctx.Options.Addr, httpClient)
 	return ec, nil
 }
 
