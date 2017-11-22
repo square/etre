@@ -359,10 +359,17 @@ func Run(ctx app.Context) {
 		// return labels, they'll get all labels (above), sorted by label name.
 		for _, e := range entities {
 			for n, label := range returnLabels {
+				var val interface{} = e[label]
+				if val == nil {
+					// Entity probably doesn't have the label requested, so there's
+					// no value, which Go prints as "<nil>", which is misleading,
+					// so we  print "" (empty string) instead.
+					val = ""
+				}
 				if withLabels {
-					fmt.Print(label, ":", e[label])
+					fmt.Print(label, ":", val)
 				} else {
-					fmt.Print(e[label])
+					fmt.Print(val)
 				}
 				if n < lastLabel { // "b,a,t" not "b,a,t,"
 					fmt.Print(ctx.Options.IFS)
