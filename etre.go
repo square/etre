@@ -14,6 +14,7 @@ const (
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
+	VERSION                  = "0.8.0-alpha"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
 )
 

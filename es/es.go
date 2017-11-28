@@ -50,7 +50,7 @@ func Run(ctx app.Context) {
 
 	// es --version and exit
 	if cmdLine.Options.Version {
-		fmt.Println("es v0.0.0")
+		fmt.Println("es " + etre.VERSION)
 		os.Exit(0)
 	}
 

@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/v1/yaml"
 
+	"github.com/square/etre"
 	"github.com/square/etre/api"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/config"
@@ -26,6 +27,7 @@ import (
 )
 
 var flagConfig string
+var default_config_file = "/etc/etre/etre.yaml"
 var default_addr = "127.0.0.1:8080"
 var default_datasource_url = "localhost"
 var default_database = "etre"
@@ -41,12 +43,14 @@ var default_streamer_buffer_size = 100
 var default_poll_interval = 2000
 
 func init() {
-	flag.StringVar(&flagConfig, "config", "", "Config file")
+	flag.StringVar(&flagConfig, "config", default_config_file, "Config file")
 }
 
 func main() {
 	log.SetFlags(log.Lshortfile | log.Ldate | log.Lmicroseconds)
 	log.SetOutput(os.Stdout)
+
+	log.Printf("Etre %s\n", etre.VERSION)
 
 	flag.Parse()
 
@@ -54,12 +58,11 @@ func main() {
 	// Load config file
 	// //////////////////////////////////////////////////////////////////////
 	configFile := flagConfig
-	log.Printf("config: %s", configFile)
+	log.Printf("config file: %s", configFile)
 
 	bytes, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		log.Println(err)
-		os.Exit(1)
+		log.Fatalf("Cannot read -config file %s: %s", configFile, err)
 	}
 
 	config := config.Config{
