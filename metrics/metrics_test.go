@@ -11,8 +11,7 @@ import (
 
 func TestCounterInc(t *testing.T) {
 	m := metrics.NewMetrics()
-	c := metrics.NewCounter()
-	m.GetOrRegister("foo", c)
+	c := m.GetOrRegisterCounter("foo")
 	c.Inc(10)
 
 	expect := int64(10)
@@ -25,8 +24,7 @@ func TestCounterInc(t *testing.T) {
 
 func TestCounterDec(t *testing.T) {
 	m := metrics.NewMetrics()
-	c := metrics.NewCounter()
-	m.GetOrRegister("foo", c)
+	c := m.GetOrRegisterCounter("foo")
 	c.Dec(1)
 
 	expect := int64(-1)
@@ -39,8 +37,7 @@ func TestCounterDec(t *testing.T) {
 
 func TestCounterCount(t *testing.T) {
 	m := metrics.NewMetrics()
-	c := metrics.NewCounter()
-	m.GetOrRegister("foo", c)
+	c := m.GetOrRegisterCounter("foo")
 
 	expect := int64(0)
 	actual := c.Count()
@@ -52,8 +49,7 @@ func TestCounterCount(t *testing.T) {
 
 func TestCounterClear(t *testing.T) {
 	m := metrics.NewMetrics()
-	c := metrics.NewCounter()
-	m.GetOrRegister("foo", c)
+	c := m.GetOrRegisterCounter("foo")
 	// Purposefully set the counter to something non-zero
 	c.Inc(10)
 	// Now clear the count
@@ -73,8 +69,7 @@ func testTimer(d time.Duration) {
 
 func TestTimerPercentile(t *testing.T) {
 	m := metrics.NewMetrics()
-	timer := metrics.NewTimer()
-	m.GetOrRegister("foo", timer)
+	timer := m.GetOrRegisterTimer("foo")
 
 	d := 1 * time.Millisecond
 	timer.Time(func() { testTimer(d) })
@@ -91,8 +86,7 @@ func TestTimerPercentile(t *testing.T) {
 
 func TestTimerMean(t *testing.T) {
 	m := metrics.NewMetrics()
-	timer := metrics.NewTimer()
-	m.GetOrRegister("foo", timer)
+	timer := m.GetOrRegisterTimer("foo")
 
 	durationValue := 1
 	d := time.Duration(durationValue) * time.Millisecond
@@ -110,8 +104,7 @@ func TestTimerMean(t *testing.T) {
 
 func TestTimerCount(t *testing.T) {
 	m := metrics.NewMetrics()
-	timer := metrics.NewTimer()
-	m.GetOrRegister("foo", timer)
+	timer := m.GetOrRegisterTimer("foo")
 
 	expect := int64(2)
 	d := 1 * time.Millisecond
