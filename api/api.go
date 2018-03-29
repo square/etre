@@ -65,7 +65,7 @@ func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 	api.echo.PUT(etre.API_ROOT+"/entity/:type/:id", api.putEntityHandler)
 	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id", api.deleteEntityHandler)
 	api.echo.GET(etre.API_ROOT+"/entity/:type/:id/labels", api.entityLabelsHandler)
-	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id/lables/:labels", api.entityDeleteLabelHandler)
+	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id/labels/:label", api.entityDeleteLabelHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Stats and status
@@ -354,14 +354,46 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 
 // Getting all labels for a single entity.
 func (api *API) entityLabelsHandler(c echo.Context) error {
-	// @todo: implement this
-	return nil
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+	entityType := c.Param("type")
+	entityId := c.Param("id")
+
+	labels, err := api.es.Labels(entityType, entityId)
+	if err != nil {
+		return handleError(ErrDb.New("database error: %s", err))
+	}
+
+	return c.JSON(http.StatusOK, labels)
 }
 
 // Delete a label from a single entity.
 func (api *API) entityDeleteLabelHandler(c echo.Context) error {
-	// @todo: implement this
-	return nil
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+
+	label := c.Param("label")
+	if label == "" {
+		return ErrMissingParam.New("missing label param")
+	}
+	// @todo: don't allow deleting metalabel
+
+	wo := writeOp(c)
+
+	entity, err := api.es.DeleteLabel(wo, label)
+	if err != nil {
+		return handleError(ErrDb.New(err.Error()))
+	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
+	wr := api.WriteResults(entities, err)
+
+	return c.JSON(http.StatusOK, wr[0])
 }
 
 // --------------------------------------------------------------------------
