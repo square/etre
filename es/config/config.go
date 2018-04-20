@@ -12,6 +12,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"github.com/alexflint/go-arg"
+	"gopkg.in/yaml.v2"
 )
 
 const (
