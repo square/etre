@@ -89,8 +89,8 @@ func ParseCommandLine(def Options) CommandLine {
 func Help() {
 	fmt.Printf("Usage:\n"+
 		"   Query: es [options] entity[.label,...] query\n"+
-		"  Update: es [options] --update entity id\n"+
-		"  Delete: es [options] --update entity id patches\n\n"+
+		"  Update: es [options] --update entity id patches\n"+
+		"  Delete: es [options] --delete entity id\n\n"+
 		"Args:\n"+
 		"  entity     Valid entity type (Etre API config.entity.types)\n"+
 		"  label      Comma-separated list of labels to return, like: host.zone,env\n"+
