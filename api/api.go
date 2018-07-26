@@ -16,9 +16,9 @@ import (
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 
+	"github.com/globalsign/mgo/bson"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
-	"gopkg.in/mgo.v2/bson"
 )
 
 var (
@@ -520,7 +520,7 @@ func writeOp(c echo.Context) entity.WriteOp {
 // create a query object.
 func queryForId(id string) query.Query {
 	return query.Query{
-		[]query.Predicate{
+		Predicates: []query.Predicate{
 			query.Predicate{
 				Label:    "_id",
 				Operator: "=",
@@ -571,12 +571,6 @@ func handleError(err error) *echo.HTTPError {
 	switch v := err.(type) {
 	case etre.Error:
 		return echo.NewHTTPError(v.HTTPStatus, err)
-	default:
-		switch err {
-		default:
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
 	}
-
-	return nil
+	return echo.NewHTTPError(http.StatusInternalServerError, err)
 }

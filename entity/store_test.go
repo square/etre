@@ -13,8 +13,8 @@ import (
 	"github.com/square/etre/query"
 	"github.com/square/etre/test/mock"
 
+	"github.com/globalsign/mgo/bson"
 	"github.com/go-test/deep"
-	"gopkg.in/mgo.v2/bson"
 )
 
 var seedEntities []etre.Entity
