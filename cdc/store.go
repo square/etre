@@ -10,8 +10,8 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
 
 	"github.com/square/etre"
 	"github.com/square/etre/db"

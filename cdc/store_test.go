@@ -10,8 +10,8 @@ import (
 	"github.com/square/etre/db"
 	"github.com/square/etre/test/mock"
 
+	"github.com/globalsign/mgo"
 	"github.com/go-test/deep"
-	"gopkg.in/mgo.v2"
 )
 
 // @todo: make this configurable
@@ -23,13 +23,13 @@ func cdcSetup(t *testing.T) db.Connector {
 	conn := db.NewConnector("localhost:3000", 5, nil, nil)
 	s, err := conn.Connect()
 	if err != nil {
-		t.Error("error connecting to mongo: %s", err)
+		t.Errorf("error connecting to mongo: %s", err)
 	}
 
 	for _, event := range mock.CDCEvents {
 		err = s.DB(cdcDatabase).C(cdcCollection).Insert(event)
 		if err != nil {
-			t.Error("error writing test CDC data to mongo: %s", err)
+			t.Errorf("error writing test CDC data to mongo: %s", err)
 		}
 	}
 
@@ -39,7 +39,7 @@ func cdcSetup(t *testing.T) db.Connector {
 func cdcTeardown(t *testing.T, conn db.Connector) {
 	s, err := conn.Connect()
 	if err != nil {
-		t.Error("error connecting to mongo: %s", err)
+		t.Errorf("error connecting to mongo: %s", err)
 	}
 
 	err = s.DB(cdcDatabase).C(cdcCollection).DropCollection()

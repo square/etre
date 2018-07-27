@@ -19,7 +19,7 @@ func delaySetup(t *testing.T) db.Connector {
 
 	_, err := conn.Connect()
 	if err != nil {
-		t.Error("error connecting to mongo: %s", err)
+		t.Errorf("error connecting to mongo: %s", err)
 	}
 
 	return conn
@@ -28,7 +28,7 @@ func delaySetup(t *testing.T) db.Connector {
 func delayTeardown(t *testing.T, conn db.Connector) {
 	s, err := conn.Connect()
 	if err != nil {
-		t.Error("error connecting to mongo: %s", err)
+		t.Errorf("error connecting to mongo: %s", err)
 	}
 
 	err = s.DB(delayDatabase).C(delayCollection).DropCollection()

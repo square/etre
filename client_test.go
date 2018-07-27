@@ -111,7 +111,7 @@ func TestEntityType(t *testing.T) {
 	setup(t)
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	if ec.EntityType() != "node" {
-		t.Errorf("got entity type %s, expected node", ec.EntityType)
+		t.Errorf("got entity type %s, expected node", ec.EntityType())
 	}
 }
 
@@ -937,7 +937,7 @@ func TestCDCClient(t *testing.T) {
 		// then int64 for UnixNano.
 		n := int64(ts.(float64))
 		if n <= startTs.UnixNano() {
-			t.Errorf("got ts %s <= sent ts %d, expected it to be greater", n, startTs.UnixNano())
+			t.Errorf("got ts %d <= sent ts %d, expected it to be greater", n, startTs.UnixNano())
 		}
 	}
 

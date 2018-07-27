@@ -1,0 +1,39 @@
+[[constraint]]
+  name = "github.com/Sirupsen/logrus"
+  version = "~1.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/alexflint/go-arg"
+
+[[constraint]]
+  name = "github.com/go-test/deep"
+  version = "~1.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/golang/groupcache"
+
+[[constraint]]
+  name = "github.com/gorilla/websocket"
+  version = "1.2.0"
+
+[[constraint]]
+  name = "github.com/labstack/echo"
+  version = "~3.3"
+
+[[constraint]]
+  name = "github.com/rs/xid"
+  version = "~1.2"
+
+[[constraint]]
+  name = "gopkg.in/yaml.v2"
+  version = "~2.2"
+
+[[constraint]]
+  name = "github.com/globalsign/mgo"
+  version = "r2018.06.15"
+
+[prune]
+  go-tests = true
+  unused-packages = true
