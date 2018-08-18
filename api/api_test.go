@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 package api_test
 
@@ -113,7 +113,7 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	}
 
 	if actual.Id != "id1" {
-		t.Error("WriteResult.Id = %s, expected id1", actual.Id)
+		t.Errorf("WriteResult.Id = %s, expected id1", actual.Id)
 	}
 	expect := etre.WriteResult{
 		Id:  actual.Id,
@@ -445,7 +445,7 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 	}
 	for i, wr := range actual {
 		if wr.Id != createIds[i] {
-			t.Errorf("WriteResult.Id = %d, expected %d", wr.Id, createIds[i])
+			t.Errorf("WriteResult.Id = %s, expected %s", wr.Id, createIds[i])
 		}
 		if wr.URI == "" {
 			t.Errorf("WriteResult.URI not set: %#v", wr)

@@ -90,7 +90,7 @@ func TestWSFeed(t *testing.T) {
 		// then int64 for UnixNano.
 		n := int64(dstTs.(float64))
 		if n <= srcTs.UnixNano() {
-			t.Errorf("got ts %s <= sent ts %d, expected it to be greater", n, srcTs.UnixNano())
+			t.Errorf("got ts %d <= sent ts %d, expected it to be greater", n, srcTs.UnixNano())
 		}
 	}
 

@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 // Package api provides API endpoints and controllers.
 package api
@@ -360,12 +360,17 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	entityId := c.Param("id")
 
-	labels, err := api.es.Labels(entityType, entityId)
+	q, _ := query.Translate("_id=" + entityId)
+	entities, err := api.es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
-		return handleError(ErrDb.New("database error: %s", err))
+		return handleError(ErrDb.New(err.Error()))
 	}
 
-	return c.JSON(http.StatusOK, labels)
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
+	return c.JSON(http.StatusOK, entities[0].Labels())
 }
 
 // Delete a label from a single entity.
@@ -378,21 +383,26 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 	if label == "" {
 		return ErrMissingParam.New("missing label param")
 	}
-	// @todo: don't allow deleting metalabel
+
+	// Don't allow deleting metalabel
+	if etre.IsMetalabel(label) {
+		return c.JSON(http.StatusForbidden, nil)
+
+	}
 
 	wo := writeOp(c)
 
-	entity, err := api.es.DeleteLabel(wo, label)
+	diff, err := api.es.DeleteLabel(wo, label)
 	if err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		switch err {
+		case entity.ErrNotFound:
+			return c.JSON(http.StatusNotFound, nil)
+		default:
+			return handleError(ErrDb.New(err.Error()))
+		}
 	}
 
-	if len(entities) == 0 {
-		return c.JSON(http.StatusNotFound, nil)
-	}
-
-	wr := api.WriteResults(entities, err)
-
+	wr := api.WriteResults(diff, err)
 	return c.JSON(http.StatusOK, wr[0])
 }
 
@@ -496,6 +506,19 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 				Error: err.Error(),
 			}
 		}
+	} else if diff, ok := v.(etre.Entity); ok {
+		wr = make([]etre.WriteResult, 1)
+		id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
+		wr[0] = etre.WriteResult{
+			Id:   id,
+			URI:  api.addr + etre.API_ROOT + "/entity/" + id,
+			Diff: diff,
+		}
+		if err != nil {
+			wr[0] = etre.WriteResult{
+				Error: err.Error(),
+			}
+		}
 	} else {
 		msg := fmt.Sprintf("api.WriteResults: invalid arg v: %v, expected []etre.Entity or []string",
 			reflect.TypeOf(v))
@@ -550,7 +573,7 @@ func writeOp(c echo.Context) entity.WriteOp {
 // create a query object.
 func queryForId(id string) query.Query {
 	return query.Query{
-		[]query.Predicate{
+		Predicates: []query.Predicate{
 			query.Predicate{
 				Label:    "_id",
 				Operator: "=",
@@ -602,11 +625,6 @@ func handleError(err error) *echo.HTTPError {
 	case etre.Error:
 		return echo.NewHTTPError(v.HTTPStatus, err)
 	default:
-		switch err {
-		default:
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-
-	return nil
 }

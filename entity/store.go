@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 // Package entity is a connector to execute CRUD commands for a single entity and
 // many entities on a DB instance.
@@ -42,6 +42,10 @@ import (
 	"github.com/rs/xid"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+)
+
+var (
+	ErrNotFound = errors.New("entity not found")
 )
 
 // WriteOp represents common metadata for insert, update, and delete Store methods.
@@ -172,7 +176,12 @@ func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 	old := etre.Entity{}
 	_, err = c.Find(bson.M{"_id": id}).Select(affectedLabels).Apply(change, &old)
 	if err != nil {
-		return nil, ErrDeleteLabel{DbError: err}
+		switch err {
+		case mgo.ErrNotFound:
+			return nil, ErrNotFound
+		default:
+			return nil, ErrDeleteLabel{DbError: err}
+		}
 	}
 
 	newRev := old["_rev"].(int) + 1 // +1 since we get the old document back

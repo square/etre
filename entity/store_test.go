@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 package entity_test
 
@@ -21,7 +21,7 @@ var seedEntities []etre.Entity
 var seedIds []string
 
 // @todo: make the host/port configurable
-var url = "localhost:3000"
+var url = "localhost:27017"
 var database = "etre_test"
 var entityType = "nodes"
 var username = "kate"

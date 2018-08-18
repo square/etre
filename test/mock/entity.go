@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 package mock
 
@@ -14,6 +14,7 @@ type EntityStore struct {
 	CreateEntitiesFunc    func(entity.WriteOp, []etre.Entity) ([]string, error)
 	UpdateEntitiesFunc    func(entity.WriteOp, query.Query, etre.Entity) ([]etre.Entity, error)
 	DeleteEntitiesFunc    func(entity.WriteOp, query.Query) ([]etre.Entity, error)
+	DeleteLabelFunc       func(entity.WriteOp, string) (etre.Entity, error)
 }
 
 func (s *EntityStore) DeleteEntityLabel(wo entity.WriteOp, label string) (etre.Entity, error) {
@@ -49,4 +50,11 @@ func (s *EntityStore) DeleteEntities(wo entity.WriteOp, q query.Query) ([]etre.E
 		return s.DeleteEntitiesFunc(wo, q)
 	}
 	return nil, nil
+}
+
+func (s *EntityStore) DeleteLabel(wo entity.WriteOp, label string) (etre.Entity, error) {
+	if s.DeleteLabelFunc != nil {
+		return s.DeleteLabelFunc(wo, label)
+	}
+	return etre.Entity{}, nil
 }
