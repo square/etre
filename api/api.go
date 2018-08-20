@@ -67,7 +67,7 @@ func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 	router.PUT("/entity/:type/:id", api.putEntityHandler)
 	router.DELETE("/entity/:type/:id", api.deleteEntityHandler)
 	router.GET("/entity/:type/:id/labels", api.entityLabelsHandler)
-	router.DELETE("/entity/:type/:id/labels/:labels", api.entityDeleteLabelHandler)
+	router.DELETE("/entity/:type/:id/labels/:label", api.entityDeleteLabelHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Stats and status
@@ -362,7 +362,7 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	entityId := c.Param("id")
 
-	q, _ := query.Translate("_id=" + entityId)
+	q := queryForId(entityId)
 	entities, err := api.es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
 		return handleError(ErrDb.New(err.Error()))
