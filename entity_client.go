@@ -166,7 +166,7 @@ func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) 
 	}
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
-	return c.write(patch, "PUT", "/entities/"+c.entityType+"?"+query, multiWR)
+	return c.write(patch, "PUT", "/entities/"+c.entityType+"?query="+query, multiWR)
 }
 
 func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {

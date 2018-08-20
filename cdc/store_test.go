@@ -10,8 +10,8 @@ import (
 	"github.com/square/etre/db"
 	"github.com/square/etre/test/mock"
 
+	"github.com/globalsign/mgo"
 	"github.com/go-test/deep"
-	"gopkg.in/mgo.v2"
 )
 
 // @todo: make this configurable

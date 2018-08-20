@@ -39,9 +39,9 @@ import (
 	"github.com/square/etre/db"
 	"github.com/square/etre/query"
 
+	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
 	"github.com/rs/xid"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 )
 
 var (

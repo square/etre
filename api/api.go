@@ -16,9 +16,9 @@ import (
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 
+	"github.com/globalsign/mgo/bson"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
-	"gopkg.in/mgo.v2/bson"
 )
 
 var (
@@ -44,39 +44,41 @@ func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 		echo: echo.New(),
 	}
 
+	router := api.echo.Group(etre.API_ROOT)
+
 	// /////////////////////////////////////////////////////////////////////
 	// Query
 	// /////////////////////////////////////////////////////////////////////
-	api.echo.GET(etre.API_ROOT+"/entities/:type", api.getEntitiesHandler)
-	api.echo.POST(etre.API_ROOT+"/query", api.queryHandler)
+	router.GET("/entities/:type", api.getEntitiesHandler)
+	router.POST("/query", api.queryHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Bulk
 	// /////////////////////////////////////////////////////////////////////
-	api.echo.POST(etre.API_ROOT+"/entities/:type", api.postEntitiesHandler)
-	api.echo.PUT(etre.API_ROOT+"/entities/:type", api.putEntitiesHandler)
-	api.echo.DELETE(etre.API_ROOT+"/entities/:type", api.deleteEntitiesHandler)
+	router.POST("/entities/:type", api.postEntitiesHandler)
+	router.PUT("/entities/:type", api.putEntitiesHandler)
+	router.DELETE("/entities/:type", api.deleteEntitiesHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Entity
 	// /////////////////////////////////////////////////////////////////////
-	api.echo.POST(etre.API_ROOT+"/entity/:type", api.postEntityHandler)
-	api.echo.GET(etre.API_ROOT+"/entity/:type/:id", api.getEntityHandler)
-	api.echo.PUT(etre.API_ROOT+"/entity/:type/:id", api.putEntityHandler)
-	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id", api.deleteEntityHandler)
-	api.echo.GET(etre.API_ROOT+"/entity/:type/:id/labels", api.entityLabelsHandler)
-	api.echo.DELETE(etre.API_ROOT+"/entity/:type/:id/labels/:label", api.entityDeleteLabelHandler)
+	router.POST("/entity/:type", api.postEntityHandler)
+	router.GET("/entity/:type/:id", api.getEntityHandler)
+	router.PUT("/entity/:type/:id", api.putEntityHandler)
+	router.DELETE("/entity/:type/:id", api.deleteEntityHandler)
+	router.GET("/entity/:type/:id/labels", api.entityLabelsHandler)
+	router.DELETE("/entity/:type/:id/labels/:labels", api.entityDeleteLabelHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Stats and status
 	// /////////////////////////////////////////////////////////////////////
-	api.echo.GET(etre.API_ROOT+"/stats", api.statsHandler)
-	api.echo.GET(etre.API_ROOT+"/status", api.statusHandler)
+	router.GET("/stats", api.statsHandler)
+	router.GET("/status", api.statusHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Changes
 	// /////////////////////////////////////////////////////////////////////
-	api.echo.GET(etre.API_ROOT+"/changes", api.changesHandler)
+	router.GET("/changes", api.changesHandler)
 
 	return api
 }

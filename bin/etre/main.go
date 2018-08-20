@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/v1/yaml"
+	"gopkg.in/yaml.v2"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
