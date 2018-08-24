@@ -554,3 +554,51 @@ func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
 	}
 }
+
+func TestDeleteLabel(t *testing.T) {
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
+
+	wo := entity.WriteOp{
+		EntityType: entityType,
+		EntityId:   seedIds[0],
+		User:       username,
+	}
+	gotOld, err := es.DeleteLabel(wo, "z")
+	if err != nil {
+		t.Error(err)
+	}
+	// Minus these meta-labels, the returned old entity should have only
+	// the deleted label: z
+	expectOld := etre.Entity{
+		"_id":   bson.ObjectIdHex(seedIds[0]),
+		"_type": entityType,
+		"_rev":  int(0),
+		"z":     seedEntities[0]["z"], // deleted
+	}
+	if diff := deep.Equal(gotOld, expectOld); diff != nil {
+		t.Logf("%+v", gotOld)
+		t.Error(diff)
+	}
+
+	// The z label should no longer be set on the entity
+	q, _ := query.Translate("y=hello")
+	gotNew, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
+	if err != nil {
+		t.Error(err)
+	}
+	expectNew := []etre.Entity{
+		{
+			"_id":   bson.ObjectIdHex(seedIds[0]),
+			"_type": entityType,
+			"_rev":  int(1),
+			"x":     2,
+			"y":     "hello",
+			// z is gone
+		},
+	}
+	if diff := deep.Equal(gotNew, expectNew); diff != nil {
+		t.Logf("%+v", gotNew)
+		t.Error(diff)
+	}
+}
