@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 package api_test
 
@@ -23,9 +23,10 @@ import (
 )
 
 var (
-	createIds      []string
-	updateEntities []etre.Entity
-	deleteEntities []etre.Entity
+	createIds         []string
+	updateEntities    []etre.Entity
+	deleteEntities    []etre.Entity
+	deleteLabelEntity etre.Entity
 
 	readErr   error
 	createErr error
@@ -35,6 +36,9 @@ var (
 	seedId0, seedId1                      string
 	seedEntity0, seedEntity1, seedEntity2 etre.Entity
 	seedEntities                          []etre.Entity
+
+	gotWO    entity.WriteOp
+	gotLabel string
 )
 
 var addr = "http://localhost"
@@ -59,6 +63,11 @@ func setup(t *testing.T) {
 			DeleteEntitiesFunc: func(entity.WriteOp, query.Query) ([]etre.Entity, error) {
 				return deleteEntities, deleteErr
 			},
+			DeleteLabelFunc: func(wo entity.WriteOp, label string) (etre.Entity, error) {
+				gotWO = wo
+				gotLabel = label
+				return deleteLabelEntity, nil
+			},
 		}
 		defaultAPI := api.NewAPI(addr, es, &mock.FeedFactory{})
 		defaultServer = httptest.NewServer(defaultAPI)
@@ -68,6 +77,10 @@ func setup(t *testing.T) {
 	createIds = nil
 	updateEntities = nil
 	deleteEntities = nil
+	deleteLabelEntity = etre.Entity{}
+
+	gotWO = entity.WriteOp{}
+	gotLabel = ""
 
 	readErr = nil
 	createErr = nil
@@ -765,6 +778,51 @@ func TestDeleteEntitiesHandlerEmptyQueryError(t *testing.T) {
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType
 	expectErr := "query string is empty"
 	testBadRequestError(t, "DELETE", url, expectErr)
+}
+
+func TestDeleteLabelHandler(t *testing.T) {
+	setup(t)
+	defer teardown(t)
+
+	// Need to return the old entity with _id so the controller can turn it
+	// into a WriteResult
+	deleteLabelEntity = etre.Entity{
+		"_id":   bson.ObjectIdHex(seedId0),
+		"_type": entityType,
+		"_rev":  uint(0),
+		"foo":   "bar",
+	}
+
+	// Success
+	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/" + seedId0 + "/labels/baz"
+	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusOK {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
+	}
+	if gotLabel != "baz" {
+		t.Errorf("got label %s, expected baz", gotLabel)
+	}
+	expectWO := entity.WriteOp{
+		User:       "?",
+		EntityType: entityType,
+		EntityId:   seedId0,
+	}
+	if diff := deep.Equal(gotWO, expectWO); diff != nil {
+		t.Error(diff)
+	}
+
+	// Cannot delete metalabel
+	url = defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/" + seedId0 + "/labels/_id"
+	statusCode, err = test.MakeHTTPRequest("DELETE", url, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusForbidden {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusForbidden)
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////

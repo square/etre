@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 // Package api provides API endpoints and controllers.
 package api
@@ -67,7 +67,7 @@ func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 	router.PUT("/entity/:type/:id", api.putEntityHandler)
 	router.DELETE("/entity/:type/:id", api.deleteEntityHandler)
 	router.GET("/entity/:type/:id/labels", api.entityLabelsHandler)
-	router.DELETE("/entity/:type/:id/lables/:labels", api.entityDeleteLabelHandler)
+	router.DELETE("/entity/:type/:id/labels/:label", api.entityDeleteLabelHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Stats and status
@@ -356,14 +356,56 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 
 // Getting all labels for a single entity.
 func (api *API) entityLabelsHandler(c echo.Context) error {
-	// @todo: implement this
-	return nil
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+	entityType := c.Param("type")
+	entityId := c.Param("id")
+
+	q := queryForId(entityId)
+	entities, err := api.es.ReadEntities(entityType, q, etre.QueryFilter{})
+	if err != nil {
+		return handleError(ErrDb.New(err.Error()))
+	}
+
+	if len(entities) == 0 {
+		return c.JSON(http.StatusNotFound, nil)
+	}
+
+	return c.JSON(http.StatusOK, entities[0].Labels())
 }
 
 // Delete a label from a single entity.
 func (api *API) entityDeleteLabelHandler(c echo.Context) error {
-	// @todo: implement this
-	return nil
+	if err := validateParams(c, true); err != nil {
+		return handleError(err)
+	}
+
+	label := c.Param("label")
+	if label == "" {
+		return ErrMissingParam.New("missing label param")
+	}
+
+	// Don't allow deleting metalabel
+	if etre.IsMetalabel(label) {
+		return c.JSON(http.StatusForbidden, nil)
+
+	}
+
+	wo := writeOp(c)
+
+	diff, err := api.es.DeleteLabel(wo, label)
+	if err != nil {
+		switch err {
+		case entity.ErrNotFound:
+			return c.JSON(http.StatusNotFound, nil)
+		default:
+			return handleError(ErrDb.New(err.Error()))
+		}
+	}
+
+	wr := api.WriteResults(diff, err)
+	return c.JSON(http.StatusOK, wr[0])
 }
 
 // --------------------------------------------------------------------------
@@ -463,6 +505,19 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 		}
 		if err != nil {
 			wr[len(wr)-1] = etre.WriteResult{
+				Error: err.Error(),
+			}
+		}
+	} else if diff, ok := v.(etre.Entity); ok {
+		wr = make([]etre.WriteResult, 1)
+		id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
+		wr[0] = etre.WriteResult{
+			Id:   id,
+			URI:  api.addr + etre.API_ROOT + "/entity/" + id,
+			Diff: diff,
+		}
+		if err != nil {
+			wr[0] = etre.WriteResult{
 				Error: err.Error(),
 			}
 		}
@@ -571,6 +626,7 @@ func handleError(err error) *echo.HTTPError {
 	switch v := err.(type) {
 	case etre.Error:
 		return echo.NewHTTPError(v.HTTPStatus, err)
+	default:
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	return echo.NewHTTPError(http.StatusInternalServerError, err)
 }

@@ -1,0 +1,37 @@
+# below are all optional configurations. if there is a value present, that is
+# the default value. to override a value, change it and uncomment that line of
+# the config.
+
+server:
+  addr: localhost:8050
+#   tls-cert:
+#   tls-key:
+#   tls-ca:
+datasource:
+  url: mongodb://localhost:27017
+  database: etre_dev
+#   timeout: 5
+#   tls-cert:
+#   tls-key:
+#   tls-ca:
+#   username:
+#   source:
+#   mechanism:
+entity:
+  types:
+    - node
+    - host
+    - app
+    - dns
+    - grant
+cdc:
+  #collection: cdc
+  fallbackFile:
+  write_retry_count: 2
+  write_retry_wait: 300 # milliseconds
+# delay:
+#   collection: delay
+#   static_delay_ms: -1 # milliseconds
+# feed:
+#   streamer_buffer_size: 100
+#   poll_interval: 2000

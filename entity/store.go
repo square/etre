@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 // Package entity is a connector to execute CRUD commands for a single entity and
 // many entities on a DB instance.
@@ -44,6 +44,10 @@ import (
 	"github.com/rs/xid"
 )
 
+var (
+	ErrNotFound = errors.New("entity not found")
+)
+
 // WriteOp represents common metadata for insert, update, and delete Store methods.
 type WriteOp struct {
 	User       string // required
@@ -64,7 +68,7 @@ type WriteOp struct {
 // Store interface has methods needed to do CRUD operations on entities.
 type Store interface {
 	// Managing labels for a single entity
-	DeleteEntityLabel(WriteOp, string) (etre.Entity, error)
+	DeleteLabel(WriteOp, string) (etre.Entity, error)
 
 	// Managing multiple entities
 	ReadEntities(string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
@@ -81,6 +85,16 @@ type store struct {
 	entityTypes []string
 	cdcs        cdc.Store
 	dm          cdc.Delayer
+}
+
+// cdcPartial represents part of a full etre.CDCEvent. It's passed to cdcWrite
+// which makes a complete CDCEvent from the partial and a WriteOp.
+type cdcPartial struct {
+	op  string
+	id  bson.ObjectId
+	old *etre.Entity
+	new *etre.Entity
+	rev uint
 }
 
 // Map of Kubernetes Selection Operator to mongoDB Operator.
@@ -125,16 +139,13 @@ func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc
 	}, nil
 }
 
-// DeleteEntityLabel deletes a label from an entity.
+// DeleteLabel deletes a label from an entity.
 //
 // Relevant documentation:
 //
 //     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
 //
-func (s *store) DeleteEntityLabel(wo WriteOp, label string) (etre.Entity, error) {
-	// @todo: make sure this is properly creating CDC events once it starts getting used.
-	return nil, fmt.Errorf("DeleteEntityLabel function needs more work before it can be used")
-
+func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 	if err := s.validate(wo); err != nil {
 		return nil, err
 	}
@@ -147,23 +158,47 @@ func (s *store) DeleteEntityLabel(wo WriteOp, label string) (etre.Entity, error)
 	defer ms.Close()
 	c := ms.DB(s.database).C(wo.EntityType)
 
-	// ReturnNew: false is the default option. Will return the original document
-	// before update was performed.
 	change := mgo.Change{
-		Update:    bson.M{"$unset": bson.M{label: ""}},
-		ReturnNew: false,
+		Update: bson.M{
+			"$unset": bson.M{label: ""}, // removes label, Mongo expects "" (see $unset docs)
+			"$inc": bson.M{
+				"_rev": 1, // increment the revision
+			},
+		},
+		ReturnNew: false, // return doc before update
 	}
 
-	diff := etre.Entity{}
 	// We call Select so that Apply will return the orginal deleted label (and
 	// "_id" field, which is included by default) rather than returning the
 	// entire original document
-	_, err = c.Find(bson.M{"_id": bson.ObjectIdHex(wo.EntityId)}).Select(bson.M{label: 1}).Apply(change, &diff)
+	id := bson.ObjectIdHex(wo.EntityId)
+	affectedLabels := selectMap(etre.Entity{label: ""})
+	old := etre.Entity{}
+	_, err = c.Find(bson.M{"_id": id}).Select(affectedLabels).Apply(change, &old)
 	if err != nil {
-		return nil, ErrDeleteLabel{DbError: err}
+		switch err {
+		case mgo.ErrNotFound:
+			return nil, ErrNotFound
+		default:
+			return nil, ErrDeleteLabel{DbError: err}
+		}
 	}
 
-	return diff, nil
+	newRev := old["_rev"].(int) + 1 // +1 since we get the old document back
+	new := etre.Entity{
+		"_id":   id,
+		"_type": wo.EntityType,
+		"_rev":  newRev,
+	}
+	cp := cdcPartial{
+		op:  "u",
+		id:  id,
+		old: &old,
+		new: &new,
+		rev: uint(newRev),
+	}
+	err = s.cdcWrite(etre.Entity{}, wo, cp)
+	return old, err
 }
 
 // CreateEntities inserts many entities into DB. This method allows for partial
@@ -234,27 +269,15 @@ func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, er
 		// so re-encode the raw bytes to a hex string. This make GET /entity/{t}/abc work.
 		insertedObjectIds = append(insertedObjectIds, hex.EncodeToString([]byte(id)))
 
-		// Get set op values from entity or wo, in that order.
-		set := setValues(e, wo)
-
 		// Create a CDC event.
-		eventId := bson.NewObjectId()
-		event := etre.CDCEvent{
-			EventId:    hex.EncodeToString([]byte(eventId)),
-			EntityId:   hex.EncodeToString([]byte(id)),
-			EntityType: wo.EntityType,
-			Rev:        uint(e["_rev"].(int)),
-			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
-			User:       wo.User,
-			Op:         "i",
-			Old:        nil,
-			New:        &e,
-			SetId:      set.Id,
-			SetOp:      set.Op,
-			SetSize:    set.Size,
+		cp := cdcPartial{
+			op:  "i",
+			id:  id,
+			new: &e,
+			old: nil,
+			rev: 0,
 		}
-		err = s.cdcs.Write(event)
-		if err != nil {
+		if err := s.cdcWrite(e, wo, cp); err != nil {
 			return insertedObjectIds, err
 		}
 	}
@@ -349,13 +372,8 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 				"_rev": 1, // increment the revision
 			},
 		},
-		// Return the original doc before modifications. This is the default
-		// option.
-		ReturnNew: false,
+		ReturnNew: false, // return doc before update
 	}
-
-	// Get set op values from patch or wo, in that order.
-	set := setValues(patch, wo)
 
 	// Notify the delay manager that a change is starting, and then notify the
 	// delay manager again when the change is done.
@@ -397,23 +415,14 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 		}
 
 		// Create a CDC event.
-		eventId := bson.NewObjectId()
-		event := etre.CDCEvent{
-			EventId:    hex.EncodeToString([]byte(eventId)),
-			EntityId:   hex.EncodeToString([]byte(id)),
-			EntityType: wo.EntityType,
-			Rev:        uint(newRev),
-			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
-			User:       wo.User,
-			Op:         "u",
-			Old:        &diff,
-			New:        &new,
-			SetId:      set.Id,
-			SetOp:      set.Op,
-			SetSize:    set.Size,
+		cp := cdcPartial{
+			op:  "u",
+			id:  id,
+			old: &diff,
+			new: &new,
+			rev: uint(newRev),
 		}
-		err = s.cdcs.Write(event)
-		if err != nil {
+		if err := s.cdcWrite(patch, wo, cp); err != nil {
 			return diffs, err
 		}
 	}
@@ -452,10 +461,8 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 
 	// Change to make
 	change := mgo.Change{
-		Remove: true,
-		// Return the original doc before modifications. This is the default
-		// option.
-		ReturnNew: false,
+		Remove:    true,
+		ReturnNew: false, // return doc before delete
 	}
 
 	// deletedEntities is a slice of entities that have been successfully deleted
@@ -474,8 +481,7 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 	// Query for each document and delete it
 	for _, id := range ids {
 		var deletedEntity etre.Entity
-		_, err := c.FindId(id).Apply(change, &deletedEntity)
-		if err != nil {
+		if _, err := c.FindId(id).Apply(change, &deletedEntity); err != nil {
 			switch err {
 			case mgo.ErrNotFound:
 				// ignore
@@ -487,23 +493,14 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 		deletedEntities = append(deletedEntities, deletedEntity)
 
 		// Create a CDC event.
-		eventId := bson.NewObjectId()
-		event := etre.CDCEvent{
-			EventId:    hex.EncodeToString([]byte(eventId)),
-			EntityId:   hex.EncodeToString([]byte(id)),
-			EntityType: wo.EntityType,
-			Rev:        uint(deletedEntity["_rev"].(int)) + 1, // +1 since we get the old document back
-			Ts:         time.Now().UnixNano() / int64(time.Millisecond),
-			User:       wo.User,
-			Op:         "d",
-			Old:        &deletedEntity,
-			New:        nil,
-			SetId:      wo.SetId,
-			SetOp:      wo.SetOp,
-			SetSize:    wo.SetSize,
+		ce := cdcPartial{
+			op:  "d",
+			id:  id,
+			old: &deletedEntity,
+			new: nil,
+			rev: uint(deletedEntity["_rev"].(int)) + 1, // +1 since we get the old document back
 		}
-		err = s.cdcs.Write(event)
-		if err != nil {
+		if err := s.cdcWrite(deletedEntity, wo, ce); err != nil {
 			return deletedEntities, err
 		}
 	}
@@ -535,6 +532,26 @@ func (s *store) validEntityType(entityType string) error {
 	}
 	return fmt.Errorf("Invalid entity type: %s. Valid entity types: %s. Entity types are set by config.entity.types.",
 		entityType, s.entityTypes)
+}
+
+func (s *store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
+	ts := time.Now().UnixNano() / int64(time.Millisecond)
+	set := setValues(e, wo) // set op from entity or wo, in that order.
+	event := etre.CDCEvent{
+		EventId:    hex.EncodeToString([]byte(bson.NewObjectId())),
+		EntityId:   hex.EncodeToString([]byte(cp.id)),
+		EntityType: wo.EntityType,
+		Rev:        cp.rev,
+		Ts:         ts,
+		User:       wo.User,
+		Op:         cp.op,
+		Old:        cp.old,
+		New:        cp.new,
+		SetId:      set.Id,
+		SetOp:      set.Op,
+		SetSize:    set.Size,
+	}
+	return s.cdcs.Write(event)
 }
 
 func setValues(e etre.Entity, wo WriteOp) etre.Set {
@@ -658,7 +675,7 @@ func (e ErrDelete) Error() string {
 }
 
 // ErrDeleteLabel is a higher level error for caller to check against when calling
-// DeleteEntityLabel. It holds the lower level error message from DB.
+// DeleteLabel. It holds the lower level error message from DB.
 type ErrDeleteLabel struct {
 	DbError error
 }
