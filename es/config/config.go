@@ -29,24 +29,25 @@ var (
 
 // Options represents typical command line options: --addr, --config, etc.
 type Options struct {
-	Addr    string `arg:"env" yaml:"addr"`
-	Config  string `arg:"env"`
-	Debug   bool   `arg:"env" yaml:"debug"`
-	Delete  bool
-	Env     string `arg:"env" yaml:"env"`
-	Help    bool
-	JSON    bool   `arg:"env" yaml:"json"`
-	IFS     string `arg:"env" yaml:"ifs"`
-	Labels  bool   `arg:"env" yaml:"labels"`
-	Ping    bool
-	Old     bool   `arg:"env" yaml:"old"`
-	SetOp   string `arg:"--set-op,env:SET_OP"`
-	SetId   string `arg:"--set-id,env:SET_ID"`
-	SetSize int    `arg:"--set-size,env:SET_SIZE"`
-	Strict  bool   `arg:"env" yaml:"strict"`
-	Timeout uint   `arg:"env" yaml:"timeout"`
-	Update  bool
-	Version bool `arg:"-v"`
+	Addr        string `arg:"env" yaml:"addr"`
+	Config      string `arg:"env"`
+	Debug       bool   `arg:"env" yaml:"debug"`
+	Delete      bool
+	DeleteLabel bool   `arg:"--delete-label"`
+	Env         string `arg:"env" yaml:"env"`
+	Help        bool
+	JSON        bool   `arg:"env" yaml:"json"`
+	IFS         string `arg:"env" yaml:"ifs"`
+	Labels      bool   `arg:"env" yaml:"labels"`
+	Ping        bool
+	Old         bool   `arg:"env" yaml:"old"`
+	SetOp       string `arg:"--set-op,env:SET_OP"`
+	SetId       string `arg:"--set-id,env:SET_ID"`
+	SetSize     int    `arg:"--set-size,env:SET_SIZE"`
+	Strict      bool   `arg:"env" yaml:"strict"`
+	Timeout     uint   `arg:"env" yaml:"timeout"`
+	Update      bool
+	Version     bool `arg:"-v"`
 }
 
 // CommandLine represents options (--addr, etc.) and args: entity type, return
@@ -98,24 +99,25 @@ func Help() {
 		"  id         Internal ID (_id) of an entity, like: 507f1f77bcf86cd799439011\n"+
 		"  patches    New label=value pairs, like: zone=west status=online\n\n"+
 		"Options:\n"+
-		"  --addr     Etre API address (example: http://localhost:8080)\n"+
-		"  --config   Config files (default: %s)\n"+
-		"  --debug    Print debug to stderr\n"+
-		"  --delete   Delete one entity by id\n"+
-		"  --env      Environment (dev, staging, production)\n"+
-		"  --help     Print help\n"+
-		"  --ifs      Character to print between label values (default: %s)\n"+
-		"  --json     Print entities as JSON\n"+
-		"  --labels   Print label: before value\n"+
-		"  --ping     Ping addr\n"+
-		"  --old      Print old values on --update\n"+
-		"  --set-id   User-defined set ID for --update and --delete\n"+
-		"  --set-op   User-defined set op for --update and --delete\n"+
-		"  --set-size User-defined set size for --update and --delete (must be > 0)\n"+
-		"  --strict   Error if query or --delete does not match entities\n"+
-		"  --timeout  API timeout, milliseconds (default: %d)\n"+
-		"  --update   Apply patches to one entity by id\n"+
-		"  --version  Print version\n\n",
+		"  --addr          Etre API address (example: http://localhost:8080)\n"+
+		"  --config        Config files (default: %s)\n"+
+		"  --debug         Print debug to stderr\n"+
+		"  --delete        Delete one entity by id\n"+
+		"  --delete-label  Delete entity label\n"+
+		"  --env           Environment (dev, staging, production)\n"+
+		"  --help          Print help\n"+
+		"  --ifs           Character to print between label values (default: %s)\n"+
+		"  --json          Print entities as JSON\n"+
+		"  --labels        Print label: before value\n"+
+		"  --ping          Ping addr\n"+
+		"  --old           Print old values on --update\n"+
+		"  --set-id        User-defined set ID for --update and --delete\n"+
+		"  --set-op        User-defined set op for --update and --delete\n"+
+		"  --set-size      User-defined set size for --update and --delete (must be > 0)\n"+
+		"  --strict        Error if query or --delete does not match entities\n"+
+		"  --timeout       API timeout, milliseconds (default: %d)\n"+
+		"  --update        Apply patches to one entity by id\n"+
+		"  --version       Print version\n\n",
 		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_TIMEOUT)
 }
 
