@@ -61,9 +61,19 @@ func Run(ctx app.Context) {
 	}
 
 	// Validate cmd line options and args
-	if cmdLine.Options.Delete && cmdLine.Options.Update {
+	writeOptions := 0
+	if cmdLine.Options.Delete {
+		writeOptions++
+	}
+	if cmdLine.Options.DeleteLabel {
+		writeOptions++
+	}
+	if cmdLine.Options.Update {
+		writeOptions++
+	}
+	if writeOptions > 1 {
 		config.Help()
-		fmt.Fprintf(os.Stderr, "--update and --delete are mutually exclusive\n")
+		fmt.Fprintf(os.Stderr, "--update, --delete, and --delete-label are mutually exclusive\n")
 		os.Exit(1)
 	}
 
@@ -77,6 +87,18 @@ func Run(ctx app.Context) {
 			config.Help()
 			fmt.Fprintf(os.Stderr, "Too many arguments for --delete: specify only entity and id (%d extra arguments: %s)\n",
 				len(cmdLine.Args[2:]), cmdLine.Args[2:])
+			os.Exit(1)
+		}
+	} else if cmdLine.Options.DeleteLabel { // --delete-label
+		if len(cmdLine.Args) < 3 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Not enough arguments for --delete-label: entity, id, and label are required\n")
+			os.Exit(1)
+		}
+		if len(cmdLine.Args) > 3 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Too many arguments for --delete-label: specify only entity, id, and label (%d extra arguments: %s)\n",
+				len(cmdLine.Args[3:]), cmdLine.Args[3:])
 			os.Exit(1)
 		}
 	} else if cmdLine.Options.Update { // --update
@@ -239,43 +261,37 @@ func Run(ctx app.Context) {
 		}
 
 		wr, err := ec.DeleteOne(ctx.EntityId)
-		if o.Debug {
-			app.Debug("wr: %#v (%v)", wr, err)
-		}
-
-		if ctx.Hooks.WriteResult != nil {
-			if o.Debug {
-				app.Debug("calling hook WriteResult")
-			}
-			ctx.Hooks.WriteResult(ctx, wr, err)
-		}
-
+		found, err := writeResult(ctx, set, wr, err)
 		if err != nil {
-			switch err {
-			case etre.ErrEntityNotFound:
-				if ctx.Options.Strict {
-					fmt.Fprintf(os.Stderr, "Not found: %s %s does not exist\n", ctx.EntityType, ctx.EntityId)
-					os.Exit(1)
-				} else {
-					fmt.Printf("OK, but %s %s did not exist%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
-					return
-				}
-			default:
-				fmt.Fprintf(os.Stderr, "API error: %s\n", err)
-				os.Exit(1)
-			}
-		}
-
-		if wr.Error != "" {
-			fmt.Fprintf(os.Stderr, "API write error: %s\n", wr.Error)
+			fmt.Fprintf(os.Stderr, "%s\n", err)
 			os.Exit(1)
 		}
-		if ctx.Options.Old {
-			for _, label := range wr.Diff.Labels() {
-				fmt.Printf("# %s=%v\n", label, wr.Diff[label])
-			}
+		if found {
+			fmt.Printf("OK, deleted %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
+		} else {
+			fmt.Printf("OK, but %s %s did not exist%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
 		}
-		fmt.Printf("OK, deleted %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
+		return
+	}
+
+	// //////////////////////////////////////////////////////////////////////
+	// Delete label and exit, if --delete-label
+	// //////////////////////////////////////////////////////////////////////
+
+	if o.DeleteLabel {
+		ctx.EntityId = cmdLine.Args[1]
+		label := cmdLine.Args[2]
+		wr, err := ec.DeleteLabel(ctx.EntityId, label)
+		found, err := writeResult(ctx, set, wr, err)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+		if found {
+			fmt.Printf("OK, deleted label %s from %s %s%s\n", label, ctx.EntityType, ctx.EntityId, setInfo(set))
+		} else {
+			fmt.Printf("OK, but %s %s did not exist%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
+		}
 		return
 	}
 
@@ -386,4 +402,41 @@ func setInfo(set etre.Set) string {
 	}
 	// Appended to an "OK, ..." message
 	return fmt.Sprintf(" (set %s %s)", set.Op, set.Id)
+}
+
+func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error) (bool, error) {
+	if ctx.Options.Debug {
+		app.Debug("wr: %#v (%v)", wr, err)
+	}
+
+	if ctx.Hooks.WriteResult != nil {
+		if ctx.Options.Debug {
+			app.Debug("calling hook WriteResult")
+		}
+		ctx.Hooks.WriteResult(ctx, wr, err)
+	}
+
+	if err != nil {
+		switch err {
+		case etre.ErrEntityNotFound:
+			if ctx.Options.Strict {
+				return false, fmt.Errorf("Not found: %s %s does not exist", ctx.EntityType, ctx.EntityId)
+			} else {
+				return false, nil
+			}
+		default:
+			return false, err
+		}
+	}
+
+	if wr.Error != "" {
+		return false, fmt.Errorf("API write error: %s\n", wr.Error)
+	}
+	if ctx.Options.Old {
+		for _, label := range wr.Diff.Labels() {
+			fmt.Printf("# %s=%v\n", label, wr.Diff[label])
+		}
+	}
+
+	return true, nil
 }

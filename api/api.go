@@ -388,7 +388,12 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 
 	// Don't allow deleting metalabel
 	if etre.IsMetalabel(label) {
-		return c.JSON(http.StatusForbidden, nil)
+		errResp := etre.Error{
+			Message:    "deleting metalabel " + label + " is not allowed",
+			Type:       "delete-metalabel",
+			HTTPStatus: http.StatusForbidden,
+		}
+		return c.JSON(http.StatusForbidden, errResp)
 
 	}
 
@@ -605,7 +610,7 @@ func validateParams(c echo.Context, needEntityId bool) error {
 		}
 
 		if !bson.IsObjectIdHex(id) {
-			return handleError(ErrInvalidParam.New("invalid id: %s", id))
+			return ErrInvalidParam.New("id %s is not a valid bson.ObjectId", id)
 		}
 	}
 
