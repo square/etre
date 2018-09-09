@@ -1,10 +1,17 @@
-// Copyright 2017, Square, Inc.
+package app
 
-package config
+import (
+	"github.com/square/etre/cdc"
+	"github.com/square/etre/entity"
+	"github.com/square/etre/team"
+)
 
-///////////////////////////////////////////////////////////////////////////////
-// High-Level Config Structs
-///////////////////////////////////////////////////////////////////////////////
+type Context struct {
+	Config      Config
+	Store       entity.Store
+	FeedFactory cdc.FeedFactory
+	TeamAuth    team.Authorizer
+}
 
 type Config struct {
 	Server     ServerConfig     `yaml:"server"`
@@ -13,12 +20,8 @@ type Config struct {
 	CDC        CDCConfig        `yaml:"cdc"`
 	Delay      DelayConfig      `yaml:"delay"`
 	Feed       FeedConfig       `yaml:"feed"`
-	Teams      []TeamConfig     `yaml:"teams"`
+	Teams      []team.Config    `yaml:"teams"`
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Config Components
-///////////////////////////////////////////////////////////////////////////////
 
 type DatasourceConfig struct {
 	URL      string `yaml:"url"`
@@ -82,9 +85,4 @@ type ServerConfig struct {
 	// Etre will look at this HTTP header to get the username of the requestor of
 	// all API calls.
 	UsernameHeader string `yaml:"username_header"`
-}
-
-type TeamConfig struct {
-	Name     string `yaml:"name"`
-	ReadOnly bool   `yaml:"read-only"`
 }

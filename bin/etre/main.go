@@ -16,14 +16,12 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/app"
 	"github.com/square/etre/cdc"
-	"github.com/square/etre/config"
 	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
+	"github.com/square/etre/team"
 	"github.com/square/etre/test/mock"
-
-	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
 )
 
 var flagConfig string
@@ -65,29 +63,29 @@ func main() {
 		log.Fatalf("Cannot read -config file %s: %s", configFile, err)
 	}
 
-	config := config.Config{
-		Server: config.ServerConfig{
+	config := app.Config{
+		Server: app.ServerConfig{
 			Addr: default_addr,
 		},
-		Datasource: config.DatasourceConfig{
+		Datasource: app.DatasourceConfig{
 			URL:      default_datasource_url,
 			Database: default_database,
 			Timeout:  default_database_timeout_seconds,
 		},
-		Entity: config.EntityConfig{
+		Entity: app.EntityConfig{
 			Types: default_entity_types,
 		},
-		CDC: config.CDCConfig{
+		CDC: app.CDCConfig{
 			Collection:      default_cdc_collection,
 			FallbackFile:    default_cdc_fallback_file,
 			WriteRetryCount: default_cdc_write_retry_count,
 			WriteRetryWait:  default_cdc_write_retry_wait,
 		},
-		Feed: config.FeedConfig{
+		Feed: app.FeedConfig{
 			StreamerBufferSize: default_streamer_buffer_size,
 			PollInterval:       default_poll_interval,
 		},
-		Delay: config.DelayConfig{
+		Delay: app.DelayConfig{
 			Collection:  default_delay_collection,
 			StaticDelay: default_static_delay,
 		},
@@ -98,6 +96,10 @@ func main() {
 	}
 
 	log.Printf("config: %+v\n", config)
+
+	appCtx := app.Context{
+		Config: config,
+	}
 
 	// //////////////////////////////////////////////////////////////////////
 	// Load TLS if given
@@ -219,6 +221,7 @@ func main() {
 	if poller != nil {
 		feedFactory = cdc.NewFeedFactory(poller, cdcs)
 	}
+	appCtx.FeedFactory = feedFactory
 
 	// //////////////////////////////////////////////////////////////////////
 	// Entity Store
@@ -234,24 +237,21 @@ func main() {
 		log.Println(err)
 		os.Exit(1)
 	}
+	appCtx.Store = entityStore
 
 	// //////////////////////////////////////////////////////////////////////
 	// API
 	// //////////////////////////////////////////////////////////////////////
-	api := api.NewAPI(config.Server.Addr, entityStore, feedFactory)
 
-	// If you want to add custom middleware for authentication, authorization,
-	// etc., you should do that here. See https://echo.labstack.com/middleware
-	// for more details.
-	api.Use((func(h echo.HandlerFunc) echo.HandlerFunc {
-		// This middleware will always set the username of the request to be
-		// "admin". You can change this as necessary.
-		return func(c echo.Context) error {
-			c.Set("username", "admin")
-			return h(c)
-		}
-	}))
-	api.Use(middleware.Recover())
+	var teamAuth team.Authorizer
+	if len(config.Teams) > 0 {
+		teamAuth = team.NewOrgAuthorizer(config.Teams, config.Entity.Types)
+	} else {
+		teamAuth = team.NewAllowAll(config.Entity.Types)
+	}
+	appCtx.TeamAuth = teamAuth
+
+	api := api.NewAPI(appCtx)
 
 	// Start the web server.
 	if config.Server.TLSCert != "" && config.Server.TLSKey != "" {

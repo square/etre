@@ -10,47 +10,119 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/square/etre"
+	"github.com/square/etre/app"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
+	"github.com/square/etre/team"
 
 	"github.com/globalsign/mgo/bson"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
-)
-
-var (
-	slugPattern   = `([\w-]+)`
-	labelsPattern = `([\w-_]+)`
+	"github.com/labstack/echo/middleware"
 )
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
-	addr string
-	es   entity.Store
-	ff   cdc.FeedFactory
+	addr     string
+	es       entity.Store
+	ff       cdc.FeedFactory
+	teamAuth team.Authorizer
+	querySLA uint
 	// --
 	echo *echo.Echo
 }
 
 // NewAPI makes a new API.
-func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
+func NewAPI(appCtx app.Context) *API {
 	api := &API{
-		addr: addr,
-		es:   es,
-		ff:   ff,
-		echo: echo.New(),
+		addr:     appCtx.Config.Server.Addr,
+		es:       appCtx.Store,
+		ff:       appCtx.FeedFactory,
+		teamAuth: appCtx.TeamAuth,
+		echo:     echo.New(),
 	}
 
 	router := api.echo.Group(etre.API_ROOT)
+
+	// Called before every route/controller
+	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			fmt.Println("--- TEAM", c.Path())
+			// Before every route, get and set the team identified by the header:
+			t, err := api.teamAuth.Team(c.Request().Header.Get("X-Etre-Team"))
+			if err != nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
+			}
+			c.Set("team", t)
+
+			// All routes with an :entity param query the db, so increment
+			// the "all" metric for them so this line is repeated in every
+			// controller. Also set t0 for measuring query latency.
+			entityType := c.Param("type")
+			if entityType != "" {
+				t.Metrics.Entity[entityType].Query.All.Inc(1)
+
+				// GET with :entity is a read. PUT, POST, and DELETE are writes,
+				// with one exception.
+				switch c.Request().Method {
+				case "GET":
+					t.Metrics.Entity[entityType].Query.Read.Inc(1)
+					if err := api.teamAuth.Allowed(t, team.OP_READ, entityType); err != nil {
+						return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
+					}
+				case "PUT", "POST", "DELETE":
+					if c.Path() != etre.API_ROOT+"/query/:type" {
+						t.Metrics.Entity[entityType].Query.Write.Inc(1)
+					} else {
+						t.Metrics.Entity[entityType].Query.Read.Inc(1) // POST /query/:type is a read
+					}
+				}
+
+				c.Set("t0", time.Now()) // query start time
+			}
+
+			return next(c)
+		}
+	})
+
+	// Called after every route/controller (even if 404)
+	api.echo.Use((func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if err := next(c); err != nil {
+				c.Error(err)
+			}
+
+			// Same as above: if the route has :entity param, it queried the db,
+			// so finish what the pre-route middleware started
+			entityType := c.Param("type")
+			if entityType != "" {
+				// Record query latency (response time) in milliseconds
+				t0 := c.Get("t0").(time.Time) // query start time
+				queryLatencyMs := int64(time.Now().Sub(t0) / time.Millisecond)
+				t := c.Get("team").(team.Team)
+				t.Metrics.Entity[entityType].Query.Latency.Update(queryLatencyMs)
+
+				// Did the query take too long (miss SLA)?
+				if t.QueryLatencySLA > 0 && uint(queryLatencyMs) > t.QueryLatencySLA {
+					t.Metrics.Entity[entityType].Query.MissSLA.Inc(1)
+				}
+			}
+
+			return nil
+		}
+	}))
+
+	api.echo.Use(middleware.Recover()) // catch all panics
 
 	// /////////////////////////////////////////////////////////////////////
 	// Query
 	// /////////////////////////////////////////////////////////////////////
 	router.GET("/entities/:type", api.getEntitiesHandler)
-	router.POST("/query", api.queryHandler)
+	router.POST("/query/:type", api.queryHandler)
 
 	// /////////////////////////////////////////////////////////////////////
 	// Bulk
@@ -72,7 +144,7 @@ func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
 	// /////////////////////////////////////////////////////////////////////
 	// Stats and status
 	// /////////////////////////////////////////////////////////////////////
-	router.GET("/stats", api.statsHandler)
+	router.GET("/metrics", api.metricsHandler)
 	router.GET("/status", api.statusHandler)
 
 	// /////////////////////////////////////////////////////////////////////
@@ -107,20 +179,26 @@ func (api *API) Router() *echo.Echo {
 // -----------------------------------------------------------------------------
 
 func (api *API) getEntitiesHandler(c echo.Context) error {
+	entityType := c.Param("type")      // from resource path
+	t := c.Get("team").(team.Team)     // team.Team from middleware
+	em := t.Metrics.Entity[entityType] // entity metrics
+	em.Query.ReadQuery.Inc(1)
+
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
-	entityType := c.Param("type")
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return handleError(ErrInvalidQuery.New("query string is empty"))
+		return handleError(t, ErrInvalidQuery.New("query string is empty"))
 	}
-
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
+		return handleError(t, ErrInvalidQuery.New("invalid query: %s", err))
+	}
+	for _, p := range q.Predicates {
+		em.ReadLabel(p.Label) // label metrics
 	}
 
 	// Query Filter
@@ -132,7 +210,7 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 
 	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
-		return handleError(ErrDb.New("database error: %s", err))
+		return handleError(t, ErrDb.New("database error: %s", err))
 	}
 
 	return c.JSON(http.StatusOK, entities)
@@ -140,8 +218,7 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 
 // Handles an edge case of having a query >2k characters.
 func (api *API) queryHandler(c echo.Context) error {
-	// @todo: implement this
-	return nil
+	return echo.NewHTTPError(http.StatusNotImplemented, nil) // @todo
 }
 
 // --------------------------------------------------------------------------
@@ -149,8 +226,12 @@ func (api *API) queryHandler(c echo.Context) error {
 // --------------------------------------------------------------------------
 
 func (api *API) postEntitiesHandler(c echo.Context) error {
+	entityType := c.Param("type")      // from resource path
+	t := c.Get("team").(team.Team)     // team.Team from middleware
+	em := t.Metrics.Entity[entityType] // entity metrics
+
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	wo := writeOp(c)
@@ -158,14 +239,15 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 	// Get entities from request payload.
 	var entities []etre.Entity
 	if err := c.Bind(&entities); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return handleError(t, ErrInternal.New(err.Error()))
 	}
+	em.Query.InsertBulk.Inc(int64(len(entities)))
 
 	for _, e := range entities {
 		ConvertFloat64ToInt(e)
 		for k, v := range e {
 			if !validValueType(v) {
-				return handleError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
+				return handleError(t, ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
 					"Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
 			}
 		}
@@ -173,7 +255,7 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 
 	ids, err := api.es.CreateEntities(wo, entities)
 	if ids == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
 	wr := api.WriteResults(ids, err)
 
@@ -181,8 +263,12 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 }
 
 func (api *API) putEntitiesHandler(c echo.Context) error {
+	entityType := c.Param("type")      // from resource path
+	t := c.Get("team").(team.Team)     // team.Team from middleware
+	em := t.Metrics.Entity[entityType] // entity metrics
+
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	wo := writeOp(c)
@@ -190,32 +276,39 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return handleError(ErrInvalidQuery.New("query string is empty"))
+		return handleError(t, ErrInvalidQuery.New("query string is empty"))
 	}
-
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
+		return handleError(t, ErrInvalidQuery.New("invalid query: %s", err))
+	}
+	for _, p := range q.Predicates {
+		em.ReadLabel(p.Label) // label metrics
 	}
 
 	// Get entities from request payload.
 	var requestUpdate etre.Entity
 	if err := c.Bind(&requestUpdate); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return handleError(t, ErrInternal.New(err.Error()))
 	}
 
 	entities, err := api.es.UpdateEntities(wo, q, requestUpdate)
 	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
-	wr := api.WriteResults(entities, err)
 
+	em.Query.UpdateBulk.Inc(int64(len(entities)))
+	wr := api.WriteResults(entities, err)
 	return c.JSON(http.StatusOK, wr)
 }
 
 func (api *API) deleteEntitiesHandler(c echo.Context) error {
+	entityType := c.Param("type")      // from resource path
+	t := c.Get("team").(team.Team)     // team.Team from middleware
+	em := t.Metrics.Entity[entityType] // entity metrics
+
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	wo := writeOp(c)
@@ -223,20 +316,23 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return handleError(ErrInvalidQuery.New("query string is empty"))
+		return handleError(t, ErrInvalidQuery.New("query string is empty"))
 	}
-
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
+		return handleError(t, ErrInvalidQuery.New("invalid query: %s", err))
+	}
+	for _, p := range q.Predicates {
+		em.ReadLabel(p.Label) // label metrics
 	}
 
 	entities, err := api.es.DeleteEntities(wo, q)
 	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
-	wr := api.WriteResults(entities, err)
 
+	em.Query.DeleteBulk.Inc(int64(len(entities)))
+	wr := api.WriteResults(entities, err)
 	return c.JSON(http.StatusOK, wr)
 }
 
@@ -245,8 +341,13 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 // -----------------------------------------------------------------------------
 
 func (api *API) postEntityHandler(c echo.Context) error {
+	entityType := c.Param("type")      // from resource path
+	t := c.Get("team").(team.Team)     // team.Team from middleware
+	em := t.Metrics.Entity[entityType] // entity metrics
+	em.Query.Insert.Inc(1)
+
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	wo := writeOp(c)
@@ -254,20 +355,20 @@ func (api *API) postEntityHandler(c echo.Context) error {
 	// Get entity from request payload.
 	var entity etre.Entity
 	if err := c.Bind(&entity); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return handleError(t, ErrInternal.New(err.Error()))
 	}
 
 	ConvertFloat64ToInt(entity)
 	for k, v := range entity {
 		if !validValueType(v) {
-			return handleError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
+			return handleError(t, ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
 				"Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
 		}
 	}
 
 	ids, err := api.es.CreateEntities(wo, []etre.Entity{entity})
 	if ids == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
 	wr := api.WriteResults(ids, err)
 
@@ -275,11 +376,15 @@ func (api *API) postEntityHandler(c echo.Context) error {
 }
 
 func (api *API) getEntityHandler(c echo.Context) error {
-	if err := validateParams(c, true); err != nil {
-		return handleError(err)
-	}
 	entityType := c.Param("type")
 	entityId := c.Param("id")
+	t := c.Get("team").(team.Team)
+	em := t.Metrics.Entity[entityType]
+	em.Query.ReadId.Inc(1)
+
+	if err := validateParams(c, true); err != nil {
+		return handleError(t, err)
+	}
 
 	q := queryForId(entityId)
 
@@ -292,7 +397,7 @@ func (api *API) getEntityHandler(c echo.Context) error {
 
 	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
 
 	if len(entities) == 0 {
@@ -303,8 +408,13 @@ func (api *API) getEntityHandler(c echo.Context) error {
 }
 
 func (api *API) putEntityHandler(c echo.Context) error {
+	entityType := c.Param("type")
+	t := c.Get("team").(team.Team)
+	em := t.Metrics.Entity[entityType]
+	em.Query.Update.Inc(1)
+
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	wo := writeOp(c)
@@ -312,14 +422,14 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	// Get entities from request payload.
 	var requestUpdate etre.Entity
 	if err := c.Bind(&requestUpdate); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return handleError(t, ErrInternal.New(err.Error()))
 	}
 
 	q := queryForId(wo.EntityId)
 
 	entities, err := api.es.UpdateEntities(wo, q, requestUpdate)
 	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
 
 	if len(entities) == 0 {
@@ -332,8 +442,13 @@ func (api *API) putEntityHandler(c echo.Context) error {
 }
 
 func (api *API) deleteEntityHandler(c echo.Context) error {
+	entityType := c.Param("type")
+	t := c.Get("team").(team.Team)
+	em := t.Metrics.Entity[entityType]
+	em.Query.Delete.Inc(1)
+
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	wo := writeOp(c)
@@ -342,7 +457,7 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 
 	entities, err := api.es.DeleteEntities(wo, q)
 	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
 
 	if len(entities) == 0 {
@@ -356,16 +471,20 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 
 // Getting all labels for a single entity.
 func (api *API) entityLabelsHandler(c echo.Context) error {
-	if err := validateParams(c, true); err != nil {
-		return handleError(err)
-	}
 	entityType := c.Param("type")
 	entityId := c.Param("id")
+	t := c.Get("team").(team.Team)
+	em := t.Metrics.Entity[entityType]
+	em.Query.ReadLabels.Inc(1)
+
+	if err := validateParams(c, true); err != nil {
+		return handleError(t, err)
+	}
 
 	q := queryForId(entityId)
 	entities, err := api.es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return handleError(t, ErrDb.New(err.Error()))
 	}
 
 	if len(entities) == 0 {
@@ -377,14 +496,20 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 
 // Delete a label from a single entity.
 func (api *API) entityDeleteLabelHandler(c echo.Context) error {
+	entityType := c.Param("type")
+	t := c.Get("team").(team.Team)
+	em := t.Metrics.Entity[entityType]
+	em.Query.DeleteLabel.Inc(1)
+
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return handleError(t, err)
 	}
 
 	label := c.Param("label")
 	if label == "" {
 		return ErrMissingParam.New("missing label param")
 	}
+	em.DeleteLabel(label)
 
 	// Don't allow deleting metalabel
 	if etre.IsMetalabel(label) {
@@ -405,7 +530,7 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 		case entity.ErrNotFound:
 			return c.JSON(http.StatusNotFound, nil)
 		default:
-			return handleError(ErrDb.New(err.Error()))
+			return handleError(t, ErrDb.New(err.Error()))
 		}
 	}
 
@@ -417,9 +542,17 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 // Stats
 // --------------------------------------------------------------------------
 
-func (api *API) statsHandler(c echo.Context) error {
-	// @todo: implement this
-	return nil
+func (api *API) metricsHandler(c echo.Context) error {
+	teams := api.teamAuth.List()
+	all := etre.Metrics{
+		Teams: make([]etre.MetricsReport, len(teams)),
+	}
+	for i, t := range teams {
+		m := t.Metrics.Report()
+		m.Team = t.Name
+		all.Teams[i] = m
+	}
+	return c.JSON(http.StatusOK, all)
 }
 
 func (api *API) statusHandler(c echo.Context) error {
@@ -439,20 +572,27 @@ var upgrader = websocket.Upgrader{
 }
 
 func (api *API) changesHandler(c echo.Context) error {
+	entityType := c.Param("type")
+	t := c.Get("team").(team.Team)
+	em := t.Metrics.Entity[entityType]
+
 	if api.ff == nil {
-		return handleError(ErrCDCDisabled)
+		return handleError(t, ErrCDCDisabled)
 	}
+
+	em.CDC.Clients.Inc(1)
+	defer em.CDC.Clients.Dec(1)
 
 	// Upgrade to a WebSocket connection.
 	wsConn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return handleError(t, ErrInternal.New(err.Error()))
 	}
 
 	// Create and run a feed.
 	f := api.ff.MakeWebsocket(wsConn)
 	if err := f.Run(); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return handleError(t, ErrInternal.New(err.Error()))
 	}
 
 	return nil
@@ -627,11 +767,24 @@ func getUsername(c echo.Context) string {
 	return username
 }
 
-func handleError(err error) *echo.HTTPError {
+func handleError(t team.Team, err error) *echo.HTTPError {
+	// Increment metrics for specific errors
+	switch err {
+	case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam, ErrBadRequest:
+		t.Metrics.Global.ClientError.Inc(1)
+	case ErrDb:
+		t.Metrics.Global.DbError.Inc(1)
+	default:
+		t.Metrics.Global.APIError.Inc(1)
+	}
+
+	// If it's an etre.Error (it should be), then return with the
+	// error-specific HTTP status
 	switch v := err.(type) {
 	case etre.Error:
 		return echo.NewHTTPError(v.HTTPStatus, err)
-	default:
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
+
+	// Error catchall: HTTP status 500
+	return echo.NewHTTPError(http.StatusInternalServerError, err)
 }
