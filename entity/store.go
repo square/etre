@@ -119,24 +119,14 @@ var operatorMap = map[string]string{
 var reservedNames = []string{"entity", "entities"}
 
 // NewStore creates a Store.
-func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc.Store, dm cdc.Delayer) (Store, error) {
-	// Ensure no entityType name is a reserved word
-	// @todo: move higher, in main.go, and expose (or document) which words are reserved
-	for _, r := range reservedNames {
-		for _, c := range entityTypes {
-			if r == c {
-				return nil, errors.New(fmt.Sprintf("entity type %s is a reserved word", c))
-			}
-		}
-	}
-
+func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc.Store, dm cdc.Delayer) Store {
 	return &store{
 		conn:        conn,
 		database:    database,
 		entityTypes: entityTypes,
 		cdcs:        cdcs,
 		dm:          dm,
-	}, nil
+	}
 }
 
 // DeleteLabel deletes a label from an entity.

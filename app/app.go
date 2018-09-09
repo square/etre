@@ -1,88 +1,167 @@
 package app
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
+	"log"
+	"os"
+	"time"
+
 	"github.com/square/etre/cdc"
+	"github.com/square/etre/config"
+	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/team"
+	"github.com/square/etre/test/mock"
 )
 
 type Context struct {
-	Config      Config
-	Store       entity.Store
+	Config      config.Config
+	EntityStore entity.Store
+	CDCStore    cdc.Store
 	FeedFactory cdc.FeedFactory
 	TeamAuth    team.Authorizer
 }
 
-type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Datasource DatasourceConfig `yaml:"datasource"`
-	Entity     EntityConfig     `yaml:"entity"`
-	CDC        CDCConfig        `yaml:"cdc"`
-	Delay      DelayConfig      `yaml:"delay"`
-	Feed       FeedConfig       `yaml:"feed"`
-	Teams      []team.Config    `yaml:"teams"`
-}
+func DefaultContext(config config.Config) Context {
+	// //////////////////////////////////////////////////////////////////////
+	// Database
+	// //////////////////////////////////////////////////////////////////////
 
-type DatasourceConfig struct {
-	URL      string `yaml:"url"`
-	Database string `yaml:"database"`
-	Timeout  int    `yaml:"timeout"`
+	var tlsConfig *tls.Config
+	if config.Datasource.TLSCert != "" && config.Datasource.TLSKey != "" {
+		cert, err := tls.LoadX509KeyPair(config.Datasource.TLSCert, config.Datasource.TLSKey)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// Certs
-	TLSCert string `yaml:"tls-cert"`
-	TLSKey  string `yaml:"tls-key"`
-	TLSCA   string `yaml:"tls-ca"`
+		caCert, err := ioutil.ReadFile(config.Datasource.TLSCA)
+		if err != nil {
+			log.Fatal(err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      caCertPool,
+		}
+		tlsConfig.BuildNameToCertificate()
+		log.Println("TLS Loaded")
+	} else {
+		log.Println("TLS cert and key not given")
+	}
 
-	// Credentials
-	Username  string `yaml:"username"`
-	Source    string `yaml:"source"`
-	Mechanism string `yaml:"mechanism"`
-}
+	dbCredentials := make(map[string]string)
+	if config.Datasource.Username != "" && config.Datasource.Source != "" && config.Datasource.Mechanism != "" {
+		dbCredentials["username"] = config.Datasource.Username
+		dbCredentials["source"] = config.Datasource.Source
+		dbCredentials["mechanism"] = config.Datasource.Mechanism
+	}
 
-type EntityConfig struct {
-	Types []string `yaml:"types"`
-}
+	conn := db.NewConnector(config.Datasource.URL, config.Datasource.Timeout, tlsConfig, dbCredentials)
 
-type CDCConfig struct {
-	// The collection that CDC events are stored in.
-	Collection string `yaml:"collection"`
-	// If set, CDC events will attempt to be written to this file if they cannot
-	// be written to mongo.
-	FallbackFile string `yaml:"fallback_file"`
-	// Number of times CDC events will retry writing to mongo in the event of an error.
-	WriteRetryCount int `yaml:"write_retry_count"`
-	// Wait time in milliseconds between write retry events.
-	WriteRetryWait int `yaml:"write_retry_wait"` // milliseconds
-}
+	// //////////////////////////////////////////////////////////////////////
+	// CDC Store, Delayer, and Poller (if enabled)
+	// //////////////////////////////////////////////////////////////////////
 
-type DelayConfig struct {
-	// The collection that delays are stored in.
-	Collection string `yaml:"collection"`
-	// If this value is positive, the delayer will always return a max timestamp
-	// that is time.Now() minus this config value. If this value is negative,
-	// the delayer will return a max timestamp that dynamically changes
-	// depending on the active API calls into Etre. Units in milliseconds.
-	StaticDelay int `yaml:"static_delay"`
-}
+	var cdcStore cdc.Store
+	var dm cdc.Delayer
+	var poller cdc.Poller
+	if config.CDC.Collection != "" {
+		log.Printf("CDC enabled on %s.%s\n", config.Datasource.Database, config.CDC.Collection)
 
-type FeedConfig struct {
-	// The buffer size that a streamer has when consuming from the poller. If the
-	// poller fills the buffer up then the streamer will error out since it won't
-	// be able to catch up to the poller anymore.
-	StreamerBufferSize int `yaml:"streamer_buffer_size"`
-	// The amount of time that the poller will sleep between polls, in milliseconds.
-	PollInterval int `yaml:"poll_interval"`
-}
+		// Store
+		wrp := cdc.RetryPolicy{
+			RetryCount: config.CDC.WriteRetryCount,
+			RetryWait:  config.CDC.WriteRetryWait,
+		}
+		cdcStore = cdc.NewStore(
+			conn,
+			config.Datasource.Database,
+			config.CDC.Collection,
+			config.CDC.FallbackFile,
+			wrp,
+		)
 
-type ServerConfig struct {
-	Addr string `yaml:"addr"`
+		// Delayer
+		var err error
+		if config.CDC.StaticDelay >= 0 {
+			dm, err = cdc.NewStaticDelayer(config.CDC.StaticDelay)
+		} else {
+			dm, err = cdc.NewDynamicDelayer(
+				conn,
+				config.Datasource.Database,
+				config.CDC.DelayCollection,
+			)
+		}
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
 
-	// Certs
-	TLSCert string `yaml:"tls-cert"`
-	TLSKey  string `yaml:"tls-key"`
-	TLSCA   string `yaml:"tls-ca"`
+		// Poller
+		poller = cdc.NewPoller(
+			cdcStore,
+			dm,
+			config.Feed.StreamerBufferSize,
+			time.NewTicker(time.Duration(config.Feed.PollInterval)*time.Millisecond),
+		)
+		go func() {
+			if err := poller.Run(); err != nil {
+				log.Fatalf("poller error: %s", err)
+			}
+		}()
+	} else {
+		log.Println("CDC disabled (config.cdc.collection not set)")
 
-	// Etre will look at this HTTP header to get the username of the requestor of
-	// all API calls.
-	UsernameHeader string `yaml:"username_header"`
+		// The CDC store and delayer must not be nil because the entity store
+		// always updates them. But when CDC is disabled, the updates are no-ops.
+		cdcStore = &mock.CDCStore{}
+		dm = &mock.Delayer{}
+
+		// This results in a nil FeedFactory (below) which causes the /changes
+		// controller returns http code 501 (StatusNotImplemented).
+		poller = nil // cdc disabled
+	}
+
+	// //////////////////////////////////////////////////////////////////////
+	// Feed Factory
+	// //////////////////////////////////////////////////////////////////////
+
+	var feedFactory cdc.FeedFactory
+	if poller != nil {
+		feedFactory = cdc.NewFeedFactory(poller, cdcStore)
+	}
+
+	// //////////////////////////////////////////////////////////////////////
+	// Entity Store
+	// //////////////////////////////////////////////////////////////////////
+
+	entityStore := entity.NewStore(
+		conn,
+		config.Datasource.Database,
+		config.Entity.Types,
+		cdcStore,
+		dm,
+	)
+
+	// //////////////////////////////////////////////////////////////////////
+	// Teams: auth, metrcs, etc.
+	// //////////////////////////////////////////////////////////////////////
+
+	var teamAuth team.Authorizer
+	if len(config.Teams) > 0 {
+		teamAuth = team.NewOrgAuthorizer(config.Teams, config.Entity.Types)
+	} else {
+		teamAuth = team.NewAllowAll(config.Entity.Types)
+	}
+
+	return Context{
+		Config:      config,
+		EntityStore: entityStore,
+		CDCStore:    cdcStore,
+		FeedFactory: feedFactory,
+		TeamAuth:    teamAuth,
+	}
 }

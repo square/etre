@@ -37,10 +37,10 @@ type API struct {
 }
 
 // NewAPI makes a new API.
-func NewAPI(appCtx app.Context) *API {
-	api := &API{
+func NewAPI(appCtx app.Context) API {
+	api := API{
 		addr:     appCtx.Config.Server.Addr,
-		es:       appCtx.Store,
+		es:       appCtx.EntityStore,
 		ff:       appCtx.FeedFactory,
 		teamAuth: appCtx.TeamAuth,
 		echo:     echo.New(),
@@ -63,26 +63,27 @@ func NewAPI(appCtx app.Context) *API {
 			// the "all" metric for them so this line is repeated in every
 			// controller. Also set t0 for measuring query latency.
 			entityType := c.Param("type")
-			if entityType != "" {
-				t.Metrics.Entity[entityType].Query.All.Inc(1)
+			if entityType == "" {
+				return next(c)
+			}
 
-				// GET with :entity is a read. PUT, POST, and DELETE are writes,
-				// with one exception.
-				switch c.Request().Method {
-				case "GET":
-					t.Metrics.Entity[entityType].Query.Read.Inc(1)
-					if err := api.teamAuth.Allowed(t, team.OP_READ, entityType); err != nil {
-						return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
-					}
-				case "PUT", "POST", "DELETE":
-					if c.Path() != etre.API_ROOT+"/query/:type" {
-						t.Metrics.Entity[entityType].Query.Write.Inc(1)
-					} else {
-						t.Metrics.Entity[entityType].Query.Read.Inc(1) // POST /query/:type is a read
-					}
+			t.Metrics.Entity[entityType].Query.All.Inc(1)
+			c.Set("t0", time.Now()) // query start time
+
+			// GET with :entity is a read. PUT, POST, and DELETE are writes,
+			// with one exception.
+			switch c.Request().Method {
+			case "GET":
+				t.Metrics.Entity[entityType].Query.Read.Inc(1)
+				if err := api.teamAuth.Allowed(t, team.OP_READ, entityType); err != nil {
+					return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 				}
-
-				c.Set("t0", time.Now()) // query start time
+			case "PUT", "POST", "DELETE":
+				if c.Path() != etre.API_ROOT+"/query/:type" {
+					t.Metrics.Entity[entityType].Query.Write.Inc(1)
+				} else {
+					t.Metrics.Entity[entityType].Query.Read.Inc(1) // POST /query/:type is a read
+				}
 			}
 
 			return next(c)
@@ -99,19 +100,20 @@ func NewAPI(appCtx app.Context) *API {
 			// Same as above: if the route has :entity param, it queried the db,
 			// so finish what the pre-route middleware started
 			entityType := c.Param("type")
-			if entityType != "" {
-				// Record query latency (response time) in milliseconds
-				t0 := c.Get("t0").(time.Time) // query start time
-				queryLatencyMs := int64(time.Now().Sub(t0) / time.Millisecond)
-				t := c.Get("team").(team.Team)
-				t.Metrics.Entity[entityType].Query.Latency.Update(queryLatencyMs)
-
-				// Did the query take too long (miss SLA)?
-				if t.QueryLatencySLA > 0 && uint(queryLatencyMs) > t.QueryLatencySLA {
-					t.Metrics.Entity[entityType].Query.MissSLA.Inc(1)
-				}
+			if entityType == "" {
+				return nil
 			}
 
+			// Record query latency (response time) in milliseconds
+			t0 := c.Get("t0").(time.Time) // query start time
+			queryLatencyMs := int64(time.Now().Sub(t0) / time.Millisecond)
+			t := c.Get("team").(team.Team)
+			t.Metrics.Entity[entityType].Query.Latency.Update(queryLatencyMs)
+
+			// Did the query take too long (miss SLA)?
+			if t.QueryLatencySLA > 0 && uint(queryLatencyMs) > t.QueryLatencySLA {
+				t.Metrics.Entity[entityType].Query.MissSLA.Inc(1)
+			}
 			return nil
 		}
 	}))
@@ -156,17 +158,17 @@ func NewAPI(appCtx app.Context) *API {
 }
 
 // ServeHTTP allows the API to statisfy the http.HandlerFunc interface.
-func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (api API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	api.echo.ServeHTTP(w, r)
 }
 
 // Use adds middleware to the echo web server in the API. See
 // https://echo.labstack.com/middleware for more details.
-func (api *API) Use(middleware ...echo.MiddlewareFunc) {
+func (api API) Use(middleware ...echo.MiddlewareFunc) {
 	api.echo.Use(middleware...)
 }
 
-func (api *API) Router() *echo.Echo {
+func (api API) Router() *echo.Echo {
 	return api.echo
 }
 
@@ -178,7 +180,7 @@ func (api *API) Router() *echo.Echo {
 // Query
 // -----------------------------------------------------------------------------
 
-func (api *API) getEntitiesHandler(c echo.Context) error {
+func (api API) getEntitiesHandler(c echo.Context) error {
 	entityType := c.Param("type")      // from resource path
 	t := c.Get("team").(team.Team)     // team.Team from middleware
 	em := t.Metrics.Entity[entityType] // entity metrics
@@ -217,7 +219,7 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 }
 
 // Handles an edge case of having a query >2k characters.
-func (api *API) queryHandler(c echo.Context) error {
+func (api API) queryHandler(c echo.Context) error {
 	return echo.NewHTTPError(http.StatusNotImplemented, nil) // @todo
 }
 
@@ -225,7 +227,7 @@ func (api *API) queryHandler(c echo.Context) error {
 // Bulk
 // --------------------------------------------------------------------------
 
-func (api *API) postEntitiesHandler(c echo.Context) error {
+func (api API) postEntitiesHandler(c echo.Context) error {
 	entityType := c.Param("type")      // from resource path
 	t := c.Get("team").(team.Team)     // team.Team from middleware
 	em := t.Metrics.Entity[entityType] // entity metrics
@@ -262,7 +264,7 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 	return c.JSON(http.StatusCreated, wr)
 }
 
-func (api *API) putEntitiesHandler(c echo.Context) error {
+func (api API) putEntitiesHandler(c echo.Context) error {
 	entityType := c.Param("type")      // from resource path
 	t := c.Get("team").(team.Team)     // team.Team from middleware
 	em := t.Metrics.Entity[entityType] // entity metrics
@@ -302,7 +304,7 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, wr)
 }
 
-func (api *API) deleteEntitiesHandler(c echo.Context) error {
+func (api API) deleteEntitiesHandler(c echo.Context) error {
 	entityType := c.Param("type")      // from resource path
 	t := c.Get("team").(team.Team)     // team.Team from middleware
 	em := t.Metrics.Entity[entityType] // entity metrics
@@ -340,7 +342,7 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 // Enitity
 // -----------------------------------------------------------------------------
 
-func (api *API) postEntityHandler(c echo.Context) error {
+func (api API) postEntityHandler(c echo.Context) error {
 	entityType := c.Param("type")      // from resource path
 	t := c.Get("team").(team.Team)     // team.Team from middleware
 	em := t.Metrics.Entity[entityType] // entity metrics
@@ -375,7 +377,7 @@ func (api *API) postEntityHandler(c echo.Context) error {
 	return c.JSON(http.StatusCreated, wr[0])
 }
 
-func (api *API) getEntityHandler(c echo.Context) error {
+func (api API) getEntityHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	entityId := c.Param("id")
 	t := c.Get("team").(team.Team)
@@ -407,7 +409,7 @@ func (api *API) getEntityHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, entities[0])
 }
 
-func (api *API) putEntityHandler(c echo.Context) error {
+func (api API) putEntityHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	t := c.Get("team").(team.Team)
 	em := t.Metrics.Entity[entityType]
@@ -441,7 +443,7 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, wr[0])
 }
 
-func (api *API) deleteEntityHandler(c echo.Context) error {
+func (api API) deleteEntityHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	t := c.Get("team").(team.Team)
 	em := t.Metrics.Entity[entityType]
@@ -470,7 +472,7 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 }
 
 // Getting all labels for a single entity.
-func (api *API) entityLabelsHandler(c echo.Context) error {
+func (api API) entityLabelsHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	entityId := c.Param("id")
 	t := c.Get("team").(team.Team)
@@ -495,7 +497,7 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 }
 
 // Delete a label from a single entity.
-func (api *API) entityDeleteLabelHandler(c echo.Context) error {
+func (api API) entityDeleteLabelHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	t := c.Get("team").(team.Team)
 	em := t.Metrics.Entity[entityType]
@@ -542,7 +544,7 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 // Stats
 // --------------------------------------------------------------------------
 
-func (api *API) metricsHandler(c echo.Context) error {
+func (api API) metricsHandler(c echo.Context) error {
 	teams := api.teamAuth.List()
 	all := etre.Metrics{
 		Teams: make([]etre.MetricsReport, len(teams)),
@@ -555,7 +557,7 @@ func (api *API) metricsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, all)
 }
 
-func (api *API) statusHandler(c echo.Context) error {
+func (api API) statusHandler(c echo.Context) error {
 	status := map[string]interface{}{
 		"ok": true,
 	}
@@ -571,7 +573,7 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func (api *API) changesHandler(c echo.Context) error {
+func (api API) changesHandler(c echo.Context) error {
 	entityType := c.Param("type")
 	t := c.Get("team").(team.Team)
 	em := t.Metrics.Entity[entityType]
@@ -612,7 +614,7 @@ func (api *API) changesHandler(c echo.Context) error {
 //
 // In that case, no writes were attempted, presumably because of a low-level db
 // issue (e.g. db is offiline). In other words: v most not be nil.
-func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
+func (api API) WriteResults(v interface{}, err error) []etre.WriteResult {
 	var wr []etre.WriteResult
 	if diffs, ok := v.([]etre.Entity); ok {
 		n := len(diffs)

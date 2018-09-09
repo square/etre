@@ -3,6 +3,7 @@ package team
 import (
 	"errors"
 
+	"github.com/square/etre/config"
 	"github.com/square/etre/metrics"
 )
 
@@ -11,12 +12,6 @@ var (
 	ErrNotFound = errors.New("team does not exit")
 	ErrReadOnly = errors.New("team is read-only, cannot write")
 )
-
-type Config struct {
-	Name            string `yaml:"name"`
-	ReadOnly        bool   `yaml:"read-only"`
-	QueryLatencySLA uint   `yaml:"query-latency-sla"`
-}
 
 type Team struct {
 	Name            string
@@ -77,7 +72,7 @@ type Org struct {
 	list  []Team
 }
 
-func NewOrgAuthorizer(teams []Config, entityTypes []string) *Org {
+func NewOrgAuthorizer(teams []config.TeamConfig, entityTypes []string) *Org {
 	org := &Org{
 		teams: map[string]Team{},
 		list:  make([]Team, len(teams)),
