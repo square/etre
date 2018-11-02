@@ -21,11 +21,6 @@ import (
 	"github.com/labstack/echo"
 )
 
-var (
-	slugPattern   = `([\w-]+)`
-	labelsPattern = `([\w-_]+)`
-)
-
 // API provides controllers for endpoints it registers with a router.
 type API struct {
 	addr string
@@ -153,7 +148,9 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 		return handleError(err)
 	}
 
-	wo := writeOp(c)
+	wo, err := writeOp(c)
+	if err != nil {
+	}
 
 	// Get entities from request payload.
 	var entities []etre.Entity
@@ -172,10 +169,10 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 	}
 
 	ids, err := api.es.CreateEntities(wo, entities)
-	if ids == nil && err != nil {
+	wr := api.WriteResults(ids, err)
+	if err != nil {
 		return handleError(ErrDb.New(err.Error()))
 	}
-	wr := api.WriteResults(ids, err)
 
 	return c.JSON(http.StatusCreated, wr)
 }
@@ -497,6 +494,7 @@ func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
 			}
 		}
 	} else if ids, ok := v.([]string); ok {
+		// Entity _id from CreateEntities
 		n := len(ids)
 		if err != nil {
 			n += 1

@@ -343,7 +343,7 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 
 	for label := range patch {
 		if etre.IsMetalabel(label) {
-			return nil, fmt.Errorf("updating metalabels is not allowed")
+			return nil, fmt.Errorf("updating metalabel '%s' not allowed", label)
 		}
 	}
 

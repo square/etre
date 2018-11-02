@@ -13,6 +13,7 @@ import (
 	"github.com/square/etre/query"
 	"github.com/square/etre/test/mock"
 
+	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/go-test/deep"
 )
@@ -198,6 +199,76 @@ func TestCreateEntitiesInvalidEntityType(t *testing.T) {
 	expectedErrMsg := "Invalid entity type: " + invalidEntityType
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	}
+}
+
+func TestDuplicateEntity(t *testing.T) {
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
+
+	s, err := conn.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.DB(database).C(entityType)
+	index := mgo.Index{
+		Key:        []string{"y"},
+		Unique:     true,
+		DropDups:   true,
+		Background: false,
+		Sparse:     true,
+	}
+	if err := c.EnsureIndex(index); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := c.DropAllIndexes(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	// Insert
+	testData := []etre.Entity{
+		etre.Entity{"y": "hello"}, // dupe
+	}
+	wo := entity.WriteOp{
+		EntityType: entityType,
+		User:       username,
+	}
+	ids, err := es.CreateEntities(wo, testData)
+	if err == nil {
+		t.Error("no error on duplicate insert, expected err")
+	}
+	_, ok := err.(entity.ErrCreate)
+	if !ok {
+		t.Errorf("err is not type entity.ErrCreate: %+v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("returned ids, expected none: %v", ids)
+	}
+
+	// Update
+	entities := []etre.Entity{
+		etre.Entity{"y": "bye", "x": 3},
+	}
+	if _, err = es.CreateEntities(wo, entities); err != nil {
+		t.Fatal(err)
+	}
+	// Now we have {y:hello}, {y:bye}. Try to update y:bye -> y:hello
+	q, err := query.Translate("y=hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := es.UpdateEntities(wo, q, etre.Entity{"y": "bye"})
+	if err == nil {
+		t.Error("no error on duplicate update, expected err")
+	}
+	_, ok = err.(entity.ErrUpdate)
+	if !ok {
+		t.Errorf("err is not type entity.ErrUpdate: %+v", err)
+	}
+	if len(p) != 0 {
+		t.Errorf("returned patched entities, expected none: %v", p)
 	}
 }
 
