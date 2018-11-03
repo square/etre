@@ -30,7 +30,6 @@ package entity
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"time"
 
@@ -44,9 +43,14 @@ import (
 	"github.com/rs/xid"
 )
 
-var (
-	ErrNotFound = errors.New("entity not found")
-)
+type DbError struct {
+	Err  error
+	Type string
+}
+
+func (e DbError) Error() string {
+	return e.Err.Error()
+}
 
 // WriteOp represents common metadata for insert, update, and delete Store methods.
 type WriteOp struct {
@@ -125,7 +129,7 @@ func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc
 	for _, r := range reservedNames {
 		for _, c := range entityTypes {
 			if r == c {
-				return nil, errors.New(fmt.Sprintf("entity type %s is a reserved word", c))
+				return nil, fmt.Errorf("entity type %s is a reserved word", c)
 			}
 		}
 	}
@@ -146,14 +150,10 @@ func NewStore(conn db.Connector, database string, entityTypes []string, cdcs cdc
 //     https://docs.mongodb.com/manual/reference/operator/update/unset/#up._S_unset
 //
 func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
-	if err := s.validate(wo); err != nil {
-		return nil, err
-	}
-
 	// Connect to Mongo collection for the entity type
 	ms, err := s.conn.Connect()
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "db-connect"}
 	}
 	defer ms.Close()
 	c := ms.DB(s.database).C(wo.EntityType)
@@ -178,9 +178,9 @@ func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 	if err != nil {
 		switch err {
 		case mgo.ErrNotFound:
-			return nil, ErrNotFound
+			return nil, etre.ErrEntityNotFound
 		default:
-			return nil, ErrDeleteLabel{DbError: err}
+			return nil, DbError{Err: err, Type: "db-find-apply"}
 		}
 	}
 
@@ -197,8 +197,11 @@ func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 		new: &new,
 		rev: uint(newRev),
 	}
-	err = s.cdcWrite(etre.Entity{}, wo, cp)
-	return old, err
+	if err := s.cdcWrite(etre.Entity{}, wo, cp); err != nil {
+		return old, err
+	}
+
+	return old, nil
 }
 
 // CreateEntities inserts many entities into DB. This method allows for partial
@@ -217,26 +220,10 @@ func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 // inserting one by one), caller should only return subset of entities that
 // failed to be inserted.
 func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, error) {
-	if err := s.validate(wo); err != nil {
-		return nil, err
-	}
-
-	for i, e := range entities {
-		if _, ok := e["_id"]; ok {
-			return nil, fmt.Errorf("_id set in entity[%d]; _id cannot be set on insert", i)
-		}
-		if _, ok := e["_type"]; ok {
-			return nil, fmt.Errorf("_type set in entity[%d]; _type cannot be set on insert", i)
-		}
-		if _, ok := e["_rev"]; ok {
-			return nil, fmt.Errorf("_rev set in entity[%d]; _rev cannot be set on insert", i)
-		}
-	}
-
 	// Connect to Mongo collection for the entity type
 	ms, err := s.conn.Connect()
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "db-connect"}
 	}
 	defer ms.Close()
 	c := ms.DB(s.database).C(wo.EntityType)
@@ -246,7 +233,7 @@ func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, er
 	changeId := xid.New().String()
 	err = s.dm.BeginChange(changeId)
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "cdc-begin"}
 	}
 	// @todo: don't ignore error...this should report an exception or something
 	defer s.dm.EndChange(changeId)
@@ -262,7 +249,7 @@ func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, er
 		e["_rev"] = 0
 
 		if err := c.Insert(e); err != nil {
-			return insertedObjectIds, ErrCreate{DbError: err, N: len(insertedObjectIds)}
+			return insertedObjectIds, DbError{Err: err, Type: "db-insert"}
 		}
 
 		// bson.ObjectId.String() yields "ObjectId("abc")", but we need to report only "abc",
@@ -289,14 +276,10 @@ func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, er
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
 func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
-	if err := s.validEntityType(entityType); err != nil {
-		return nil, err
-	}
-
 	// Connect to Mongo collection for the entity type
 	ms, err := s.conn.Connect()
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "db-connect"}
 	}
 	defer ms.Close()
 	c := ms.DB(s.database).C(entityType)
@@ -315,7 +298,7 @@ func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilte
 		err = c.Find(mgoQuery).Select(selectMap).All(&entities)
 	}
 	if err != nil {
-		return nil, ErrRead{DbError: err}
+		return nil, DbError{Err: err, Type: "db-find"}
 	}
 
 	return entities, nil
@@ -337,31 +320,20 @@ func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilte
 //   diffs, err := c.UpdateEntities(q, update)
 //
 func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
-	if err := s.validate(wo); err != nil {
-		return nil, err
-	}
-
-	for label := range patch {
-		if etre.IsMetalabel(label) {
-			return nil, fmt.Errorf("updating metalabel '%s' not allowed", label)
-		}
-	}
-
-	mgoQuery := translateQuery(q)
-
 	// Connect to Mongo collection for the entity type
 	ms, err := s.conn.Connect()
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "db-connect"}
 	}
 	defer ms.Close()
 	c := ms.DB(s.database).C(wo.EntityType)
 
 	// We can only call update on one doc at a time, so we generate a slice of IDs
 	// for docs to update.
+	mgoQuery := translateQuery(q)
 	ids, err := idsForQuery(c, mgoQuery)
 	if err != nil {
-		return nil, ErrUpdate{DbError: err}
+		return nil, DbError{Err: err, Type: "db-find-ids"}
 	}
 
 	// Change to make
@@ -380,7 +352,7 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 	changeId := xid.New().String()
 	err = s.dm.BeginChange(changeId)
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "cdc-begin"}
 	}
 	// @todo: don't ignore error...this should report an exception or something
 	defer func() { s.dm.EndChange(changeId) }()
@@ -398,7 +370,7 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 		var diff etre.Entity
 		_, err := c.Find(bson.M{"_id": id}).Select(affectedLabels).Apply(change, &diff)
 		if err != nil {
-			return diffs, ErrUpdate{DbError: err}
+			return diffs, DbError{Err: err, Type: "db-find-apply"}
 		}
 
 		diffs = append(diffs, diff)
@@ -439,24 +411,19 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 // For example, if 4 entities were supposed to be deleted and 3 are ok and the
 // 4th fails, a slice with 3 deleted entities and an error will be returned.
 func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) {
-	if err := s.validate(wo); err != nil {
-		return nil, err
-	}
-
-	mgoQuery := translateQuery(q)
-
 	// Connect to Mongo collection for the entity type
 	ms, err := s.conn.Connect()
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "db-connect"}
 	}
 	defer ms.Close()
 	c := ms.DB(s.database).C(wo.EntityType)
 
 	// List of IDs for docs to update
+	mgoQuery := translateQuery(q)
 	ids, err := idsForQuery(c, mgoQuery)
 	if err != nil {
-		return nil, ErrDelete{DbError: err}
+		return nil, DbError{Err: err, Type: "db-find-ids"}
 	}
 
 	// Change to make
@@ -473,7 +440,7 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 	changeId := xid.New().String()
 	err = s.dm.BeginChange(changeId)
 	if err != nil {
-		return nil, err
+		return nil, DbError{Err: err, Type: "cdc-begin"}
 	}
 	// @todo: don't ignore error...this should report an exception or something
 	defer func() { s.dm.EndChange(changeId) }()
@@ -486,7 +453,7 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 			case mgo.ErrNotFound:
 				// ignore
 			default:
-				return deletedEntities, ErrDelete{DbError: err}
+				return deletedEntities, DbError{Err: err, Type: "db-find-apply"}
 			}
 		}
 
@@ -512,31 +479,15 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 // Private funcs
 // //////////////////////////////////////////////////////////////////////////
 
-func (s *store) validate(wo WriteOp) error {
-	if err := s.validEntityType(wo.EntityType); err != nil {
-		return err
-	}
-
-	if wo.User == "" {
-		return fmt.Errorf("User not set. User is set by config.server.username_header.")
-	}
-
-	return nil
-}
-
-func (s *store) validEntityType(entityType string) error {
-	for _, t := range s.entityTypes {
-		if t == entityType {
-			return nil
-		}
-	}
-	return fmt.Errorf("Invalid entity type: %s. Valid entity types: %s. Entity types are set by config.entity.types.",
-		entityType, s.entityTypes)
-}
-
 func (s *store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
 	ts := time.Now().UnixNano() / int64(time.Millisecond)
-	set := setValues(e, wo) // set op from entity or wo, in that order.
+	// set op from entity or wo, in that order.
+	set := e.Set()
+	if set.Size == 0 && wo.SetSize > 0 {
+		set.Op = wo.SetOp
+		set.Id = wo.SetId
+		set.Size = wo.SetSize
+	}
 	event := etre.CDCEvent{
 		EventId:    hex.EncodeToString([]byte(bson.NewObjectId())),
 		EntityId:   hex.EncodeToString([]byte(cp.id)),
@@ -551,17 +502,10 @@ func (s *store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
 		SetOp:      set.Op,
 		SetSize:    set.Size,
 	}
-	return s.cdcs.Write(event)
-}
-
-func setValues(e etre.Entity, wo WriteOp) etre.Set {
-	set := e.Set()
-	if set.Size == 0 && wo.SetSize > 0 {
-		set.Op = wo.SetOp
-		set.Id = wo.SetId
-		set.Size = wo.SetSize
+	if err := s.cdcs.Write(event); err != nil {
+		return DbError{Err: err, Type: "cdc-write"}
 	}
-	return set
+	return nil
 }
 
 // Translates Query object to bson.M object, which will
@@ -598,17 +542,12 @@ func idsForQuery(c *mgo.Collection, q bson.M) ([]bson.ObjectId, error) {
 	// Select only "_id" field in returned results
 	err := c.Find(q).Select(bson.M{"_id": 1}).All(&resultIds)
 	if err != nil {
-		// Return raw, low-level error to allow caller wrap into higher level
-		// error.
-		return nil, err
+		return nil, err // return raw error, let caller wrap
 	}
-
 	ids := make([]bson.ObjectId, len(resultIds))
-
 	for i := range ids {
 		ids[i] = resultIds[i]["_id"]
 	}
-
 	return ids, nil
 }
 
@@ -630,56 +569,4 @@ func selectMap(e etre.Entity) map[string]int {
 		selectMap[k] = 1
 	}
 	return selectMap
-}
-
-// ErrCreate is a higher level error for caller to check against when calling
-// CreateEntities. It holds the lower level error message from DB and the
-// number of entities successfully inserted on create.
-type ErrCreate struct {
-	DbError error
-	N       int // number of entities successfully created
-}
-
-func (e ErrCreate) Error() string {
-	return e.DbError.Error()
-}
-
-// ErrRead is a higher level error for caller to check against when calling
-// ReadEntities. It holds the lower level error message from DB.
-type ErrRead struct {
-	DbError error
-}
-
-func (e ErrRead) Error() string {
-	return e.DbError.Error()
-}
-
-// ErrUpdate is a higher level error for caller to check against when calling
-// UpdateEntities. It holds the lower level error message from DB.
-type ErrUpdate struct {
-	DbError error
-}
-
-func (e ErrUpdate) Error() string {
-	return e.DbError.Error()
-}
-
-// ErrDelete is a higher level error for caller to check against when calling
-// DeleteEntities. It holds the lower level error message from DB.
-type ErrDelete struct {
-	DbError error
-}
-
-func (e ErrDelete) Error() string {
-	return e.DbError.Error()
-}
-
-// ErrDeleteLabel is a higher level error for caller to check against when calling
-// DeleteLabel. It holds the lower level error message from DB.
-type ErrDeleteLabel struct {
-	DbError error
-}
-
-func (e ErrDeleteLabel) Error() string {
-	return e.DbError.Error()
 }

@@ -190,7 +190,6 @@ func debug(fmt string, v ...interface{}) {
 type Error struct {
 	Message    string `json:"message"`
 	Type       string `json:"type"`
-	Write      bool   `json:"write"` // write error
 	HTTPStatus int
 }
 

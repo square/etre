@@ -46,11 +46,11 @@ func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 	// Create test data. c.CreateEntities() modfies seedEntities: it sets
 	// _id, _type, and _rev. So reset the slice for every test.
 	seedEntities = []etre.Entity{
-		etre.Entity{"x": 2, "y": "hello", "z": []interface{}{"foo", "bar"}},
+		etre.Entity{"x": 2, "y": "hello", "z": 26},
 	}
 	seedIds, err = es.CreateEntities(wo, seedEntities)
 	if err != nil {
-		if _, ok := err.(entity.ErrCreate); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Fatalf("Error creating entities: %s", err)
 		} else {
 			t.Fatalf("Uknown error when creating entities: %s", err)
@@ -68,7 +68,7 @@ func teardown(t *testing.T, es entity.Store) {
 	}
 	_, err = es.DeleteEntities(wo, q)
 	if err != nil {
-		if _, ok := err.(entity.ErrDelete); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error deleting entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when deleting entities: %s", err)
@@ -108,7 +108,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	// Note: teardown will delete this test data
 	ids, err := es.CreateEntities(wo, testData)
 	if err != nil {
-		if _, ok := err.(entity.ErrCreate); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error creating entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when creating entities: %s", err)
@@ -166,14 +166,8 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected error but got no error")
 	} else {
-		if _, ok := err.(entity.ErrCreate); ok {
-			actual := err.(entity.ErrCreate).N
-			expect := len(expect)
-			if actual != expect {
-				t.Errorf("Actual number of inserted entities in error: %v, expected: %v", actual, expect)
-			}
-		} else {
-			t.Errorf("Uknown error when creating entities: %s", err)
+		if _, ok := err.(entity.DbError); !ok {
+			t.Errorf("got error type %#v, expected entity.DbError", err)
 		}
 	}
 }
@@ -195,10 +189,15 @@ func TestCreateEntitiesInvalidEntityType(t *testing.T) {
 		User:       username,
 	}
 	_, err := es.CreateEntities(wo, testData)
-
-	expectedErrMsg := "Invalid entity type: " + invalidEntityType
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	if err == nil {
+		t.Fatal("err is nill, expected an enitty.ValidationError")
+	}
+	v, ok := err.(entity.ValidationError)
+	if !ok {
+		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
+	}
+	if v.Type != "invalid-entity-type" {
+		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
 	}
 }
 
@@ -239,9 +238,9 @@ func TestDuplicateEntity(t *testing.T) {
 	if err == nil {
 		t.Error("no error on duplicate insert, expected err")
 	}
-	_, ok := err.(entity.ErrCreate)
+	_, ok := err.(entity.DbError)
 	if !ok {
-		t.Errorf("err is not type entity.ErrCreate: %+v", err)
+		t.Errorf("err is not type entity.DbError: %+v", err)
 	}
 	if len(ids) != 0 {
 		t.Errorf("returned ids, expected none: %v", ids)
@@ -263,9 +262,9 @@ func TestDuplicateEntity(t *testing.T) {
 	if err == nil {
 		t.Error("no error on duplicate update, expected err")
 	}
-	_, ok = err.(entity.ErrUpdate)
+	_, ok = err.(entity.DbError)
 	if !ok {
-		t.Errorf("err is not type entity.ErrUpdate: %+v", err)
+		t.Errorf("err is not type entity.DbError: %+v", err)
 	}
 	if len(p) != 0 {
 		t.Errorf("returned patched entities, expected none: %v", p)
@@ -299,7 +298,7 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 		}
 		actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 		if err != nil {
-			if _, ok := err.(entity.ErrRead); ok {
+			if _, ok := err.(entity.DbError); ok {
 				t.Errorf("%d Error reading entities: %s", i, err)
 			} else {
 				t.Errorf("%d: Unknown error when reading entities: %s", i, err)
@@ -325,7 +324,7 @@ func TestReadEntitiesWithComplexQuery(t *testing.T) {
 
 	actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
-		if _, ok := err.(entity.ErrRead); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error reading entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when reading entities: %s", err)
@@ -351,7 +350,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 	// Note: teardown will delete this test data
 	_, err := es.CreateEntities(wo, testData)
 	if err != nil {
-		if _, ok := err.(entity.ErrCreate); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error creating entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when creating entities: %s", err)
@@ -364,7 +363,7 @@ func TestReadEntitiesMultipleFound(t *testing.T) {
 	}
 	entities, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
-		if _, ok := err.(entity.ErrRead); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error reading entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when reading entities: %s", err)
@@ -393,7 +392,7 @@ func TestReadEntitiesNotFound(t *testing.T) {
 		t.Errorf("An empty list was expected, actual: %v", actual)
 	}
 	if err != nil {
-		if _, ok := err.(entity.ErrRead); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error reading entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when reading entities: %s", err)
@@ -410,13 +409,17 @@ func TestReadEntitiesInvalidEntityType(t *testing.T) {
 		t.Error(err)
 	}
 
-	// This is invalid because it's a reserved name
-	invalidEntityType := "entities"
+	invalidEntityType := "entities" // reserved name and doesn't exist
 	_, err = es.ReadEntities(invalidEntityType, q, etre.QueryFilter{})
-
-	expectedErrMsg := "Invalid entity type: " + invalidEntityType
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	if err == nil {
+		t.Fatal("err is nill, expected an enitty.ValidationError")
+	}
+	v, ok := err.(entity.ValidationError)
+	if !ok {
+		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
+	}
+	if v.Type != "invalid-entity-type" {
+		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
 	}
 }
 
@@ -517,10 +520,15 @@ func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
 		User:       username,
 	}
 	_, err = es.UpdateEntities(wo, q, u)
-
-	expectedErrMsg := "Invalid entity type: " + invalidEntityType
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	if err == nil {
+		t.Fatal("err is nill, expected an enitty.ValidationError")
+	}
+	v, ok := err.(entity.ValidationError)
+	if !ok {
+		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
+	}
+	if v.Type != "invalid-entity-type" {
+		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
 	}
 }
 
@@ -545,7 +553,7 @@ func TestDeleteEntities(t *testing.T) {
 	}
 	ids, err := es.CreateEntities(wo, testData)
 	if err != nil {
-		if _, ok := err.(entity.ErrCreate); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error creating entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when creating entities: %s", err)
@@ -558,7 +566,7 @@ func TestDeleteEntities(t *testing.T) {
 	}
 	actualDeletedEntities, err := es.DeleteEntities(wo, q)
 	if err != nil {
-		if _, ok := err.(entity.ErrDelete); ok {
+		if _, ok := err.(entity.DbError); ok {
 			t.Errorf("Error deleting entities: %s", err)
 		} else {
 			t.Errorf("Uknown error when deleting entities: %s", err)
@@ -612,17 +620,21 @@ func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
 		t.Error(err)
 	}
 
-	// This is invalid because it's a reserved name
-	invalidEntityType := "entities"
+	invalidEntityType := "entities" // reserved name and doesn't exist
 	wo := entity.WriteOp{
 		EntityType: invalidEntityType,
 		User:       username,
 	}
 	_, err = es.DeleteEntities(wo, q)
-
-	expectedErrMsg := "Invalid entity type: " + invalidEntityType
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	if err == nil {
+		t.Fatal("err is nill, expected an enitty.ValidationError")
+	}
+	v, ok := err.(entity.ValidationError)
+	if !ok {
+		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
+	}
+	if v.Type != "invalid-entity-type" {
+		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
 	}
 }
 

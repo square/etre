@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -23,23 +22,51 @@ import (
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
-	addr string
-	es   entity.Store
-	ff   cdc.FeedFactory
+	addr     string
+	validate entity.Validator
+	es       entity.Store
+	ff       cdc.FeedFactory
 	// --
 	echo *echo.Echo
 }
 
 // NewAPI makes a new API.
-func NewAPI(addr string, es entity.Store, ff cdc.FeedFactory) *API {
+func NewAPI(addr string, validate entity.Validator, es entity.Store, ff cdc.FeedFactory) *API {
 	api := &API{
-		addr: addr,
-		es:   es,
-		ff:   ff,
-		echo: echo.New(),
+		addr:     addr,
+		validate: validate,
+		es:       es,
+		ff:       ff,
+		echo:     echo.New(),
 	}
 
 	router := api.echo.Group(etre.API_ROOT)
+
+	// Called before every route/controller
+
+	// WriteOp
+	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// All routes with an :entity param query the db, so increment
+			// the "all" metric for them so this line is repeated in every
+			// controller. Also set t0 for measuring query latency.
+			method := c.Request().Method
+			entityType := c.Param("type")
+			if entityType == "" || method == "GET" || method == "OPTION" {
+				return next(c)
+			}
+			if c.Path() == etre.API_ROOT+"/query/:type" {
+				return next(c)
+			}
+			// "PUT", "POST", "DELETE"
+			wo := writeOp(c)
+			if err := api.validate.WriteOp(wo); err != nil {
+				return c.JSON(api.WriteResult(nil, err))
+			}
+			c.Set("wo", writeOp(c))
+			return next(c)
+		}
+	})
 
 	// /////////////////////////////////////////////////////////////////////
 	// Query
@@ -93,41 +120,39 @@ func (api *API) Router() *echo.Echo {
 	return api.echo
 }
 
-// /////////////////////////////////////////////////////////////////////////////
-// Controllers
-// /////////////////////////////////////////////////////////////////////////////
-
 // -----------------------------------------------------------------------------
 // Query
 // -----------------------------------------------------------------------------
 
 func (api *API) getEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return readError(err)
 	}
 	entityType := c.Param("type")
+	if err := api.validate.EntityType(entityType); err != nil {
+		return readError(err)
+	}
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return handleError(ErrInvalidQuery.New("query string is empty"))
+		return readError(ErrInvalidQuery.New("query string is empty"))
 	}
-
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
+		return readError(ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
 	// Query Filter
 	f := etre.QueryFilter{}
-	csvReturnLabels := c.QueryParam("labels")
-	if csvReturnLabels != "" {
-		f.ReturnLabels = strings.Split(csvReturnLabels, ",")
+	csv := c.QueryParam("labels")
+	if csv != "" {
+		f.ReturnLabels = strings.Split(csv, ",")
 	}
 
 	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
-		return handleError(ErrDb.New("database error: %s", err))
+		return readError(ErrDb.New("database error: %s", err))
 	}
 
 	return c.JSON(http.StatusOK, entities)
@@ -145,153 +170,122 @@ func (api *API) queryHandler(c echo.Context) error {
 
 func (api *API) postEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
 	}
+	wo := c.Get("wo").(entity.WriteOp)
 
-	wo, err := writeOp(c)
-	if err != nil {
-	}
-
-	// Get entities from request payload.
 	var entities []etre.Entity
 	if err := c.Bind(&entities); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
 	}
 
-	for _, e := range entities {
-		ConvertFloat64ToInt(e)
-		for k, v := range e {
-			if !validValueType(v) {
-				return handleError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
-					"Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
-			}
-		}
+	if err := api.validate.Entities(entities, entity.VALIDATE_ON_CREATE); err != nil {
+		return c.JSON(api.WriteResult(nil, err))
 	}
 
 	ids, err := api.es.CreateEntities(wo, entities)
-	wr := api.WriteResults(ids, err)
-	if err != nil {
-		return handleError(ErrDb.New(err.Error()))
-	}
-
-	return c.JSON(http.StatusCreated, wr)
+	return c.JSON(api.WriteResult(ids, err))
 }
 
 func (api *API) putEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
 	}
-
-	wo := writeOp(c)
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return handleError(ErrInvalidQuery.New("query string is empty"))
+		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("query string is empty")))
 	}
 
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
+		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("invalid query: %s", err)))
 	}
 
 	// Get entities from request payload.
-	var requestUpdate etre.Entity
-	if err := c.Bind(&requestUpdate); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+	var patch etre.Entity
+	if err := c.Bind(&patch); err != nil {
+		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
 	}
 
-	entities, err := api.es.UpdateEntities(wo, q, requestUpdate)
-	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
+	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
+		return c.JSON(api.WriteResult(nil, err))
 	}
-	wr := api.WriteResults(entities, err)
 
-	return c.JSON(http.StatusOK, wr)
+	wo := c.Get("wo").(entity.WriteOp)
+	entities, err := api.es.UpdateEntities(wo, q, patch)
+	return c.JSON(api.WriteResult(entities, err))
 }
 
 func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
 	}
-
-	wo := writeOp(c)
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return handleError(ErrInvalidQuery.New("query string is empty"))
+		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("query string is empty")))
 	}
 
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return handleError(ErrInvalidQuery.New("invalid query: %s", err))
+		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("invalid query: %s", err)))
 	}
 
+	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.DeleteEntities(wo, q)
-	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
-	}
-	wr := api.WriteResults(entities, err)
-
-	return c.JSON(http.StatusOK, wr)
+	return c.JSON(api.WriteResult(entities, err))
 }
 
 // -----------------------------------------------------------------------------
 // Enitity
 // -----------------------------------------------------------------------------
 
+// Create one entity
 func (api *API) postEntityHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
+	}
+	wo := c.Get("wo").(entity.WriteOp)
+
+	var newEntity etre.Entity
+	if err := c.Bind(&newEntity); err != nil {
+		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
 	}
 
-	wo := writeOp(c)
-
-	// Get entity from request payload.
-	var entity etre.Entity
-	if err := c.Bind(&entity); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+	entities := []etre.Entity{newEntity}
+	if err := api.validate.Entities(entities, entity.VALIDATE_ON_CREATE); err != nil {
+		return c.JSON(api.WriteResult(nil, err))
 	}
 
-	ConvertFloat64ToInt(entity)
-	for k, v := range entity {
-		if !validValueType(v) {
-			return handleError(ErrBadRequest.New("Key %v has value %v with invalid type: %v. "+
-				"Type of value must be a string or int.", k, v, reflect.TypeOf(v)))
-		}
-	}
-
-	ids, err := api.es.CreateEntities(wo, []etre.Entity{entity})
-	if ids == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
-	}
-	wr := api.WriteResults(ids, err)
-
-	return c.JSON(http.StatusCreated, wr[0])
+	ids, err := api.es.CreateEntities(wo, entities)
+	return c.JSON(api.WriteResult(ids, err))
 }
 
+// Get one entity by _id
 func (api *API) getEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return readError(err)
 	}
 	entityType := c.Param("type")
 	entityId := c.Param("id")
-
-	q := queryForId(entityId)
+	if err := api.validate.EntityType(entityType); err != nil {
+		return readError(err)
+	}
 
 	// Query Filter
 	f := etre.QueryFilter{}
-	csvReturnLabels := c.QueryParam("labels")
-	if csvReturnLabels != "" {
-		f.ReturnLabels = strings.Split(csvReturnLabels, ",")
+	csv := c.QueryParam("labels")
+	if csv != "" {
+		f.ReturnLabels = strings.Split(csv, ",")
 	}
 
-	entities, err := api.es.ReadEntities(entityType, q, f)
+	entities, err := api.es.ReadEntities(entityType, query.IdEqual(entityId), f)
 	if err != nil {
-		return handleError(ErrDb.New(err.Error()))
+		return readError(ErrDb.New(err.Error()))
 	}
-
 	if len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
@@ -299,72 +293,57 @@ func (api *API) getEntityHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, entities[0])
 }
 
+// Patch one entity by _id
 func (api *API) putEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
+	}
+	wo := c.Get("wo").(entity.WriteOp)
+
+	var patch etre.Entity
+	if err := c.Bind(&patch); err != nil {
+		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
 	}
 
-	wo := writeOp(c)
-
-	// Get entities from request payload.
-	var requestUpdate etre.Entity
-	if err := c.Bind(&requestUpdate); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
+		return c.JSON(api.WriteResult(nil, err))
 	}
 
-	q := queryForId(wo.EntityId)
-
-	entities, err := api.es.UpdateEntities(wo, q, requestUpdate)
-	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
-	}
-
-	if len(entities) == 0 {
+	entities, err := api.es.UpdateEntities(wo, query.IdEqual(wo.EntityId), patch)
+	if err == nil && len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
-
-	wr := api.WriteResults(entities, err)
-
-	return c.JSON(http.StatusOK, wr[0])
+	return c.JSON(api.WriteResult(entities, err))
 }
 
+// Delete one entity by _id
 func (api *API) deleteEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
 	}
-
-	wo := writeOp(c)
-
-	q := queryForId(wo.EntityId)
-
-	entities, err := api.es.DeleteEntities(wo, q)
-	if entities == nil && err != nil {
-		return handleError(ErrDb.New(err.Error()))
-	}
-
-	if len(entities) == 0 {
+	wo := c.Get("wo").(entity.WriteOp)
+	entities, err := api.es.DeleteEntities(wo, query.IdEqual(wo.EntityId))
+	if err == nil && len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
-
-	wr := api.WriteResults(entities, err)
-
-	return c.JSON(http.StatusOK, wr[0])
+	return c.JSON(api.WriteResult(entities, err))
 }
 
-// Getting all labels for a single entity.
+// Get labels of entity by _id
 func (api *API) entityLabelsHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return readError(err)
 	}
 	entityType := c.Param("type")
 	entityId := c.Param("id")
-
-	q := queryForId(entityId)
-	entities, err := api.es.ReadEntities(entityType, q, etre.QueryFilter{})
-	if err != nil {
-		return handleError(ErrDb.New(err.Error()))
+	if err := api.validate.EntityType(entityType); err != nil {
+		return readError(err)
 	}
 
+	entities, err := api.es.ReadEntities(entityType, query.IdEqual(entityId), etre.QueryFilter{})
+	if err != nil {
+		return readError(ErrDb.New(err.Error()))
+	}
 	if len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
@@ -372,42 +351,28 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, entities[0].Labels())
 }
 
-// Delete a label from a single entity.
+// Delete one label from one entity by _id
 func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return handleError(err)
+		return c.JSON(api.WriteResult(nil, err))
 	}
+	wo := c.Get("wo").(entity.WriteOp)
 
 	label := c.Param("label")
 	if label == "" {
-		return ErrMissingParam.New("missing label param")
+		return c.JSON(api.WriteResult(nil, ErrMissingParam.New("missing label param")))
 	}
 
-	// Don't allow deleting metalabel
-	if etre.IsMetalabel(label) {
-		errResp := etre.Error{
-			Message:    "deleting metalabel " + label + " is not allowed",
-			Type:       "delete-metalabel",
-			HTTPStatus: http.StatusForbidden,
-		}
-		return c.JSON(http.StatusForbidden, errResp)
-
+	if err := api.validate.DeleteLabel(label); err != nil {
+		return c.JSON(api.WriteResult(nil, err))
 	}
-
-	wo := writeOp(c)
 
 	diff, err := api.es.DeleteLabel(wo, label)
-	if err != nil {
-		switch err {
-		case entity.ErrNotFound:
-			return c.JSON(http.StatusNotFound, nil)
-		default:
-			return handleError(ErrDb.New(err.Error()))
-		}
+	if err != nil && err == etre.ErrEntityNotFound {
+		return c.JSON(http.StatusNotFound, nil)
 	}
 
-	wr := api.WriteResults(diff, err)
-	return c.JSON(http.StatusOK, wr[0])
+	return c.JSON(api.WriteResult(diff, err))
 }
 
 // --------------------------------------------------------------------------
@@ -437,122 +402,142 @@ var upgrader = websocket.Upgrader{
 
 func (api *API) changesHandler(c echo.Context) error {
 	if api.ff == nil {
-		return handleError(ErrCDCDisabled)
+		return readError(ErrCDCDisabled)
 	}
 
 	// Upgrade to a WebSocket connection.
 	wsConn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return readError(ErrInternal.New(err.Error()))
 	}
 
 	// Create and run a feed.
 	f := api.ff.MakeWebsocket(wsConn)
 	if err := f.Run(); err != nil {
-		return handleError(ErrInternal.New(err.Error()))
+		return readError(ErrInternal.New(err.Error()))
 	}
 
 	return nil
 }
 
-// //////////////////////////////////////////////////////////////////////////
-// Helper funcs
-// //////////////////////////////////////////////////////////////////////////
-
-// WriteResults makes a slice of etre.WriteResult for each item in v, which
-// is either []string{<ids>} on POST/create or []etre.Entity{} on PUT/update
-// and DELETE/delete. If err is not nil, it's the first (last and only)
-// error on write which applies to the last WriteResult in the returned slice.
-// The caller must handle this case:
-//
-//   if v == nil && err != nil {
-//
-// In that case, no writes were attempted, presumably because of a low-level db
-// issue (e.g. db is offiline). In other words: v most not be nil.
-func (api *API) WriteResults(v interface{}, err error) []etre.WriteResult {
-	var wr []etre.WriteResult
-	if diffs, ok := v.([]etre.Entity); ok {
-		n := len(diffs)
-		if err != nil {
-			n += 1
+// Return error on read. Writes always return an etre.WriteResult by calling WriteResult.
+func readError(err error) *echo.HTTPError {
+	switch v := err.(type) {
+	case etre.Error:
+		return echo.NewHTTPError(v.HTTPStatus, err)
+	case entity.ValidationError:
+		etreError := etre.Error{
+			Message:    v.Err.Error(),
+			Type:       v.Type,
+			HTTPStatus: http.StatusBadRequest,
 		}
-		wr = make([]etre.WriteResult, n)
-		for i, diff := range diffs {
-			// _id from db is a bson.ObjectId, which we need to encode
-			// as a hex string.
-			id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
+		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
+	default:
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+}
 
-			wr[i] = etre.WriteResult{
+// Return an etre.WriteResult for all writes, successful of not. v are the writes,
+// if any, from entity.Store calls, which is why it can be different types.
+// v and err are _not_ mutually exclusive; writes can be partially successful.
+func (api *API) WriteResult(v interface{}, err error) (int, etre.WriteResult) {
+	var httpStatus = http.StatusInternalServerError
+	var wr etre.WriteResult
+	var writes []etre.Write
+
+	// Map error to etre.Error
+	if err != nil {
+		switch err.(type) {
+		case etre.Error:
+			v := err.(etre.Error)
+			wr.Error = &v
+		case entity.ValidationError:
+			v := err.(entity.ValidationError)
+			wr.Error = &etre.Error{
+				Message:    v.Err.Error(),
+				Type:       v.Type,
+				HTTPStatus: http.StatusBadRequest,
+			}
+		case entity.DbError:
+			v := err.(entity.DbError)
+			wr.Error = &etre.Error{
+				Message:    v.Err.Error(),
+				Type:       v.Type,
+				HTTPStatus: http.StatusInternalServerError,
+			}
+		default:
+			wr.Error = &etre.Error{
+				Message:    err.Error(),
+				Type:       "unhandled-error",
+				HTTPStatus: http.StatusInternalServerError,
+			}
+		}
+		httpStatus = wr.Error.HTTPStatus
+	} else {
+		httpStatus = http.StatusOK
+	}
+
+	// No writes, probably error before call to entity.Store
+	if v == nil {
+		return httpStatus, wr
+	}
+
+	// Map writes to WriteResult.Writes: []etre.Write
+	switch v.(type) {
+	case []etre.Entity:
+		// Diffs from UpdateEntities and DeleteEntities
+		diffs := v.([]etre.Entity)
+		writes = make([]etre.Write, len(diffs))
+		for i, diff := range diffs {
+			// _id from db is bson.ObjectId, convert to string
+			id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
+			writes[i] = etre.Write{
 				Id:   id,
 				URI:  api.addr + etre.API_ROOT + "/entity/" + id,
 				Diff: diff,
 			}
 		}
-		if err != nil {
-			wr[len(wr)-1] = etre.WriteResult{
-				Error: err.Error(),
-			}
-		}
-	} else if ids, ok := v.([]string); ok {
+	case []string:
 		// Entity _id from CreateEntities
-		n := len(ids)
-		if err != nil {
-			n += 1
-		}
-		wr = make([]etre.WriteResult, n)
+		ids := v.([]string)
+		writes = make([]etre.Write, len(ids))
 		for i, id := range ids {
-			wr[i] = etre.WriteResult{
+			writes[i] = etre.Write{
 				Id:  id,
 				URI: api.addr + etre.API_ROOT + "/entity/" + id,
 			}
 		}
-		if err != nil {
-			wr[len(wr)-1] = etre.WriteResult{
-				Error: err.Error(),
-			}
-		}
-	} else if diff, ok := v.(etre.Entity); ok {
-		wr = make([]etre.WriteResult, 1)
+		httpStatus = http.StatusCreated
+	case etre.Entity:
+		// Entity from DeleteLabel
+		diff := v.(etre.Entity)
+		// _id from db is bson.ObjectId, convert to string
 		id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
-		wr[0] = etre.WriteResult{
-			Id:   id,
-			URI:  api.addr + etre.API_ROOT + "/entity/" + id,
-			Diff: diff,
+		writes = []etre.Write{
+			{
+				Id:   id,
+				URI:  api.addr + etre.API_ROOT + "/entity/" + id,
+				Diff: diff,
+			},
 		}
-		if err != nil {
-			wr[0] = etre.WriteResult{
-				Error: err.Error(),
-			}
-		}
-	} else {
-		msg := fmt.Sprintf("api.WriteResults: invalid arg v: %v, expected []etre.Entity or []string",
-			reflect.TypeOf(v))
+	default:
+		msg := fmt.Sprintf("api.WriteResult: invalid arg type: %#v", v)
 		panic(msg)
 	}
-	return wr
+	wr.Writes = writes
+	return httpStatus, wr
 }
-
-// JSON treats all numbers as floats. Given this, when we see a float with
-// decimal values of all 0, it is unclear if the user passed in 3.0 (type
-// float) or 3 (type int). So, since we cannot tell the difference between a
-// some float numbers and integer numbers, we cast all floats to ints. This
-// means that floats with non-zero decimal values, such as 3.14 (type float),
-// will get truncated to 3i (type int) in this case.
-func ConvertFloat64ToInt(entity etre.Entity) {
-	for k, v := range entity {
-		if reflect.TypeOf(v).Kind() == reflect.Float64 {
-			entity[k] = int(v.(float64))
-		}
-	}
-}
-
-// //////////////////////////////////////////////////////////////////////////
-// Private funcs
-// //////////////////////////////////////////////////////////////////////////
 
 func writeOp(c echo.Context) entity.WriteOp {
+	username := "?"
+	if val := c.Get("username"); val != nil {
+		if u, ok := val.(string); ok {
+			username = u
+		}
+	}
+
 	wo := entity.WriteOp{
-		User:       getUsername(c),
+		User:       username,
 		EntityType: c.Param("type"),
 		EntityId:   c.Param("id"),
 	}
@@ -574,62 +559,19 @@ func writeOp(c echo.Context) entity.WriteOp {
 	return wo
 }
 
-// _id is not a valid field name to pass to query.Translate, so we manually
-// create a query object.
-func queryForId(id string) query.Query {
-	return query.Query{
-		Predicates: []query.Predicate{
-			query.Predicate{
-				Label:    "_id",
-				Operator: "=",
-				Value:    bson.ObjectIdHex(id),
-			},
-		},
-	}
-}
-
-// Values in entity must be of type string or int. This is because the query
-// language we use only supports querying by string or int. See more at:
-// github.com/square/etre/query
-func validValueType(v interface{}) bool {
-	k := reflect.TypeOf(v).Kind()
-	return k == reflect.String || k == reflect.Int || k == reflect.Bool
-}
-
 func validateParams(c echo.Context, needEntityId bool) error {
 	if c.Param("type") == "" {
 		return ErrMissingParam.New("missing type param")
 	}
-
-	if needEntityId {
-		id := c.Param("id")
-		if id == "" {
-			return ErrMissingParam.New("missing id param")
-		}
-
-		if !bson.IsObjectIdHex(id) {
-			return ErrInvalidParam.New("id %s is not a valid bson.ObjectId", id)
-		}
+	if !needEntityId {
+		return nil
 	}
-
+	id := c.Param("id")
+	if id == "" {
+		return ErrMissingParam.New("missing id param")
+	}
+	if !bson.IsObjectIdHex(id) {
+		return ErrInvalidParam.New("id %s is not a valid bson.ObjectId", id)
+	}
 	return nil
-}
-
-func getUsername(c echo.Context) string {
-	username := "?"
-	if val := c.Get("username"); val != nil {
-		if u, ok := val.(string); ok {
-			username = u
-		}
-	}
-	return username
-}
-
-func handleError(err error) *echo.HTTPError {
-	switch v := err.(type) {
-	case etre.Error:
-		return echo.NewHTTPError(v.HTTPStatus, err)
-	default:
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	}
 }
