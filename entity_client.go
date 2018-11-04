@@ -317,6 +317,7 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 		return nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Etre-Version", VERSION)
 
 	// Send request
 	resp, err := c.httpClient.Do(req)

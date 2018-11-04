@@ -142,9 +142,10 @@ type WriteResult struct {
 
 // Write represents the successful write of one entity.
 type Write struct {
-	Id   string `json:"id"`             // internal _id of entity (all write ops)
-	URI  string `json:"uri,omitempty"`  // fully-qualified address of new entity (insert)
-	Diff Entity `json:"diff,omitempty"` // previous entity label values (update)
+	Id    string `json:"id"`              // internal _id of entity (all write ops)
+	URI   string `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
+	Diff  Entity `json:"diff,omitempty"`  // previous entity label values (update)
+	Error string `json:"error,omitempty"` // v0.8 backward-compatibility
 }
 
 type CDCEvent struct {

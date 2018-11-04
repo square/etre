@@ -14,6 +14,7 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/test"
@@ -45,6 +46,7 @@ var (
 var addr = "http://localhost"
 var entityType = "nodes"
 var validate = entity.NewValidator([]string{entityType})
+var cfg config.Config
 
 var es *mock.EntityStore
 var defaultServer *httptest.Server
@@ -71,7 +73,12 @@ func setup(t *testing.T) {
 				return deleteLabelEntity, nil
 			},
 		}
-		defaultAPI := api.NewAPI(addr, validate, es, &mock.FeedFactory{})
+		cfg = config.Config{
+			Server: config.ServerConfig{
+				Addr: addr,
+			},
+		}
+		defaultAPI := api.NewAPI(cfg, validate, es, &mock.FeedFactory{})
 		defaultServer = httptest.NewServer(defaultAPI)
 		t.Logf("started test HTTP server: %s\n", defaultServer.URL)
 	}

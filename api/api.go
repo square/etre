@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
+	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 
@@ -22,6 +24,7 @@ import (
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
+	cfg      config.Config
 	addr     string
 	validate entity.Validator
 	es       entity.Store
@@ -30,10 +33,13 @@ type API struct {
 	echo *echo.Echo
 }
 
+var reVersion = regexp.MustCompile(`^\d+\.\d+`)
+
 // NewAPI makes a new API.
-func NewAPI(addr string, validate entity.Validator, es entity.Store, ff cdc.FeedFactory) *API {
+func NewAPI(cfg config.Config, validate entity.Validator, es entity.Store, ff cdc.FeedFactory) *API {
 	api := &API{
-		addr:     addr,
+		cfg:      cfg,
+		addr:     cfg.Server.Addr,
 		validate: validate,
 		es:       es,
 		ff:       ff,
@@ -47,6 +53,17 @@ func NewAPI(addr string, validate entity.Validator, es entity.Store, ff cdc.Feed
 	// WriteOp
 	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			var clientVersion string
+			m := reVersion.FindAllString(c.Request().Header.Get("X-Etre-Version"), 1)
+			if len(m) == 1 {
+				clientVersion = m[0] // explicit
+			} else if api.cfg.Server.DefaultClientVersion != "" {
+				clientVersion = api.cfg.Server.DefaultClientVersion // default
+			} else {
+				clientVersion = etre.VERSION // current
+			}
+			c.Set("clientVersion", clientVersion)
+
 			// All routes with an :entity param query the db, so increment
 			// the "all" metric for them so this line is repeated in every
 			// controller. Also set t0 for measuring query latency.
@@ -61,7 +78,7 @@ func NewAPI(addr string, validate entity.Validator, es entity.Store, ff cdc.Feed
 			// "PUT", "POST", "DELETE"
 			wo := writeOp(c)
 			if err := api.validate.WriteOp(wo); err != nil {
-				return c.JSON(api.WriteResult(nil, err))
+				return c.JSON(api.WriteResult(c, nil, err))
 			}
 			c.Set("wo", writeOp(c))
 			return next(c)
@@ -170,73 +187,73 @@ func (api *API) queryHandler(c echo.Context) error {
 
 func (api *API) postEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 	wo := c.Get("wo").(entity.WriteOp)
 
 	var entities []etre.Entity
 	if err := c.Bind(&entities); err != nil {
-		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
+		return c.JSON(api.WriteResult(c, nil, ErrInternal.New(err.Error())))
 	}
 
 	if err := api.validate.Entities(entities, entity.VALIDATE_ON_CREATE); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	ids, err := api.es.CreateEntities(wo, entities)
-	return c.JSON(api.WriteResult(ids, err))
+	return c.JSON(api.WriteResult(c, ids, err))
 }
 
 func (api *API) putEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("query string is empty")))
+		return c.JSON(api.WriteResult(c, nil, ErrInvalidQuery.New("query string is empty")))
 	}
 
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("invalid query: %s", err)))
+		return c.JSON(api.WriteResult(c, nil, ErrInvalidQuery.New("invalid query: %s", err)))
 	}
 
 	// Get entities from request payload.
 	var patch etre.Entity
 	if err := c.Bind(&patch); err != nil {
-		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
+		return c.JSON(api.WriteResult(c, nil, ErrInternal.New(err.Error())))
 	}
 
 	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.UpdateEntities(wo, q, patch)
-	return c.JSON(api.WriteResult(entities, err))
+	return c.JSON(api.WriteResult(c, entities, err))
 }
 
 func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	// Translate URL query to query struct.
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("query string is empty")))
+		return c.JSON(api.WriteResult(c, nil, ErrInvalidQuery.New("query string is empty")))
 	}
 
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return c.JSON(api.WriteResult(nil, ErrInvalidQuery.New("invalid query: %s", err)))
+		return c.JSON(api.WriteResult(c, nil, ErrInvalidQuery.New("invalid query: %s", err)))
 	}
 
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.DeleteEntities(wo, q)
-	return c.JSON(api.WriteResult(entities, err))
+	return c.JSON(api.WriteResult(c, entities, err))
 }
 
 // -----------------------------------------------------------------------------
@@ -246,22 +263,22 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 // Create one entity
 func (api *API) postEntityHandler(c echo.Context) error {
 	if err := validateParams(c, false); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 	wo := c.Get("wo").(entity.WriteOp)
 
 	var newEntity etre.Entity
 	if err := c.Bind(&newEntity); err != nil {
-		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
+		return c.JSON(api.WriteResult(c, nil, ErrInternal.New(err.Error())))
 	}
 
 	entities := []etre.Entity{newEntity}
 	if err := api.validate.Entities(entities, entity.VALIDATE_ON_CREATE); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	ids, err := api.es.CreateEntities(wo, entities)
-	return c.JSON(api.WriteResult(ids, err))
+	return c.JSON(api.WriteResult(c, ids, err))
 }
 
 // Get one entity by _id
@@ -296,37 +313,37 @@ func (api *API) getEntityHandler(c echo.Context) error {
 // Patch one entity by _id
 func (api *API) putEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 	wo := c.Get("wo").(entity.WriteOp)
 
 	var patch etre.Entity
 	if err := c.Bind(&patch); err != nil {
-		return c.JSON(api.WriteResult(nil, ErrInternal.New(err.Error())))
+		return c.JSON(api.WriteResult(c, nil, ErrInternal.New(err.Error())))
 	}
 
 	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	entities, err := api.es.UpdateEntities(wo, query.IdEqual(wo.EntityId), patch)
 	if err == nil && len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
-	return c.JSON(api.WriteResult(entities, err))
+	return c.JSON(api.WriteResult(c, entities, err))
 }
 
 // Delete one entity by _id
 func (api *API) deleteEntityHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.DeleteEntities(wo, query.IdEqual(wo.EntityId))
 	if err == nil && len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
-	return c.JSON(api.WriteResult(entities, err))
+	return c.JSON(api.WriteResult(c, entities, err))
 }
 
 // Get labels of entity by _id
@@ -354,17 +371,17 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 // Delete one label from one entity by _id
 func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 	if err := validateParams(c, true); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 	wo := c.Get("wo").(entity.WriteOp)
 
 	label := c.Param("label")
 	if label == "" {
-		return c.JSON(api.WriteResult(nil, ErrMissingParam.New("missing label param")))
+		return c.JSON(api.WriteResult(c, nil, ErrMissingParam.New("missing label param")))
 	}
 
 	if err := api.validate.DeleteLabel(label); err != nil {
-		return c.JSON(api.WriteResult(nil, err))
+		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	diff, err := api.es.DeleteLabel(wo, label)
@@ -372,7 +389,7 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, nil)
 	}
 
-	return c.JSON(api.WriteResult(diff, err))
+	return c.JSON(api.WriteResult(c, diff, err))
 }
 
 // --------------------------------------------------------------------------
@@ -440,7 +457,7 @@ func readError(err error) *echo.HTTPError {
 // Return an etre.WriteResult for all writes, successful of not. v are the writes,
 // if any, from entity.Store calls, which is why it can be different types.
 // v and err are _not_ mutually exclusive; writes can be partially successful.
-func (api *API) WriteResult(v interface{}, err error) (int, etre.WriteResult) {
+func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, interface{}) {
 	var httpStatus = http.StatusInternalServerError
 	var wr etre.WriteResult
 	var writes []etre.Write
@@ -479,10 +496,18 @@ func (api *API) WriteResult(v interface{}, err error) (int, etre.WriteResult) {
 
 	// No writes, probably error before call to entity.Store
 	if v == nil {
+		if c.Get("clientVersion") == "0.8" {
+			// v0.8 clients expect only []etre.Write
+			writes = []etre.Write{}
+			if err != nil {
+				writes = append(writes, etre.Write{Error: err.Error()})
+			}
+			return httpStatus, writes
+		}
 		return httpStatus, wr
 	}
 
-	// Map writes to WriteResult.Writes: []etre.Write
+	// Map writes to []etre.Write
 	switch v.(type) {
 	case []etre.Entity:
 		// Diffs from UpdateEntities and DeleteEntities
@@ -521,10 +546,15 @@ func (api *API) WriteResult(v interface{}, err error) (int, etre.WriteResult) {
 			},
 		}
 	default:
-		msg := fmt.Sprintf("api.WriteResult: invalid arg type: %#v", v)
+		msg := fmt.Sprintf("invalid arg type: %#v", v)
 		panic(msg)
 	}
 	wr.Writes = writes
+
+	if c.Get("clientVersion") == "0.8" {
+		// v0.8 clients expect only []etre.Write
+		return httpStatus, writes
+	}
 	return httpStatus, wr
 }
 
