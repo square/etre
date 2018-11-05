@@ -20,16 +20,16 @@ type EntityClient interface {
 	Query(query string, filter QueryFilter) ([]Entity, error)
 
 	// Insert is a bulk operation that creates the given entities.
-	Insert([]Entity) ([]WriteResult, error)
+	Insert([]Entity) (WriteResult, error)
 
 	// Update is a bulk operation that patches entities that match the query.
-	Update(query string, patch Entity) ([]WriteResult, error)
+	Update(query string, patch Entity) (WriteResult, error)
 
 	// UpdateOne patches the given entity by internal ID.
 	UpdateOne(id string, patch Entity) (WriteResult, error)
 
 	// Delete is a bulk operation that removes all entities that match the query.
-	Delete(query string) ([]WriteResult, error)
+	Delete(query string) (WriteResult, error)
 
 	// DeleteOne removes the given entity by internal ID.
 	DeleteOne(id string) (WriteResult, error)
@@ -147,26 +147,26 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	return entities, nil
 }
 
-func (c entityClient) Insert(entities []Entity) ([]WriteResult, error) {
+func (c entityClient) Insert(entities []Entity) (WriteResult, error) {
 	if len(entities) == 0 {
-		return nil, ErrNoEntity
+		return WriteResult{}, ErrNoEntity
 	}
 	// Let API validate the new entities. Currently, they cannot contain _id,
 	// for example, but let the API be the single source of truth.
-	return c.write(entities, "POST", "/entities/"+c.entityType, multiWR)
+	return c.write(entities, 1, "POST", "/entities/"+c.entityType)
 }
 
-func (c entityClient) Update(query string, patch Entity) ([]WriteResult, error) {
+func (c entityClient) Update(query string, patch Entity) (WriteResult, error) {
 	if query == "" {
-		return nil, ErrNoQuery
+		return WriteResult{}, ErrNoQuery
 	}
 	query = url.QueryEscape(query) // always escape the query
 	if len(patch) == 0 {
-		return nil, ErrNoEntity
+		return WriteResult{}, ErrNoEntity
 	}
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
-	return c.write(patch, "PUT", "/entities/"+c.entityType+"?query="+query, multiWR)
+	return c.write(patch, -1, "PUT", "/entities/"+c.entityType+"?query="+query)
 }
 
 func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
@@ -175,30 +175,30 @@ func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	}
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
-	wr, err := c.write(patch, "PUT", "/entity/"+c.entityType+"/"+id, oneWR)
+	wr, err := c.write(patch, 1, "PUT", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
 	}
-	return wr[0], nil
+	return wr, nil
 }
 
-func (c entityClient) Delete(query string) ([]WriteResult, error) {
+func (c entityClient) Delete(query string) (WriteResult, error) {
 	if query == "" {
-		return nil, ErrNoQuery
+		return WriteResult{}, ErrNoQuery
 	}
 	query = url.QueryEscape(query) // always escape the query
-	return c.write(nil, "DELETE", "/entities/"+c.entityType+"?query="+query, multiWR)
+	return c.write(nil, -1, "DELETE", "/entities/"+c.entityType+"?query="+query)
 }
 
 func (c entityClient) DeleteOne(id string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
-	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id, oneWR)
+	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
 	}
-	return wr[0], nil
+	return wr, nil
 }
 
 func (c entityClient) Labels(id string) ([]string, error) {
@@ -229,11 +229,11 @@ func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) 
 	if label == "" {
 		return WriteResult{}, ErrNoLabel
 	}
-	wr, err := c.write(nil, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label, oneWR)
+	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
 	if err != nil {
 		return WriteResult{}, err
 	}
-	return wr[0], nil
+	return wr, nil
 }
 
 func (c entityClient) EntityType() string {
@@ -242,14 +242,16 @@ func (c entityClient) EntityType() string {
 
 // --------------------------------------------------------------------------
 
-func (c entityClient) write(payload interface{}, method, endpoint string, oneWR bool) ([]WriteResult, error) {
+// write sends payload via method to endpoint, expecting n successful writes.
+// If n is -1, the number of writes is variable (bulk update or delete).
+func (c entityClient) write(payload interface{}, n int, method, endpoint string) (WriteResult, error) {
 	// If entities (insert and update), marshal them. If not (delete), pass nil.
 	var bytes []byte
 	var err error
 	if payload != nil {
 		bytes, err = json.Marshal(payload)
 		if err != nil {
-			return nil, err
+			return WriteResult{}, err
 		}
 	}
 
@@ -264,31 +266,24 @@ func (c entityClient) write(payload interface{}, method, endpoint string, oneWR 
 		}
 	}
 
-	// Do low-level HTTP request. An erorr here is probably a network error,
-	// not an API error.
+	// Do low-level HTTP request. An erorr here is probably network not API error.
 	resp, bytes, err := c.do(method, endpoint, bytes)
 	if err != nil {
-		return nil, err
+		return WriteResult{}, err
 	}
 
-	// Only 200 OK or 201 Created are successes. Everything else is an error.
-	// There may or may not be an ErrorReponse; apiError() handles the details.
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, apiError(resp, bytes)
-	}
-
-	// On success, there should always be a list of write results.
-	var wr []WriteResult
-	if oneWR {
-		var one WriteResult
-		if err := json.Unmarshal(bytes, &one); err != nil {
-			return nil, err
-		}
-		wr = []WriteResult{one}
-	} else {
+	// On write, API always returns a WriteResult
+	var wr WriteResult
+	if bytes != nil {
 		if err := json.Unmarshal(bytes, &wr); err != nil {
-			return nil, err
+			return WriteResult{}, err
 		}
+	}
+
+	// If not successful (200 or 201) _and_ there's no WriteResult.Error,
+	// the API probably crashed/panic'ed--there was some unhandled error.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && wr.Error == nil {
+		return wr, fmt.Errorf("API error: HTTP status %d, expected 200 or 201 (WriteResult.Error is nil)", resp.StatusCode)
 	}
 
 	return wr, nil
@@ -367,10 +362,10 @@ func apiError(resp *http.Response, bytes []byte) error {
 // to intercept, save, and inspect Client calls and simulate Etre API returns.
 type MockEntityClient struct {
 	QueryFunc       func(string, QueryFilter) ([]Entity, error)
-	InsertFunc      func([]Entity) ([]WriteResult, error)
-	UpdateFunc      func(query string, patch Entity) ([]WriteResult, error)
+	InsertFunc      func([]Entity) (WriteResult, error)
+	UpdateFunc      func(query string, patch Entity) (WriteResult, error)
 	UpdateOneFunc   func(id string, patch Entity) (WriteResult, error)
-	DeleteFunc      func(query string) ([]WriteResult, error)
+	DeleteFunc      func(query string) (WriteResult, error)
 	DeleteOneFunc   func(id string) (WriteResult, error)
 	LabelsFunc      func(id string) ([]string, error)
 	DeleteLabelFunc func(id string, label string) (WriteResult, error)
@@ -385,18 +380,18 @@ func (c MockEntityClient) Query(query string, filter QueryFilter) ([]Entity, err
 	return nil, nil
 }
 
-func (c MockEntityClient) Insert(entities []Entity) ([]WriteResult, error) {
+func (c MockEntityClient) Insert(entities []Entity) (WriteResult, error) {
 	if c.InsertFunc != nil {
 		return c.InsertFunc(entities)
 	}
-	return nil, nil
+	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) Update(query string, patch Entity) ([]WriteResult, error) {
+func (c MockEntityClient) Update(query string, patch Entity) (WriteResult, error) {
 	if c.UpdateFunc != nil {
 		return c.UpdateFunc(query, patch)
 	}
-	return nil, nil
+	return WriteResult{}, nil
 }
 
 func (c MockEntityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
@@ -406,11 +401,11 @@ func (c MockEntityClient) UpdateOne(id string, patch Entity) (WriteResult, error
 	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) Delete(query string) ([]WriteResult, error) {
+func (c MockEntityClient) Delete(query string) (WriteResult, error) {
 	if c.DeleteFunc != nil {
 		return c.DeleteFunc(query)
 	}
-	return nil, nil
+	return WriteResult{}, nil
 }
 
 func (c MockEntityClient) DeleteOne(id string) (WriteResult, error) {

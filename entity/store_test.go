@@ -172,35 +172,6 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 	}
 }
 
-func TestCreateEntitiesInvalidEntityType(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	testData := []etre.Entity{
-		etre.Entity{"x": 0},
-		etre.Entity{"y": 1},
-		etre.Entity{"z": 2},
-	}
-
-	// This is invalid because it's a reserved name
-	invalidEntityType := "entities"
-	wo := entity.WriteOp{
-		EntityType: invalidEntityType,
-		User:       username,
-	}
-	_, err := es.CreateEntities(wo, testData)
-	if err == nil {
-		t.Fatal("err is nill, expected an enitty.ValidationError")
-	}
-	v, ok := err.(entity.ValidationError)
-	if !ok {
-		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
-	}
-	if v.Type != "invalid-entity-type" {
-		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
-	}
-}
-
 func TestDuplicateEntity(t *testing.T) {
 	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
 	defer teardown(t, es)
@@ -238,9 +209,12 @@ func TestDuplicateEntity(t *testing.T) {
 	if err == nil {
 		t.Error("no error on duplicate insert, expected err")
 	}
-	_, ok := err.(entity.DbError)
+	dbErr, ok := err.(entity.DbError)
 	if !ok {
 		t.Errorf("err is not type entity.DbError: %+v", err)
+	}
+	if dbErr.Type != "duplicate-entity" {
+		t.Errorf("Type = %s, expected duplicate-entity", dbErr.Type)
 	}
 	if len(ids) != 0 {
 		t.Errorf("returned ids, expected none: %v", ids)
@@ -400,29 +374,6 @@ func TestReadEntitiesNotFound(t *testing.T) {
 	}
 }
 
-func TestReadEntitiesInvalidEntityType(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	q, err := query.Translate("a=b")
-	if err != nil {
-		t.Error(err)
-	}
-
-	invalidEntityType := "entities" // reserved name and doesn't exist
-	_, err = es.ReadEntities(invalidEntityType, q, etre.QueryFilter{})
-	if err == nil {
-		t.Fatal("err is nill, expected an enitty.ValidationError")
-	}
-	v, ok := err.(entity.ValidationError)
-	if !ok {
-		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
-	}
-	if v.Type != "invalid-entity-type" {
-		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
-	}
-}
-
 func TestUpdateEntities(t *testing.T) {
 	var lastEvent etre.CDCEvent
 	cdcm := &mock.CDCStore{
@@ -503,35 +454,6 @@ func TestUpdateEntities(t *testing.T) {
 	}
 }
 
-func TestUpdateEntitiesInvalidEntityType(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	q, err := query.Translate("y=hello")
-	if err != nil {
-		t.Error(err)
-	}
-	u := etre.Entity{"y": "goodbye"}
-
-	// This is invalid because it's a reserved name
-	invalidEntityType := "entities"
-	wo := entity.WriteOp{
-		EntityType: invalidEntityType,
-		User:       username,
-	}
-	_, err = es.UpdateEntities(wo, q, u)
-	if err == nil {
-		t.Fatal("err is nill, expected an enitty.ValidationError")
-	}
-	v, ok := err.(entity.ValidationError)
-	if !ok {
-		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
-	}
-	if v.Type != "invalid-entity-type" {
-		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
-	}
-}
-
 func TestDeleteEntities(t *testing.T) {
 	var lastEvent etre.CDCEvent
 	cdcm := &mock.CDCStore{
@@ -608,33 +530,6 @@ func TestDeleteEntities(t *testing.T) {
 	}
 	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {
 		t.Error(diff)
-	}
-}
-
-func TestDeleteEntitiesInvalidEntityType(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	q, err := query.Translate("a > 0")
-	if err != nil {
-		t.Error(err)
-	}
-
-	invalidEntityType := "entities" // reserved name and doesn't exist
-	wo := entity.WriteOp{
-		EntityType: invalidEntityType,
-		User:       username,
-	}
-	_, err = es.DeleteEntities(wo, q)
-	if err == nil {
-		t.Fatal("err is nill, expected an enitty.ValidationError")
-	}
-	v, ok := err.(entity.ValidationError)
-	if !ok {
-		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
-	}
-	if v.Type != "invalid-entity-type" {
-		t.Errorf("Type = %s, expected invalid-entity-type", v.Type)
 	}
 }
 

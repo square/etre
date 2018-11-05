@@ -14,7 +14,7 @@ const (
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.8.0-alpha"
+	VERSION                  = "0.9.0-alpha"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
 )
 
@@ -191,6 +191,7 @@ func debug(fmt string, v ...interface{}) {
 type Error struct {
 	Message    string `json:"message"`
 	Type       string `json:"type"`
+	EntityId   string `json:"entityId"`
 	HTTPStatus int
 }
 

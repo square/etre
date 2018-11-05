@@ -464,23 +464,25 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 
 	// Map error to etre.Error
 	if err != nil {
-		switch err.(type) {
+		switch v := err.(type) {
 		case etre.Error:
-			v := err.(etre.Error)
 			wr.Error = &v
 		case entity.ValidationError:
-			v := err.(entity.ValidationError)
 			wr.Error = &etre.Error{
 				Message:    v.Err.Error(),
 				Type:       v.Type,
 				HTTPStatus: http.StatusBadRequest,
 			}
 		case entity.DbError:
-			v := err.(entity.DbError)
 			wr.Error = &etre.Error{
 				Message:    v.Err.Error(),
 				Type:       v.Type,
 				HTTPStatus: http.StatusInternalServerError,
+				EntityId:   v.EntityId,
+			}
+			switch v.Type {
+			case "duplicate-entity":
+				wr.Error.HTTPStatus = http.StatusConflict
 			}
 		default:
 			wr.Error = &etre.Error{
@@ -500,7 +502,7 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 			// v0.8 clients expect only []etre.Write
 			writes = []etre.Write{}
 			if err != nil {
-				writes = append(writes, etre.Write{Error: err.Error()})
+				writes = append(writes, etre.Write{Id: wr.Error.EntityId, Error: err.Error()})
 			}
 			return httpStatus, writes
 		}

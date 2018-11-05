@@ -400,6 +400,41 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 	}
 }
 
+func TestPutEntityHandlerDuplicateEntity(t *testing.T) {
+	setup(t)
+	defer teardown(t)
+
+	updateErr = entity.DbError{
+		Type:     "duplicate-entity", // the key to making this happen
+		EntityId: seedId0,
+		Err:      fmt.Errorf("some error msg from mongo"),
+	}
+	update := etre.Entity{"foo": "baz"} // doesn't matter, returning that ^
+	payload, err := json.Marshal(update)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var respErr etre.WriteResult
+	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/" + seedId0
+	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusConflict {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
+	}
+	if respErr.Error.Type != "duplicate-entity" {
+		t.Errorf("got Error.Type = %s, expected duplicate-entity", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
+		t.Errorf("Error.Message is empty, expected a value")
+	}
+}
+
 func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 	setup(t)
 	defer teardown(t)
@@ -912,5 +947,47 @@ func TestDeleteLabelHandler(t *testing.T) {
 	}
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+}
+
+// --------------------------------------------------------------------------
+// v0.8 compatibility
+// --------------------------------------------------------------------------
+
+func TestV08PostEntityHandlerSuccessful(t *testing.T) {
+	setup(t)
+	defer teardown(t)
+
+	// v0.9: etre.WriteResult{Writes: []etre.Write, ...}
+	// v0.8: []etre.Write
+	test.Headers["X-Etre-Version"] = "0.8.0-alpha"
+	defer delete(test.Headers, "X-Etre-Version")
+
+	entity := etre.Entity{"x": 8}
+	payload, err := json.Marshal(entity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createIds = []string{"id1"} // global var
+
+	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType
+	var actual []etre.Write
+	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusCreated {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusCreated)
+	}
+	expect := []etre.Write{
+		{
+			Id:  "id1",
+			URI: addr + etre.API_ROOT + "/entity/id1",
+		},
+	}
+	if diffs := deep.Equal(actual, expect); diffs != nil {
+		t.Logf("%+v", actual)
+		t.Error(diffs)
 	}
 }

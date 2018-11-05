@@ -44,8 +44,9 @@ import (
 )
 
 type DbError struct {
-	Err  error
-	Type string
+	Err      error
+	Type     string
+	EntityId string
 }
 
 func (e DbError) Error() string {
@@ -180,7 +181,7 @@ func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 		case mgo.ErrNotFound:
 			return nil, etre.ErrEntityNotFound
 		default:
-			return nil, DbError{Err: err, Type: "db-find-apply"}
+			return nil, DbError{Err: err, Type: "db-find-apply", EntityId: wo.EntityId}
 		}
 	}
 
@@ -244,17 +245,21 @@ func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, er
 	for _, e := range entities {
 		// Mgo driver does not return the ObjectId that Mongo creates, so create it ourself.
 		id := bson.NewObjectId()
+		idStr := hex.EncodeToString([]byte(id)) // id as string
 		e["_id"] = id
 		e["_type"] = wo.EntityType
 		e["_rev"] = 0
 
 		if err := c.Insert(e); err != nil {
-			return insertedObjectIds, DbError{Err: err, Type: "db-insert"}
+			if mgo.IsDup(err) {
+				return insertedObjectIds, DbError{Err: err, Type: "duplicate-entity", EntityId: idStr}
+			}
+			return insertedObjectIds, DbError{Err: err, Type: "db-insert", EntityId: idStr}
 		}
 
 		// bson.ObjectId.String() yields "ObjectId("abc")", but we need to report only "abc",
 		// so re-encode the raw bytes to a hex string. This make GET /entity/{t}/abc work.
-		insertedObjectIds = append(insertedObjectIds, hex.EncodeToString([]byte(id)))
+		insertedObjectIds = append(insertedObjectIds, idStr)
 
 		// Create a CDC event.
 		cp := cdcPartial{
@@ -370,7 +375,11 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 		var diff etre.Entity
 		_, err := c.Find(bson.M{"_id": id}).Select(affectedLabels).Apply(change, &diff)
 		if err != nil {
-			return diffs, DbError{Err: err, Type: "db-find-apply"}
+			idStr := hex.EncodeToString([]byte(id)) // id as string
+			if mgo.IsDup(err) {
+				return diffs, DbError{Err: err, Type: "duplicate-entity", EntityId: idStr}
+			}
+			return diffs, DbError{Err: err, Type: "db-find-apply", EntityId: idStr}
 		}
 
 		diffs = append(diffs, diff)
@@ -449,11 +458,12 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 	for _, id := range ids {
 		var deletedEntity etre.Entity
 		if _, err := c.FindId(id).Apply(change, &deletedEntity); err != nil {
+			idStr := hex.EncodeToString([]byte(id)) // id as string
 			switch err {
 			case mgo.ErrNotFound:
 				// ignore
 			default:
-				return deletedEntities, DbError{Err: err, Type: "db-find-apply"}
+				return deletedEntities, DbError{Err: err, Type: "db-find-apply", EntityId: idStr}
 			}
 		}
 
@@ -488,9 +498,10 @@ func (s *store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
 		set.Id = wo.SetId
 		set.Size = wo.SetSize
 	}
+	idStr := hex.EncodeToString([]byte(cp.id)) // id as string
 	event := etre.CDCEvent{
 		EventId:    hex.EncodeToString([]byte(bson.NewObjectId())),
-		EntityId:   hex.EncodeToString([]byte(cp.id)),
+		EntityId:   idStr,
 		EntityType: wo.EntityType,
 		Rev:        cp.rev,
 		Ts:         ts,
@@ -503,7 +514,7 @@ func (s *store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
 		SetSize:    set.Size,
 	}
 	if err := s.cdcs.Write(event); err != nil {
-		return DbError{Err: err, Type: "cdc-write"}
+		return DbError{Err: err, Type: "cdc-write", EntityId: idStr}
 	}
 	return nil
 }

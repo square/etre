@@ -1,3 +1,4 @@
+// Copyright 2018, Square, Inc.
 package entity
 
 import (
@@ -124,5 +125,6 @@ func (v validator) DeleteLabel(label string) error {
 			Type: "cannot-delete-metalabel",
 		}
 	}
+	// @todo: don't deleting identifying labels
 	return nil
 }
