@@ -147,11 +147,15 @@ type Write struct {
 	Error string `json:"error,omitempty"` // v0.8 backward-compatibility
 }
 
+// Error is the standard response for all handled errors. Client errors (HTTP 400
+// codes) and internal errors (HTTP 500 codes) are returned as an Error, if handled.
+// If not handled (API crash, panic, etc.), Etre returns an HTTP 500 code and the
+// response data is undefined; the client should print any response data as a string.
 type Error struct {
-	Message    string `json:"message"`
-	Type       string `json:"type"`
-	EntityId   string `json:"entityId"`
-	HTTPStatus int
+	Message    string `json:"message"`    // human-readable and loggable error message
+	Type       string `json:"type"`       // error slug (e.g. db-error, missing-param, etc.)
+	EntityId   string `json:"entityId"`   // entity ID that caused error, if any
+	HTTPStatus int    `json:"httpStatus"` // HTTP status code
 }
 
 func (e Error) New(msgFmt string, msgArgs ...interface{}) Error {

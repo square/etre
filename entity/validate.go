@@ -79,7 +79,7 @@ func (v validator) Entities(entities []etre.Entity, op byte) error {
 				// Cannot patch (change) metalabel values
 				if etre.IsMetalabel(label) {
 					return ValidationError{
-						Err:  fmt.Errorf("cannot change metalabel %s value on patch (entity index %d)", label, i),
+						Err:  fmt.Errorf("cannot change metalabel %s on patch (entity index %d)", label, i),
 						Type: "cannot-change-metalabel",
 					}
 				}

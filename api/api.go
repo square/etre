@@ -49,10 +49,10 @@ func NewAPI(cfg config.Config, validate entity.Validator, es entity.Store, ff cd
 	router := api.echo.Group(etre.API_ROOT)
 
 	// Called before every route/controller
-
-	// WriteOp
 	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			// Get client version ("vX.Y") from X-Etre-Version header, if set
+			// v0.9.0-alpha -> v0.9
 			var clientVersion string
 			m := reVersion.FindAllString(c.Request().Header.Get("X-Etre-Version"), 1)
 			if len(m) == 1 {
@@ -64,23 +64,20 @@ func NewAPI(cfg config.Config, validate entity.Validator, es entity.Store, ff cd
 			}
 			c.Set("clientVersion", clientVersion)
 
-			// All routes with an :entity param query the db, so increment
-			// the "all" metric for them so this line is repeated in every
-			// controller. Also set t0 for measuring query latency.
-			method := c.Request().Method
+			// All writes (PUT, POST, DELETE) require a write op
 			entityType := c.Param("type")
+			method := c.Request().Method
 			if entityType == "" || method == "GET" || method == "OPTION" {
-				return next(c)
+				return next(c) // query (read)
 			}
 			if c.Path() == etre.API_ROOT+"/query/:type" {
-				return next(c)
+				return next(c) // POST /query (read)
 			}
-			// "PUT", "POST", "DELETE"
 			wo := writeOp(c)
 			if err := api.validate.WriteOp(wo); err != nil {
 				return c.JSON(api.WriteResult(c, nil, err))
 			}
-			c.Set("wo", writeOp(c))
+			c.Set("wo", wo)
 			return next(c)
 		}
 	})
