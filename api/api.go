@@ -33,7 +33,7 @@ type API struct {
 	echo *echo.Echo
 }
 
-var reVersion = regexp.MustCompile(`^\d+\.\d+`)
+var reVersion = regexp.MustCompile(`^v?(\d+\.\d+)`)
 
 // NewAPI makes a new API.
 func NewAPI(cfg config.Config, validate entity.Validator, es entity.Store, ff cdc.FeedFactory) *API {
@@ -52,17 +52,23 @@ func NewAPI(cfg config.Config, validate entity.Validator, es entity.Store, ff cd
 	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// Get client version ("vX.Y") from X-Etre-Version header, if set
-			// v0.9.0-alpha -> v0.9
-			var clientVersion string
-			m := reVersion.FindAllString(c.Request().Header.Get("X-Etre-Version"), 1)
-			if len(m) == 1 {
-				clientVersion = m[0] // explicit
-			} else if api.cfg.Server.DefaultClientVersion != "" {
-				clientVersion = api.cfg.Server.DefaultClientVersion // default
-			} else {
-				clientVersion = etre.VERSION // current
+			clientVersion := c.Request().Header.Get("X-Etre-Version") // explicit
+			vf := "X-Etre-Version header"
+			if clientVersion == "" {
+				if api.cfg.Server.DefaultClientVersion != "" {
+					clientVersion = api.cfg.Server.DefaultClientVersion // default
+					vf = "config.server.default_client_version"
+				} else {
+					clientVersion = etre.VERSION // current
+					vf = "etre.VERSION"
+				}
 			}
-			c.Set("clientVersion", clientVersion)
+			m := reVersion.FindAllStringSubmatch(clientVersion, 1) // v0.9.0-alpha -> [ [v0.9, 0.9] ]
+			if len(m) != 1 {
+				errMsg := fmt.Sprintf("invalid client (es) version from %s: '%s', does not match %s (%v)", vf, clientVersion, reVersion, m)
+				return echo.NewHTTPError(http.StatusBadRequest, errMsg)
+			}
+			c.Set("clientVersion", m[0][1]) // 0.9
 
 			// All writes (PUT, POST, DELETE) require a write op
 			entityType := c.Param("type")
@@ -500,10 +506,13 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 	// No writes, probably error before call to entity.Store
 	if v == nil {
 		if c.Get("clientVersion") == "0.8" {
-			// v0.8 clients expect only []etre.Write
+			// v0.8 clients expect only []etre.Write or etre.Write if there's an entity ID
 			writes = []etre.Write{}
 			if err != nil {
 				writes = append(writes, etre.Write{Id: wr.Error.EntityId, Error: err.Error()})
+			}
+			if c.Param("id") != "" {
+				return httpStatus, writes[0]
 			}
 			return httpStatus, writes
 		}
@@ -555,7 +564,13 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 	wr.Writes = writes
 
 	if c.Get("clientVersion") == "0.8" {
-		// v0.8 clients expect only []etre.Write
+		// v0.8 clients expect only []etre.Write or etre.Write if there's an entity ID
+		if err != nil {
+			writes = append(writes, etre.Write{Id: wr.Error.EntityId, Error: err.Error()})
+		}
+		if c.Param("id") != "" {
+			return httpStatus, writes[0]
+		}
 		return httpStatus, writes
 	}
 	return httpStatus, wr
