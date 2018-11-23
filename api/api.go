@@ -169,7 +169,7 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 
 	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
-		return readError(ErrDb.New("database error: %s", err))
+		return readError(ErrDb.New(err.Error()))
 	}
 
 	return c.JSON(http.StatusOK, entities)
@@ -474,15 +474,19 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 				HTTPStatus: http.StatusBadRequest,
 			}
 		case entity.DbError:
-			wr.Error = &etre.Error{
-				Message:    v.Err.Error(),
-				Type:       v.Type,
-				HTTPStatus: http.StatusInternalServerError,
-				EntityId:   v.EntityId,
-			}
 			switch v.Type {
 			case "duplicate-entity":
-				wr.Error.HTTPStatus = http.StatusConflict
+				dupeErr := ErrDuplicateEntity // copy
+				dupeErr.EntityId = v.EntityId
+				dupeErr.Message += " (db err: " + v.Err.Error() + ")"
+				wr.Error = &dupeErr
+			default:
+				wr.Error = &etre.Error{
+					Message:    v.Err.Error(),
+					Type:       v.Type,
+					HTTPStatus: http.StatusInternalServerError,
+					EntityId:   v.EntityId,
+				}
 			}
 		default:
 			wr.Error = &etre.Error{

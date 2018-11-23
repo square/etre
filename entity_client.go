@@ -140,8 +140,10 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	}
 
 	var entities []Entity
-	if err := json.Unmarshal(bytes, &entities); err != nil {
-		return nil, err
+	if len(bytes) > 0 {
+		if err := json.Unmarshal(bytes, &entities); err != nil {
+			return nil, err
+		}
 	}
 
 	return entities, nil
@@ -245,13 +247,15 @@ func (c entityClient) EntityType() string {
 // write sends payload via method to endpoint, expecting n successful writes.
 // If n is -1, the number of writes is variable (bulk update or delete).
 func (c entityClient) write(payload interface{}, n int, method, endpoint string) (WriteResult, error) {
+	var wr WriteResult
+
 	// If entities (insert and update), marshal them. If not (delete), pass nil.
 	var bytes []byte
 	var err error
 	if payload != nil {
 		bytes, err = json.Marshal(payload)
 		if err != nil {
-			return WriteResult{}, err
+			return wr, fmt.Errorf("json.Marshal: %s", err)
 		}
 	}
 
@@ -269,21 +273,19 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 	// Do low-level HTTP request. An erorr here is probably network not API error.
 	resp, bytes, err := c.do(method, endpoint, bytes)
 	if err != nil {
-		return WriteResult{}, err
+		return wr, err
 	}
 
-	// On write, API always returns a WriteResult
-	var wr WriteResult
-	if bytes != nil {
-		if err := json.Unmarshal(bytes, &wr); err != nil {
-			return WriteResult{}, err
-		}
+	// On write, API should return an etre.WriteResult, but if API crashes
+	// there won't be response data
+	if len(bytes) == 0 {
+		return wr, fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
 	}
-
-	// If not successful (200 or 201) _and_ there's no WriteResult.Error,
-	// the API probably crashed/panic'ed--there was some unhandled error.
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && wr.Error == nil {
-		return wr, fmt.Errorf("API error: HTTP status %d, expected 200 or 201 (WriteResult.Error is nil)", resp.StatusCode)
+	if err := json.Unmarshal(bytes, &wr); err != nil {
+		return wr, fmt.Errorf("json.Unmarshal: %s", err)
+	}
+	if wr.IsZero() && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return wr, fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
 	}
 
 	return wr, nil
@@ -309,7 +311,7 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 		req, err = http.NewRequest(method, url, nil)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("http.NewRequest: %s", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Etre-Version", VERSION)
@@ -335,21 +337,26 @@ func (c entityClient) url(endpoint string) string {
 }
 
 func apiError(resp *http.Response, bytes []byte) error {
-	if resp == nil {
-		return fmt.Errorf("no response from API; check API logs for errors")
-	}
-	if resp.StatusCode == http.StatusNotFound {
+	// Handle known response codes, can ignore response data
+	switch resp.StatusCode {
+	case http.StatusNotFound:
 		return ErrEntityNotFound
 	}
+
+	// No response data from API, it crashed or had unhandled error
+	if len(bytes) == 0 {
+		return fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
+	}
+
+	// Response data should be an etre.Error
 	var errResp Error
-	if len(bytes) > 0 {
-		json.Unmarshal(bytes, &errResp)
+	if err := json.Unmarshal(bytes, &errResp); err != nil {
+		return fmt.Errorf("json.Unmarshal: %s", err)
 	}
-	if errResp.Type == "" {
-		return fmt.Errorf("HTTP status %d; check API log for errors", resp.StatusCode)
+	if errResp.IsZero() {
+		return fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
 	}
-	return fmt.Errorf("API error: %s (type: %s code: %d)",
-		errResp.Message, errResp.Type, resp.StatusCode)
+	return fmt.Errorf("error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 }
 
 // //////////////////////////////////////////////////////////////////////////

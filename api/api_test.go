@@ -652,8 +652,8 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if statusCode != api.ErrBadRequest.HTTPStatus {
-		t.Errorf("response status = %d, expected %d", statusCode, api.ErrBadRequest.HTTPStatus)
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
 	if respErr.Type != api.ErrInvalidQuery.Type {
 		t.Errorf("got error type %s, expected %s", respErr.Type, api.ErrInvalidQuery.Type)
@@ -665,8 +665,8 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if statusCode != api.ErrBadRequest.HTTPStatus {
-		t.Errorf("response status = %d, expected %d", statusCode, api.ErrBadRequest.HTTPStatus)
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
 	if respErr.Type != api.ErrInvalidQuery.Type {
 		t.Errorf("got error type %s, expected %s", respErr.Type, api.ErrInvalidQuery.Type)

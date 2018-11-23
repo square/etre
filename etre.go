@@ -130,14 +130,13 @@ type QueryFilter struct {
 // error, so len(Writes) = index into slice of entities sent by client that failed.
 // For example, if the first entity causes an error, len(Writes) = 0. If the third
 // entity fails, len(Writes) = 2 (zero indexed).
-//
-// If WritesOK is true, all writes were successful, but Error can be set too which
-// indicates the error happened after all writes (e.g. a post-write CDC error).
-// If WritesOK is is false, Error is always set (always error on failed write).
 type WriteResult struct {
-	Writes   []Write `json:"writes"`          // successful writes
-	WritesOK bool    `json:"writes_ok"`       // all Writes OK regardless of Error
-	Error    *Error  `json:"error,omitempty"` // error before, during, or after writes
+	Writes []Write `json:"writes"`          // successful writes
+	Error  *Error  `json:"error,omitempty"` // error before, during, or after writes
+}
+
+func (wr WriteResult) IsZero() bool {
+	return wr.Error == nil && len(wr.Writes) == 0
 }
 
 // Write represents the successful write of one entity.
@@ -146,6 +145,32 @@ type Write struct {
 	URI   string `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
 	Diff  Entity `json:"diff,omitempty"`  // previous entity label values (update)
 	Error string `json:"error,omitempty"` // v0.8 backward-compatibility
+}
+
+type Error struct {
+	Message    string `json:"message"`
+	Type       string `json:"type"`
+	EntityId   string `json:"entityId"`
+	HTTPStatus int
+}
+
+func (e Error) New(msgFmt string, msgArgs ...interface{}) Error {
+	if msgFmt != "" {
+		e.Message = fmt.Sprintf(msgFmt, msgArgs...)
+	}
+	return e
+}
+
+func (e Error) String() string {
+	return fmt.Sprintf("Etre error %s: %s", e.Type, e.Message)
+}
+
+func (e Error) Error() string {
+	return e.String()
+}
+
+func (e Error) IsZero() bool {
+	return e.Message == "" && e.Type == ""
 }
 
 type CDCEvent struct {
@@ -182,30 +207,4 @@ func debug(fmt string, v ...interface{}) {
 		return
 	}
 	log.Printf(fmt, v...)
-}
-
-// //////////////////////////////////////////////////////////////////////////
-// Errors
-// //////////////////////////////////////////////////////////////////////////
-
-type Error struct {
-	Message    string `json:"message"`
-	Type       string `json:"type"`
-	EntityId   string `json:"entityId"`
-	HTTPStatus int
-}
-
-func (e Error) New(msgFmt string, msgArgs ...interface{}) Error {
-	if msgFmt != "" {
-		e.Message = fmt.Sprintf(msgFmt, msgArgs...)
-	}
-	return e
-}
-
-func (e Error) String() string {
-	return fmt.Sprintf("Etre error %s: %s", e.Type, e.Message)
-}
-
-func (e Error) Error() string {
-	return e.String()
 }
