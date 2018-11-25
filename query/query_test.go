@@ -12,7 +12,7 @@ import (
 
 func TestTranslateSingle(t *testing.T) {
 	expectedQuery := query.Query{
-		[]query.Predicate{
+		Predicates: []query.Predicate{
 			query.Predicate{
 				Label:    "foo",
 				Operator: "=",
@@ -34,7 +34,7 @@ func TestTranslateSingle(t *testing.T) {
 
 func TestTranslateMultiple(t *testing.T) {
 	expectedQuery := query.Query{
-		[]query.Predicate{
+		Predicates: []query.Predicate{
 			query.Predicate{
 				Label:    "foo",
 				Operator: "=",

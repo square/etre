@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/test"
@@ -43,6 +45,8 @@ var (
 
 var addr = "http://localhost"
 var entityType = "nodes"
+var validate = entity.NewValidator([]string{entityType})
+var cfg config.Config
 
 var es *mock.EntityStore
 var defaultServer *httptest.Server
@@ -69,7 +73,12 @@ func setup(t *testing.T) {
 				return deleteLabelEntity, nil
 			},
 		}
-		defaultAPI := api.NewAPI(addr, es, &mock.FeedFactory{})
+		cfg = config.Config{
+			Server: config.ServerConfig{
+				Addr: addr,
+			},
+		}
+		defaultAPI := api.NewAPI(cfg, validate, es, &mock.FeedFactory{})
 		defaultServer = httptest.NewServer(defaultAPI)
 		t.Logf("started test HTTP server: %s\n", defaultServer.URL)
 	}
@@ -98,6 +107,16 @@ func setup(t *testing.T) {
 func teardown(t *testing.T) {
 }
 
+func floatToInt(entities []etre.Entity) {
+	for i, e := range entities {
+		for label, val := range e {
+			if reflect.TypeOf(val).Kind() == reflect.Float64 {
+				entities[i][label] = int(val.(float64))
+			}
+		}
+	}
+}
+
 // //////////////////////////////////////////////////////////////////////////
 // Single Entity Management Handler Tests
 // //////////////////////////////////////////////////////////////////////////
@@ -122,17 +141,19 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	}
 
 	if statusCode != http.StatusCreated {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusCreated)
 	}
 
-	if actual.Id != "id1" {
-		t.Errorf("WriteResult.Id = %s, expected id1", actual.Id)
-	}
 	expect := etre.WriteResult{
-		Id:  actual.Id,
-		URI: addr + etre.API_ROOT + "/entity/" + actual.Id,
+		Writes: []etre.Write{
+			{
+				Id:  "id1",
+				URI: addr + etre.API_ROOT + "/entity/id1",
+			},
+		},
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
+		t.Logf("%+v", actual.Error)
 		t.Error(diffs)
 	}
 }
@@ -145,21 +166,25 @@ func TestPostEntityHandlerPayloadError(t *testing.T) {
 	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
-	var respErr etre.Error
+	// Writes always return an etre.WriteResult, even on error
+	var respErr etre.WriteResult
 
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &respErr)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if statusCode != http.StatusInternalServerError {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
+	if statusCode != api.ErrInternal.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInternal.HTTPStatus)
 	}
 
-	if respErr.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Type)
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
 	}
-	if respErr.Message == "" {
+	if respErr.Error.Type != api.ErrInternal.Type {
+		t.Errorf("got Error.Type = %s, expected %s", respErr.Error.Type, api.ErrInternal.Type)
+	}
+	if respErr.Error.Message == "" {
 		t.Errorf("Error.Message is empty, expected a value")
 	}
 }
@@ -178,7 +203,7 @@ func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var respErr etre.Error
+	var respErr etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &respErr)
 	if err != nil {
 		t.Fatal(err)
@@ -188,10 +213,13 @@ func TestPostEntityHandlerInvalidValueTypeError(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
 
-	if respErr.Type != "bad-request" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Type)
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
 	}
-	if respErr.Message == "" {
+	if respErr.Error.Type != "invalid-value-type" {
+		t.Errorf("got Error.Type = %s, expected invalid-value-type", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
 		t.Errorf("Error.Message is empty, expected a value")
 	}
 }
@@ -208,9 +236,11 @@ func TestGetEntityHandlerSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	api.ConvertFloat64ToInt(actual)
-
-	if diffs := deep.Equal(actual, seedEntities[0]); diffs != nil {
+	if len(actual) == 0 {
+		t.Fatal("did not return an entity")
+	}
+	floatToInt([]etre.Entity{actual})
+	if diffs := deep.Equal(actual, seedEntity0); diffs != nil {
 		t.Logf("got: %#v", actual)
 		t.Error(diffs)
 	}
@@ -301,18 +331,18 @@ func TestPutEntityHandlerSuccessful(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
 
-	if actual.Id != seedId0 {
-		t.Errorf("got id %s, expected %s", actual.Id, seedId0)
-	}
-	expectURI := addr + etre.API_ROOT + "/entity/" + actual.Id
-	if actual.URI != expectURI {
-		t.Errorf("got URI %s, expected %s", actual.URI, expectURI)
-	}
-	if actual.Diff == nil {
-		t.Fatal("got nil Diff, expected non-nil value")
-	}
 	updateEntities[0]["_id"] = seedId0 // convert back to string
-	if diffs := deep.Equal(actual.Diff, updateEntities[0]); diffs != nil {
+
+	expect := etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				Id:   seedId0,
+				URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
+				Diff: updateEntities[0],
+			},
+		},
+	}
+	if diffs := deep.Equal(actual, expect); diffs != nil {
 		t.Error(diffs)
 	}
 }
@@ -324,7 +354,7 @@ func TestPutEntityHandlerMissingIDError(t *testing.T) {
 	// Omit ID from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/"
 
-	var respErr etre.Error
+	var respErr etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", url, nil, &respErr)
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +378,7 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
-	var respErr etre.Error
+	var respErr etre.WriteResult
 
 	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &respErr)
 	if err != nil {
@@ -359,10 +389,48 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
 	}
 
-	if respErr.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Type)
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
 	}
-	if respErr.Message == "" {
+	if respErr.Error.Type != "internal-error" {
+		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
+		t.Errorf("Error.Message is empty, expected a value")
+	}
+}
+
+func TestPutEntityHandlerDuplicateEntity(t *testing.T) {
+	setup(t)
+	defer teardown(t)
+
+	updateErr = entity.DbError{
+		Type:     "duplicate-entity", // the key to making this happen
+		EntityId: seedId0,
+		Err:      fmt.Errorf("some error msg from mongo"),
+	}
+	update := etre.Entity{"foo": "baz"} // doesn't matter, returning that ^
+	payload, err := json.Marshal(update)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var respErr etre.WriteResult
+	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/" + seedId0
+	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusConflict {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
+	}
+	if respErr.Error.Type != "duplicate-entity" {
+		t.Errorf("got Error.Type = %s, expected duplicate-entity", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
 		t.Errorf("Error.Message is empty, expected a value")
 	}
 }
@@ -391,9 +459,13 @@ func TestDeleteEntityHandlerSuccessful(t *testing.T) {
 	deleteEntities[0]["_id"] = seedId0 // convert back to string
 
 	expect := etre.WriteResult{
-		Id:   seedId0,
-		URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
-		Diff: deleteEntities[0],
+		Writes: []etre.Write{
+			{
+				Id:   seedId0,
+				URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
+				Diff: deleteEntities[0],
+			},
+		},
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
 		t.Logf("got: %#v", actual)
@@ -409,7 +481,7 @@ func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
 	// Omit ID from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType + "/"
 
-	var respErr etre.Error
+	var respErr etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &respErr)
 	if err != nil {
 		t.Fatal(err)
@@ -441,7 +513,7 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var actual []etre.WriteResult
+	var actual etre.WriteResult
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType
 
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &actual)
@@ -453,10 +525,10 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
 
-	if len(actual) != len(seedEntities) {
-		t.Errorf("got %d ids, expected %d", len(actual), len(seedEntities))
+	if len(actual.Writes) != len(seedEntities) {
+		t.Errorf("got %d ids, expected %d", len(actual.Writes), len(seedEntities))
 	}
-	for i, wr := range actual {
+	for i, wr := range actual.Writes {
 		if wr.Id != createIds[i] {
 			t.Errorf("WriteResult.Id = %s, expected %s", wr.Id, createIds[i])
 		}
@@ -465,9 +537,6 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 		}
 		if wr.Diff != nil {
 			t.Errorf("WriteResult.Diff is set: %#v", wr)
-		}
-		if wr.Error != "" {
-			t.Errorf("WriteResult.Error is set: %#v", wr)
 		}
 	}
 }
@@ -480,7 +549,7 @@ func TestPostEntitiesHandlerPayloadError(t *testing.T) {
 	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
-	var respErr etre.Error
+	var respErr etre.WriteResult
 
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &respErr)
 	if err != nil {
@@ -491,10 +560,13 @@ func TestPostEntitiesHandlerPayloadError(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
 	}
 
-	if respErr.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Type)
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
 	}
-	if respErr.Message == "" {
+	if respErr.Error.Type != "internal-error" {
+		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
 		t.Errorf("Error.Message is empty, expected a value")
 	}
 }
@@ -515,7 +587,7 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var respErr etre.Error
+	var respErr etre.WriteResult
 
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &respErr)
 	if err != nil {
@@ -526,10 +598,13 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
 
-	if respErr.Type != "bad-request" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Type)
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
 	}
-	if respErr.Message == "" {
+	if respErr.Error.Type != "invalid-value-type" {
+		t.Errorf("got Error.Type = %s, expected invalid-value-type", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
 		t.Errorf("Error.Message is empty, expected a value")
 	}
 }
@@ -549,8 +624,8 @@ func TestGetEntitiesHandlerSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	floatToInt(actual)
 	for _, e := range actual {
-		api.ConvertFloat64ToInt(e)
 		delete(e, "_id")
 		delete(e, "_rev")
 		delete(e, "_type")
@@ -571,19 +646,31 @@ func TestGetEntitiesHandlerMissingQueryError(t *testing.T) {
 
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	expectErr := "query string is empty"
-	testBadRequestError(t, "DELETE", url, expectErr)
-}
 
-func TestGetEntitiesHandlerEmptyQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
+	var respErr etre.Error
+	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+	if respErr.Type != api.ErrInvalidQuery.Type {
+		t.Errorf("got error type %s, expected %s", respErr.Type, api.ErrInvalidQuery.Type)
+	}
 
-	// Omit query string from URL
-	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query"
-
-	expectErr := "query string is empty"
-	testBadRequestError(t, "GET", url, expectErr)
+	// Empty query
+	url = defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query"
+	statusCode, err = test.MakeHTTPRequest("GET", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+	if respErr.Type != api.ErrInvalidQuery.Type {
+		t.Errorf("got error type %s, expected %s", respErr.Type, api.ErrInvalidQuery.Type)
+	}
 }
 
 func TestGetEntitiesHandlerNotFoundError(t *testing.T) {
@@ -626,7 +713,7 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var actual []etre.WriteResult
+	var actual etre.WriteResult
 	query := url.QueryEscape("x>0") // doesn't matter
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query=" + query
 
@@ -639,24 +726,26 @@ func TestPutEntitiesHandlerSuccessful(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
 
-	if len(actual) != 2 {
-		t.Errorf("got %d WriteResult, expected 2", len(actual))
+	if len(actual.Writes) != 2 {
+		t.Errorf("got %d WriteResult, expected 2", len(actual.Writes))
 	}
 
 	// Convert back to string
 	updateEntities[0]["_id"] = seedId0
 	updateEntities[1]["_id"] = seedId1
 
-	expect := []etre.WriteResult{
-		{
-			Id:   seedId0,
-			URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
-			Diff: updateEntities[0],
-		},
-		{
-			Id:   seedId1,
-			URI:  addr + etre.API_ROOT + "/entity/" + seedId1,
-			Diff: updateEntities[1],
+	expect := etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				Id:   seedId0,
+				URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
+				Diff: updateEntities[0],
+			},
+			{
+				Id:   seedId1,
+				URI:  addr + etre.API_ROOT + "/entity/" + seedId1,
+				Diff: updateEntities[1],
+			},
 		},
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
@@ -668,20 +757,39 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
+	var respErr etre.WriteResult
+
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	expectErr := "query string is empty"
-	testBadRequestError(t, "DELETE", url, expectErr)
-}
+	statusCode, err := test.MakeHTTPRequest("PUT", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+	if respErr.Error == nil {
+		t.Fatal("WriteResult.Error is nil, expected it to be set")
+	}
+	if respErr.Error.Type != api.ErrInvalidQuery.Type {
+		t.Errorf("got error type %s, expected %s", respErr.Error.Type, api.ErrInvalidQuery.Type)
+	}
 
-func TestPutEntitiesHandlerEmptyQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
-
-	// Omit query string from URL
-	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query"
-	expectErr := "query string is empty"
-	testBadRequestError(t, "PUT", url, expectErr)
+	// Empty query
+	url = defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query"
+	statusCode, err = test.MakeHTTPRequest("PUT", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != api.ErrInvalidQuery.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInvalidQuery.HTTPStatus)
+	}
+	if respErr.Error == nil {
+		t.Fatal("WriteResult.Error is nil, expected it to be set")
+	}
+	if respErr.Error.Type != api.ErrInvalidQuery.Type {
+		t.Errorf("got error type %s, expected %s", respErr.Error.Type, api.ErrInvalidQuery.Type)
+	}
 }
 
 func TestPutEntitiesHandlerPayloadError(t *testing.T) {
@@ -694,7 +802,7 @@ func TestPutEntitiesHandlerPayloadError(t *testing.T) {
 	// etre.Entity type is expected to be in the payload, so passing in an empty
 	// payload will trigger an error.
 	var payload []byte
-	var respErr etre.Error
+	var respErr etre.WriteResult
 
 	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &respErr)
 	if err != nil {
@@ -705,10 +813,13 @@ func TestPutEntitiesHandlerPayloadError(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
 	}
 
-	if respErr.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Type)
+	if respErr.Error == nil {
+		t.Fatalf("WriteResult.Error is nil, expected it to be set")
 	}
-	if respErr.Message == "" {
+	if respErr.Error.Type != "internal-error" {
+		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Error.Type)
+	}
+	if respErr.Error.Message == "" {
 		t.Errorf("Error.Message is empty, expected a value")
 	}
 }
@@ -724,7 +835,7 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 
 	query := url.QueryEscape("foo=bar") // doesn't matter
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query=" + query
-	var actual []etre.WriteResult
+	var actual etre.WriteResult
 
 	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &actual)
 	if err != nil {
@@ -735,24 +846,22 @@ func TestDeleteEntitiesHandlerSuccessful(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
 
-	if len(actual) != 2 {
-		t.Errorf("got %d WriteResult, expected 2", len(actual))
-	}
-
 	// Convert back to string
 	deleteEntities[0]["_id"] = seedId0
 	deleteEntities[1]["_id"] = seedId1
 
-	expect := []etre.WriteResult{
-		{
-			Id:   seedId0,
-			URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
-			Diff: deleteEntities[0],
-		},
-		{
-			Id:   seedId1,
-			URI:  addr + etre.API_ROOT + "/entity/" + seedId1,
-			Diff: deleteEntities[1],
+	expect := etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				Id:   seedId0,
+				URI:  addr + etre.API_ROOT + "/entity/" + seedId0,
+				Diff: deleteEntities[0],
+			},
+			{
+				Id:   seedId1,
+				URI:  addr + etre.API_ROOT + "/entity/" + seedId1,
+				Diff: deleteEntities[1],
+			},
 		},
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
@@ -764,20 +873,36 @@ func TestDeleteEntitiesHandlerMissingQueryError(t *testing.T) {
 	setup(t)
 	defer teardown(t)
 
+	var respErr etre.WriteResult
+
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	expectErr := "query string is empty"
-	testBadRequestError(t, "DELETE", url, expectErr)
-}
+	statusCode, err := test.MakeHTTPRequest("DELETE", url, nil, &respErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != api.ErrInvalidQuery.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInvalidQuery.HTTPStatus)
+	}
+	if respErr.Error == nil {
+		t.Fatal("WriteResult.Error is nil, expected it to be set")
+	}
+	if respErr.Error.Type != api.ErrInvalidQuery.Type {
+		t.Errorf("got error type %s, expected %s", respErr.Error.Type, api.ErrInvalidQuery.Type)
+	}
 
-func TestDeleteEntitiesHandlerEmptyQueryError(t *testing.T) {
-	setup(t)
-	defer teardown(t)
-
-	// Omit query string from URL
-	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType
-	expectErr := "query string is empty"
-	testBadRequestError(t, "DELETE", url, expectErr)
+	// Empty query
+	url = defaultServer.URL + etre.API_ROOT + "/entities/" + entityType
+	statusCode, err = test.MakeHTTPRequest("DELETE", url, nil, &respErr)
+	if statusCode != api.ErrInvalidQuery.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInvalidQuery.HTTPStatus)
+	}
+	if respErr.Error == nil {
+		t.Fatal("WriteResult.Error is nil, expected it to be set")
+	}
+	if respErr.Error.Type != api.ErrInvalidQuery.Type {
+		t.Errorf("got error type %s, expected %s", respErr.Error.Type, api.ErrInvalidQuery.Type)
+	}
 }
 
 func TestDeleteLabelHandler(t *testing.T) {
@@ -820,28 +945,49 @@ func TestDeleteLabelHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if statusCode != http.StatusForbidden {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusForbidden)
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
 }
 
-////////////////////////////////////////////////////////////////////////////
-// Helper Functions
-////////////////////////////////////////////////////////////////////////////
+// --------------------------------------------------------------------------
+// v0.8 compatibility
+// --------------------------------------------------------------------------
 
-func testBadRequestError(t *testing.T, httpVerb string, url string, expectErr string) {
-	var respErr etre.Error
+func TestV08PostEntityHandlerSuccessful(t *testing.T) {
+	setup(t)
+	defer teardown(t)
 
-	statusCode, err := test.MakeHTTPRequest(httpVerb, url, nil, &respErr)
+	// v0.9: etre.WriteResult{Writes: []etre.Write, ...}
+	// v0.8: []etre.Write
+	test.Headers["X-Etre-Version"] = "0.8.0-alpha"
+	defer delete(test.Headers, "X-Etre-Version")
+
+	entity := etre.Entity{"x": 8}
+	payload, err := json.Marshal(entity)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if respErr.Message != expectErr {
-		t.Errorf("response error message = %s, expected %s", respErr.Message, expectErr)
-	}
+	createIds = []string{"id1"} // global var
 
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	url := defaultServer.URL + etre.API_ROOT + "/entity/" + entityType
+	var actual []etre.Write
+	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusCreated {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusCreated)
+	}
+	expect := []etre.Write{
+		{
+			Id:  "id1",
+			URI: addr + etre.API_ROOT + "/entity/id1",
+		},
+	}
+	if diffs := deep.Equal(actual, expect); diffs != nil {
+		t.Logf("%+v", actual)
+		t.Error(diffs)
 	}
 }

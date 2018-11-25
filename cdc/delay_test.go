@@ -15,7 +15,7 @@ var delayCollection = "cdc"
 
 func delaySetup(t *testing.T) db.Connector {
 	// @todo: make this configurable
-	conn := db.NewConnector("localhost:3000", 1, nil, nil)
+	conn := db.NewConnector("localhost:27017", 1, nil, nil)
 
 	_, err := conn.Connect()
 	if err != nil {

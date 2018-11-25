@@ -235,10 +235,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	validate := entity.NewValidator(config.Entity.Types)
+
 	// //////////////////////////////////////////////////////////////////////
 	// API
 	// //////////////////////////////////////////////////////////////////////
-	api := api.NewAPI(config.Server.Addr, entityStore, feedFactory)
+	api := api.NewAPI(config, validate, entityStore, feedFactory)
 
 	// If you want to add custom middleware for authentication, authorization,
 	// etc., you should do that here. See https://echo.labstack.com/middleware
