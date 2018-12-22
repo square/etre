@@ -17,11 +17,12 @@ import (
 )
 
 type Context struct {
-	Config      config.Config
-	EntityStore entity.Store
-	CDCStore    cdc.Store
-	FeedFactory cdc.FeedFactory
-	TeamAuth    team.Authorizer
+	Config          config.Config
+	EntityStore     entity.Store
+	EntityValidator entity.Validator
+	CDCStore        cdc.Store
+	FeedFactory     cdc.FeedFactory
+	TeamAuth        team.Authorizer
 }
 
 func DefaultContext(config config.Config) Context {
@@ -145,6 +146,7 @@ func DefaultContext(config config.Config) Context {
 		cdcStore,
 		dm,
 	)
+	entityValidator := entity.NewValidator(config.Entity.Types)
 
 	// //////////////////////////////////////////////////////////////////////
 	// Teams: auth, metrcs, etc.
@@ -158,10 +160,11 @@ func DefaultContext(config config.Config) Context {
 	}
 
 	return Context{
-		Config:      config,
-		EntityStore: entityStore,
-		CDCStore:    cdcStore,
-		FeedFactory: feedFactory,
-		TeamAuth:    teamAuth,
+		Config:          config,
+		EntityStore:     entityStore,
+		EntityValidator: entityValidator,
+		CDCStore:        cdcStore,
+		FeedFactory:     feedFactory,
+		TeamAuth:        teamAuth,
 	}
 }

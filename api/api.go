@@ -28,8 +28,8 @@ import (
 // API provides controllers for endpoints it registers with a router.
 type API struct {
 	addr                 string
-	validate             entity.Validator
 	es                   entity.Store
+	validate             entity.Validator
 	ff                   cdc.FeedFactory
 	teamAuth             team.Authorizer
 	defaultClientVersion string
@@ -40,11 +40,11 @@ type API struct {
 var reVersion = regexp.MustCompile(`^v?(\d+\.\d+)`)
 
 // NewAPI makes a new API.
-func NewAPI(appCtx app.Context, validate entity.Validator) API {
+func NewAPI(appCtx app.Context) API {
 	api := API{
 		addr:                 appCtx.Config.Server.Addr,
-		validate:             validate,
 		es:                   appCtx.EntityStore,
+		validate:             appCtx.EntityValidator,
 		ff:                   appCtx.FeedFactory,
 		teamAuth:             appCtx.TeamAuth,
 		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,

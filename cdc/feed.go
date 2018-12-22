@@ -177,7 +177,7 @@ func (f *WebsocketFeed) control(msg map[string]interface{}, now time.Time) error
 			t0 := int64(v.(float64)) // ts sent
 			t1 := now.UnixNano()     // ts recv'ed
 			latency := time.Duration(t1-t0) * time.Nanosecond
-			f.logger.Info("API to client latency: %s", latency)
+			f.logger.Infof("API to client latency: %s", latency)
 		}
 		msg["control"] = "pong"
 		msg["dstTs"] = now.UnixNano()

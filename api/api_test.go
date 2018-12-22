@@ -14,9 +14,11 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/app"
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
+	"github.com/square/etre/team"
 	"github.com/square/etre/test"
 	"github.com/square/etre/test/mock"
 
@@ -43,14 +45,15 @@ var (
 	gotLabel string
 )
 
-var addr = "http://localhost"
-var entityType = "nodes"
-var validate = entity.NewValidator([]string{entityType})
-var cfg config.Config
-
-var es *mock.EntityStore
-var defaultServer *httptest.Server
-var mu = &sync.Mutex{}
+var (
+	addr          = "http://localhost"
+	entityType    = "nodes"
+	validate      = entity.NewValidator([]string{entityType})
+	cfg           config.Config
+	es            *mock.EntityStore
+	defaultServer *httptest.Server
+	mu            = &sync.Mutex{}
+)
 
 func setup(t *testing.T) {
 	if defaultServer == nil {
@@ -78,7 +81,15 @@ func setup(t *testing.T) {
 				Addr: addr,
 			},
 		}
-		defaultAPI := api.NewAPI(cfg, validate, es, &mock.FeedFactory{})
+		appCtx := app.Context{
+			Config:          cfg,
+			EntityStore:     es,
+			EntityValidator: validate,
+			CDCStore:        nil,
+			FeedFactory:     &mock.FeedFactory{},
+			TeamAuth:        team.NewAllowAll([]string{entityType}),
+		}
+		defaultAPI := api.NewAPI(appCtx)
 		defaultServer = httptest.NewServer(defaultAPI)
 		t.Logf("started test HTTP server: %s\n", defaultServer.URL)
 	}
