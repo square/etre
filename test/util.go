@@ -11,6 +11,8 @@ import (
 	"net/http"
 )
 
+var Headers = map[string]string{}
+
 // MakeHTTPRequest is a helper function for making an http request. The
 // response body of the http request is unmarshalled into the struct pointed to
 // by the respStruct argument (if it's not nil). The status code of the
@@ -24,6 +26,9 @@ func MakeHTTPRequest(httpVerb, url string, payload []byte, respStruct interface{
 		return statusCode, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range Headers {
+		req.Header.Set(k, v)
+	}
 	res, err := (http.DefaultClient).Do(req)
 	if err != nil {
 		return statusCode, err

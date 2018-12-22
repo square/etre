@@ -14,8 +14,20 @@ const (
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.8.0-alpha"
+	VERSION                  = "0.9.0-alpha"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
+)
+
+var (
+	ErrTypeMismatch   = errors.New("entity _type and Client entity type are different")
+	ErrIdSet          = errors.New("entity _id is set but not allowed on insert")
+	ErrIdNotSet       = errors.New("entity _id is not set")
+	ErrNoEntity       = errors.New("empty entity or id slice; at least one required")
+	ErrNoLabel        = errors.New("empty label slice; at least one required")
+	ErrNoQuery        = errors.New("empty query string")
+	ErrBadData        = errors.New("data from CDC feed is not event or control")
+	ErrCallerBlocked  = errors.New("caller blocked")
+	ErrEntityNotFound = errors.New("entity not found")
 )
 
 // Entity represents a single Etre entity. The caller is responsible for knowing
@@ -28,7 +40,7 @@ const (
 //
 // Label _id cannot be set on insert. If set, Insert returns ErrIdSet. On update,
 // label _id must be set; if not, Update returns ErrIdNotSet. _id corresponds to
-// WriteResult.Id.
+// WriteResult.Writes[].Id.
 type Entity map[string]interface{}
 
 func (e Entity) Id() string {
@@ -111,15 +123,58 @@ type QueryFilter struct {
 	ReturnLabels []string
 }
 
-// WriteResult represents the result of a write operation (insert, update, delete)
-// for one entity. The write operation failed if Error is set. A write operation
-// can succeed on some entities and fail on one, so the caller must check all write
-// results.
+// WriteResult represents the result of a write operation (insert, update delete).
+// On success or failure, all write ops return a WriteResult.
+//
+// If Error is set (not nil), some or all writes failed. Writes stop on the first
+// error, so len(Writes) = index into slice of entities sent by client that failed.
+// For example, if the first entity causes an error, len(Writes) = 0. If the third
+// entity fails, len(Writes) = 2 (zero indexed).
 type WriteResult struct {
+	Writes []Write `json:"writes"`          // successful writes
+	Error  *Error  `json:"error,omitempty"` // error before, during, or after writes
+}
+
+func (wr WriteResult) IsZero() bool {
+	return wr.Error == nil && len(wr.Writes) == 0
+}
+
+// Write represents the successful write of one entity.
+type Write struct {
 	Id    string `json:"id"`              // internal _id of entity (all write ops)
 	URI   string `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
 	Diff  Entity `json:"diff,omitempty"`  // previous entity label values (update)
-	Error string `json:"error,omitempty"` // human-readable error string
+	Error string `json:"error,omitempty"` // v0.8 backward-compatibility
+}
+
+// Error is the standard response for all handled errors. Client errors (HTTP 400
+// codes) and internal errors (HTTP 500 codes) are returned as an Error, if handled.
+// If not handled (API crash, panic, etc.), Etre returns an HTTP 500 code and the
+// response data is undefined; the client should print any response data as a string.
+type Error struct {
+	Message    string `json:"message"`    // human-readable and loggable error message
+	Type       string `json:"type"`       // error slug (e.g. db-error, missing-param, etc.)
+	EntityId   string `json:"entityId"`   // entity ID that caused error, if any
+	HTTPStatus int    `json:"httpStatus"` // HTTP status code
+}
+
+func (e Error) New(msgFmt string, msgArgs ...interface{}) Error {
+	if msgFmt != "" {
+		e.Message = fmt.Sprintf(msgFmt, msgArgs...)
+	}
+	return e
+}
+
+func (e Error) String() string {
+	return fmt.Sprintf("Etre error %s: %s", e.Type, e.Message)
+}
+
+func (e Error) Error() string {
+	return e.String()
+}
+
+func (e Error) IsZero() bool {
+	return e.Message == "" && e.Type == ""
 }
 
 type CDCEvent struct {
@@ -156,68 +211,4 @@ func debug(fmt string, v ...interface{}) {
 		return
 	}
 	log.Printf(fmt, v...)
-}
-
-// //////////////////////////////////////////////////////////////////////////
-// Errors
-// //////////////////////////////////////////////////////////////////////////
-
-type Error struct {
-	Message    string `json:"message"`
-	Type       string `json:"type"`
-	HTTPStatus int
-}
-
-func (e Error) New(msgFmt string, msgArgs ...interface{}) Error {
-	if msgFmt != "" {
-		e.Message = fmt.Sprintf(msgFmt, msgArgs...)
-	}
-	return e
-}
-
-func (e Error) String() string {
-	return fmt.Sprintf("Etre error %s: %s", e.Type, e.Message)
-}
-
-func (e Error) Error() string {
-	return e.String()
-}
-
-var (
-	ErrTypeMismatch   = errors.New("entity _type and Client entity type are different")
-	ErrIdSet          = errors.New("entity _id is set but not allowed on insert")
-	ErrIdNotSet       = errors.New("entity _id is not set")
-	ErrNoEntity       = errors.New("empty entity or id slice; at least one required")
-	ErrNoLabel        = errors.New("empty label slice; at least one required")
-	ErrNoQuery        = errors.New("empty query string")
-	ErrBadData        = errors.New("data from CDC feed is not event or control")
-	ErrCallerBlocked  = errors.New("caller blocked")
-	ErrEntityNotFound = errors.New("entity not found")
-)
-
-// WriteError is a convenience function for returning the WriteResult error, if any,
-// for the given entities that generated the write results. Canonical usage:
-//
-//   wr, err := ec.Insert(entities)
-//   if err != nil {
-//     return err
-//   }
-//   if err := etre.WriteError(wr, entities); err != nil {
-//     return err
-//   }
-//
-func WriteError(wr []WriteResult, entities []Entity) error {
-	if len(wr) == 0 {
-		return fmt.Errorf("no write results; check API logs for errors")
-	}
-
-	// If the number of write results = the number of entities _and_
-	// the last write result is not an error, then no error occurred.
-	if len(wr) == len(entities) && wr[len(wr)-1].Error == "" {
-		return nil
-	}
-
-	// An error occurred
-	wrLast := wr[len(wr)-1]
-	return fmt.Errorf("error writing entity[%d]: %s", len(wr)-1, wrLast.Error)
 }

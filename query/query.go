@@ -11,6 +11,7 @@ package query
 import (
 	"strconv"
 
+	"github.com/globalsign/mgo/bson"
 	"github.com/square/etre/kls"
 )
 
@@ -72,4 +73,18 @@ func translateValues(operator string, values []string) interface{} {
 	}
 
 	return value
+}
+
+// IdEqual returns a Query for "_id=N".
+func IdEqual(id string) Query {
+	// _id is not a valid field name to pass to Translate, so manually create a query object
+	return Query{
+		Predicates: []Predicate{
+			Predicate{
+				Label:    "_id",
+				Operator: "=",
+				Value:    bson.ObjectIdHex(id),
+			},
+		},
+	}
 }

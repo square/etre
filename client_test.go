@@ -15,63 +15,61 @@ import (
 	"github.com/square/etre"
 )
 
-var httpClient *http.Client
-
 // The httptest.Server uses these globals. setup() will reset them to defaults.
 // Tests should define them as needed immediately after calling setup().
-var ts *httptest.Server
 var (
+	ts *httptest.Server
+
+	// From test (client)
 	gotMethod string
 	gotPath   string
 	gotQuery  string
 	gotBody   []byte
+
+	// Response to test
+	respData       interface{}
+	respError      *etre.Error // if respData is nil
+	respStatusCode int
 )
-var ( // response data in order of precedence
-	respError *etre.Error
-	respData  interface{}
-)
-var respStatusCode int
+var httpClient = &http.Client{}
+
+func init() {
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotQuery, _ = url.QueryUnescape(r.URL.RawQuery)
+
+		if r.Method == "POST" || r.Method == "PUT" {
+			var err error
+			gotBody, err = ioutil.ReadAll(r.Body)
+			if err != nil {
+				panic(err.Error())
+			}
+		}
+
+		w.WriteHeader(respStatusCode)
+
+		// Write response data, if any
+		var bytes []byte
+		var err error
+		if respError != nil {
+			bytes, err = json.Marshal(respError)
+			if err != nil {
+				panic(err.Error())
+			}
+		} else if respData != nil {
+			bytes, err = json.Marshal(respData)
+			if err != nil {
+				panic(err.Error())
+			}
+		}
+		if bytes != nil {
+			w.Write(bytes)
+		}
+	}))
+}
 
 func setup(t *testing.T) {
-	if ts == nil {
-		ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			gotMethod = r.Method
-			gotPath = r.URL.Path
-			gotQuery, _ = url.QueryUnescape(r.URL.RawQuery)
-
-			if r.Method == "POST" || r.Method == "PUT" {
-				var err error
-				gotBody, err = ioutil.ReadAll(r.Body)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			w.WriteHeader(respStatusCode)
-
-			// Write response data, if any
-			var bytes []byte
-			var err error
-			if respError != nil {
-				bytes, err = json.Marshal(respError)
-				if err != nil {
-					t.Fatal(err)
-				}
-			} else if respData != nil {
-				bytes, err = json.Marshal(respData)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			if bytes != nil {
-				w.Write(bytes)
-			}
-		}))
-	}
-	if httpClient == nil {
-		httpClient = &http.Client{}
-	}
-
 	// Reset global vars to defaults
 	gotMethod = ""
 	gotPath = ""
@@ -85,25 +83,6 @@ func setup(t *testing.T) {
 // //////////////////////////////////////////////////////////////////////////
 // Misc
 // //////////////////////////////////////////////////////////////////////////
-
-func TestWriteError(t *testing.T) {
-	// No error when len(en) = len(wr) and ErrorCode=0 for all wr
-	en := []etre.Entity{
-		{"_id": "abc", "foo": "bar"},
-	}
-	wr := []etre.WriteResult{
-		{Id: "abc"},
-	}
-	if err := etre.WriteError(wr, en); err != nil {
-		t.Errorf("got error '%s', expected none", err)
-	}
-
-	// Add an error
-	wr[0].Error = "duplicate entity"
-	if err := etre.WriteError(wr, en); err == nil {
-		t.Errorf("no error, expected \"duplicate entry\"")
-	}
-}
 
 func TestEntityType(t *testing.T) {
 	setup(t)
@@ -124,8 +103,7 @@ func TestQueryAndIdRequired(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
-	// All methods that take query string should return ErrNoQuery if not
-	// given one
+	// All methods that take query string should return ErrNoQuery if not given one
 	if _, err := ec.Query("", etre.QueryFilter{}); err != etre.ErrNoQuery {
 		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
 	}
@@ -136,8 +114,7 @@ func TestQueryAndIdRequired(t *testing.T) {
 		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
 	}
 
-	// All methods that take id string should return ErrIdNotSet if not
-	// given one
+	// All methods that take id string should return ErrIdNotSet if not given one
 	if _, err := ec.UpdateOne("", entities[0]); err != etre.ErrIdNotSet {
 		t.Errorf("got error %v, expected etre.ErrIdNotSet", err)
 	}
@@ -167,7 +144,6 @@ func TestQueryOK(t *testing.T) {
 		},
 	}
 
-	// New etre.Client
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	// Normal query that returns status code 200 and respData
@@ -202,7 +178,6 @@ func TestQueryLongOK(t *testing.T) {
 		},
 	}
 
-	// New etre.Client
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	// A very long query that returns status code 200 and respData
@@ -262,70 +237,67 @@ func TestQueryLongOK(t *testing.T) {
 }
 
 func TestQueryNoResults(t *testing.T) {
+	// Same test as TestQueryOK but no results to make sure client handles
+	// status code 200 but an empty list.
 	setup(t)
 
 	// Set global vars used by httptest.Server
 	respData = []etre.Entity{}
 
-	// Same test as TestQueryOK but no results to make sure client handles
-	// status code 200 but an empty list.
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
 	}
 }
 
 func TestQueryHandledError(t *testing.T) {
+	// Test that client returns error on API error and no entities
 	setup(t)
 
 	// Set global vars used by httptest.Server
+	respStatusCode = http.StatusInternalServerError
 	respError = &etre.Error{
 		Type:    "fake_error",
 		Message: "this is a fake error",
 	}
-	respStatusCode = http.StatusInternalServerError
 
-	// Test that client returns error on API error
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
 	if err == nil {
-		t.Fatal("err is nil, expected an error")
+		t.Error("err is nil, expected an error")
 	}
-
-	// The etre.Error.Message should bubble up
 	if !strings.Contains(err.Error(), respError.Message) {
-		t.Errorf("error does not contain '%s': %s", respError.Message, err)
+		t.Errorf("error message does not contain '%s': '%s'", respError.Message, err)
 	}
-
-	// There should not be any entities returned
 	if got != nil {
-		t.Errorf("got []etre.Entity, expected nil: %#v", got)
+		t.Errorf("got entities, expected nil: %v", got)
 	}
 }
 
 func TestQueryUnhandledError(t *testing.T) {
+	// Like TestQueryHandledError above, but simulating a more severe error,
+	// like a panic, that makes the API _not_ return an etre.Error. The client
+	// should handle this and still return an error.
 	setup(t)
 
 	// Set global vars used by httptest.Server
 	respStatusCode = http.StatusInternalServerError
 
-	// Like TestQueryHandledError above, but simulating a more severe error,
-	// like a panic, that makes the API not return an etre.etre.Error
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
 	if err == nil {
 		t.Fatal("err is nil, expected an error")
 	}
-
-	// There should not be any entities returned
+	if !strings.Contains(err.Error(), "no response") {
+		t.Errorf("error does not contain 'no response': '%s'", err)
+	}
 	if got != nil {
-		t.Errorf("got []etre.Entity, expected nil: %#v", got)
+		t.Errorf("got entities, expected nil: %v", got)
 	}
 }
 
@@ -337,10 +309,12 @@ func TestInsertOK(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			Id:  "abc",
-			URI: "http://localhost/entity/abc",
+	respData = etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+			},
 		},
 	}
 	respStatusCode = http.StatusCreated
@@ -373,14 +347,17 @@ func TestInsertOK(t *testing.T) {
 }
 
 func TestInsertAPIError(t *testing.T) {
+	// API should return error in WriteResult.Error
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respError = &etre.Error{
-		Type:    "fake_error",
-		Message: "this is a fake error",
-	}
 	respStatusCode = http.StatusInternalServerError
+	respData = etre.WriteResult{
+		Error: &etre.Error{
+			Type:    "fake_error",
+			Message: "this is a fake error",
+		},
+	}
 
 	// Get error on insert
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
@@ -390,18 +367,34 @@ func TestInsertAPIError(t *testing.T) {
 		},
 	}
 	got, err := ec.Insert(entities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestInsertUnhandledError(t *testing.T) {
+	// If API crashes or some unhandled error occurs, there's no WriteResult,
+	// but client should handle this and still return an error
+	setup(t)
+
+	// Set global vars used by httptest.Server
+	respStatusCode = http.StatusInternalServerError
+	respData = nil // error ^, but no resp data
+
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+	entities := []etre.Entity{{"foo": "bar"}}
+	wr, err := ec.Insert(entities)
 	if err == nil {
-		t.Fatal("err is nil, expected an error")
+		t.Fatal(err)
 	}
-
-	// The etre.Error.Message should bubble up
-	if !strings.Contains(err.Error(), respError.Message) {
-		t.Errorf("error does not contain '%s': %s", respError.Message, err)
+	if !strings.Contains(err.Error(), "no response") {
+		t.Errorf("error does not contain 'no response': '%s'", err)
 	}
-
-	// There should not be any entities returned
-	if got != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
+	if !wr.IsZero() {
+		t.Errorf("non-zero WriteResult, expected no WriteResult: %+v", wr)
 	}
 }
 
@@ -416,7 +409,7 @@ func TestInsertNoEntityError(t *testing.T) {
 	if err != etre.ErrNoEntity {
 		t.Fatalf("err is '%s', expected ErrNoEtity", err)
 	}
-	if got != nil {
+	if got.Writes != nil {
 		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
 	}
 }
@@ -429,11 +422,13 @@ func TestUpdateOK(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			URI: "http://localhost/entity/abc",
-			Diff: map[string]interface{}{
-				"foo": "foo",
+	respData = etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
 			},
 		},
 	}
@@ -489,7 +484,7 @@ func TestUpdateAPIError(t *testing.T) {
 	}
 
 	// There should not be any entities returned
-	if got != nil {
+	if got.Writes != nil {
 		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
 	}
 }
@@ -505,7 +500,7 @@ func TestUpdateNoEntityError(t *testing.T) {
 	if err != etre.ErrNoEntity {
 		t.Fatalf("err is '%s', expected ErrNoEtity", err)
 	}
-	if got != nil {
+	if got.Writes != nil {
 		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
 	}
 }
@@ -515,19 +510,22 @@ func TestUpdateNoEntityError(t *testing.T) {
 // //////////////////////////////////////////////////////////////////////////
 
 func TestUpdateOneOK(t *testing.T) {
+	// Same at TestUpdateOK, just calling UpdateOne instead which is just
+	// a convenience func for Update.
 	setup(t)
 
-	// Set global vars used by httptest.Server
 	respData = etre.WriteResult{
-		Id:  "abc",
-		URI: "http://localhost/entity/abc",
-		Diff: map[string]interface{}{
-			"foo": "foo",
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
+			},
 		},
 	}
 
-	// Same at TestUpdateOK, just calling UpdateOne instead which is just
-	// a convenience func for Update.
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	entity := etre.Entity{
@@ -545,7 +543,7 @@ func TestUpdateOneOK(t *testing.T) {
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
+	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
 	}
 }
@@ -558,12 +556,14 @@ func TestDeleteOK(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			Id:  "abc",
-			URI: "http://localhost/entity/abc",
-			Diff: map[string]interface{}{
-				"foo": "foo",
+	respData = etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
 			},
 		},
 	}
@@ -599,12 +599,14 @@ func TestDeleteWithSet(t *testing.T) {
 	setup(t)
 
 	// Set global vars used by httptest.Server
-	respData = []etre.WriteResult{
-		{
-			Id:  "abc",
-			URI: "http://localhost/entity/abc",
-			Diff: map[string]interface{}{
-				"foo": "foo",
+	respData = etre.WriteResult{
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
 			},
 		},
 	}
@@ -648,21 +650,23 @@ func TestDeleteWithSet(t *testing.T) {
 // //////////////////////////////////////////////////////////////////////////
 
 func TestDeleteOneOK(t *testing.T) {
+	// Same test as DeleteOK, just using the DeleteOne convenience function instead
 	setup(t)
 
-	// Set global vars used by httptest.Server
 	respData = etre.WriteResult{
-		Id:  "abc",
-		URI: "http://localhost/entity/abc",
-		Diff: map[string]interface{}{
-			"foo": "foo",
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
+			},
 		},
 	}
 
-	// Same test as DeleteOK, just using the DeleteOne convenience function instead
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
-	// Normal delete that returns status code 200 and a write result
 	got, err := ec.DeleteOne("abc")
 	if err != nil {
 		t.Fatal(err)
@@ -674,19 +678,24 @@ func TestDeleteOneOK(t *testing.T) {
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
+	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
 	}
 }
 
 func TestDeleteOneWithSet(t *testing.T) {
+	// With a set up, the query should contain the set op params
 	setup(t)
 
 	respData = etre.WriteResult{
-		Id:  "abc",
-		URI: "http://localhost/entity/abc",
-		Diff: map[string]interface{}{
-			"foo": "foo",
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
+			},
 		},
 	}
 
@@ -707,14 +716,14 @@ func TestDeleteOneWithSet(t *testing.T) {
 		t.Errorf("got method %s, expected DELETE", gotMethod)
 	}
 	expectPath := etre.API_ROOT + "/entity/node/abc"
-	expectQuery := "setId=setid&setOp=setop&setSize=2"
+	expectQuery := "setId=setid&setOp=setop&setSize=2" // testing this
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
 	if gotQuery != expectQuery {
 		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
 	}
-	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
+	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
 	}
 }
@@ -729,14 +738,12 @@ func TestLabelsOK(t *testing.T) {
 	// Set global vars used by httptest.Server
 	respData = []string{"foo", "bar"}
 
-	// New etre.Client
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.Labels("abc")
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if gotMethod != "GET" {
 		t.Errorf("got method %s, expected GET", gotMethod)
 	}
@@ -752,16 +759,18 @@ func TestLabelsOK(t *testing.T) {
 func TestDeleteLabelOK(t *testing.T) {
 	setup(t)
 
-	// Set global vars used by httptest.Server
 	respData = etre.WriteResult{
-		Id:  "abc",
-		URI: "http://localhost/entity/abc",
-		Diff: map[string]interface{}{
-			"foo": "foo",
+		Writes: []etre.Write{
+			{
+				Id:  "abc",
+				URI: "http://localhost/entity/abc",
+				Diff: map[string]interface{}{
+					"foo": "foo",
+				},
+			},
 		},
 	}
 
-	// New etre.Client
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.DeleteLabel("abc", "foo")
@@ -776,7 +785,7 @@ func TestDeleteLabelOK(t *testing.T) {
 	if gotPath != expectPath {
 		t.Errorf("got path %s, expected %s", gotPath, expectPath)
 	}
-	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
+	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
 	}
 }

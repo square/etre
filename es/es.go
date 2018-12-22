@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2018, Square, Inc.
 
 // Package es provides a framework for integration with other programs.
 package es
@@ -131,8 +131,8 @@ func Run(ctx app.Context) {
 	// Finalize options
 	var o config.Options = cmdLine.Options
 	if o.Debug {
-		app.Debug("options: %#v\n", o)
-		app.Debug("set: %#v\n", set)
+		app.Debug("options: %+v\n", o)
+		app.Debug("set: %+v\n", set)
 	}
 
 	if ctx.Hooks.AfterParseOptions != nil {
@@ -143,7 +143,7 @@ func Run(ctx app.Context) {
 
 		// Dump options again to see if hook changed them
 		if o.Debug {
-			app.Debug("options: %#v\n", o)
+			app.Debug("options: %+v\n", o)
 		}
 	}
 	ctx.Options = o
@@ -213,35 +213,20 @@ func Run(ctx app.Context) {
 			patch[p[0]] = p[1]
 		}
 		if o.Debug {
-			app.Debug("patch: %#v", patch)
+			app.Debug("patch: %+v", patch)
 		}
 
 		wr, err := ec.UpdateOne(ctx.EntityId, patch)
+		found, err := writeResult(ctx, set, wr, err, "update")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "API error: %s\n", err)
+			fmt.Fprintf(os.Stderr, "%s\n", err)
 			os.Exit(1)
 		}
-		if o.Debug {
-			app.Debug("wr: %#v (%v)", wr, err)
+		if found {
+			fmt.Printf("OK, updated %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
+		} else {
+			fmt.Printf("OK, but %s %s did not exist%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
 		}
-
-		if ctx.Hooks.WriteResult != nil {
-			if o.Debug {
-				app.Debug("calling hook WriteResult")
-			}
-			ctx.Hooks.WriteResult(ctx, wr, err)
-		}
-
-		if wr.Error != "" {
-			fmt.Fprintf(os.Stderr, "API write error: %s\n", wr.Error)
-			os.Exit(1)
-		}
-		if ctx.Options.Old {
-			for _, label := range wr.Diff.Labels() {
-				fmt.Printf("# %s=%v\n", label, wr.Diff[label])
-			}
-		}
-		fmt.Printf("OK, updated %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
 		return
 	}
 
@@ -261,7 +246,7 @@ func Run(ctx app.Context) {
 		}
 
 		wr, err := ec.DeleteOne(ctx.EntityId)
-		found, err := writeResult(ctx, set, wr, err)
+		found, err := writeResult(ctx, set, wr, err, "delete")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
 			os.Exit(1)
@@ -282,7 +267,7 @@ func Run(ctx app.Context) {
 		ctx.EntityId = cmdLine.Args[1]
 		label := cmdLine.Args[2]
 		wr, err := ec.DeleteLabel(ctx.EntityId, label)
-		found, err := writeResult(ctx, set, wr, err)
+		found, err := writeResult(ctx, set, wr, err, "delete label from")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
 			os.Exit(1)
@@ -404,11 +389,11 @@ func setInfo(set etre.Set) string {
 	return fmt.Sprintf(" (set %s %s)", set.Op, set.Id)
 }
 
-func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error) (bool, error) {
+func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error, op string) (bool, error) {
+	// Debug and let hook handle WriteResult
 	if ctx.Options.Debug {
-		app.Debug("wr: %#v (%v)", wr, err)
+		app.Debug("wr: %+v (%v)", wr, err)
 	}
-
 	if ctx.Hooks.WriteResult != nil {
 		if ctx.Options.Debug {
 			app.Debug("calling hook WriteResult")
@@ -416,6 +401,7 @@ func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error) 
 		ctx.Hooks.WriteResult(ctx, wr, err)
 	}
 
+	// Errors?
 	if err != nil {
 		switch err {
 		case etre.ErrEntityNotFound:
@@ -424,19 +410,25 @@ func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error) 
 			} else {
 				return false, nil
 			}
+		case etre.ErrNoQuery:
+			return false, fmt.Errorf("No query given")
+		case etre.ErrNoEntity:
+			return false, fmt.Errorf("No entity given")
 		default:
 			return false, err
 		}
 	}
-
-	if wr.Error != "" {
-		return false, fmt.Errorf("API write error: %s\n", wr.Error)
+	if wr.Error != nil {
+		return false, fmt.Errorf("Failed to %s %s %s: %s (%s)", op, ctx.EntityType, ctx.EntityId, wr.Error.Message, wr.Error.Type)
 	}
+
+	// Success
 	if ctx.Options.Old {
-		for _, label := range wr.Diff.Labels() {
-			fmt.Printf("# %s=%v\n", label, wr.Diff[label])
+		for _, wN := range wr.Writes {
+			for _, label := range wN.Diff.Labels() {
+				fmt.Printf("# %s=%v\n", label, wN.Diff[label])
+			}
 		}
 	}
-
 	return true, nil
 }

@@ -13,9 +13,9 @@ import (
 // uses the fields to create a custom etre.Error and set the HTTP status code.
 
 var ErrDuplicateEntity = etre.Error{
-	Type:       "dupe-entity",
+	Type:       "duplicate-entity",
 	HTTPStatus: http.StatusConflict,
-	Message:    "duplicate entity",
+	Message:    "cannot insert or update entity because identifying labels conflict with another entity",
 }
 
 var ErrNotFound = etre.Error{
@@ -45,19 +45,13 @@ var ErrInvalidQuery = etre.Error{
 var ErrDb = etre.Error{
 	Type:       "db-error",
 	HTTPStatus: http.StatusInternalServerError,
-	Message:    "internal server error",
+	Message:    "unknown database error",
 }
 
 var ErrInternal = etre.Error{
 	Type:       "internal-error",
 	HTTPStatus: http.StatusInternalServerError,
 	Message:    "internal server error",
-}
-
-var ErrBadRequest = etre.Error{
-	Type:       "bad-request",
-	HTTPStatus: http.StatusBadRequest,
-	Message:    "bad request",
 }
 
 var ErrCDCDisabled = etre.Error{
