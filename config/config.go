@@ -89,7 +89,7 @@ type Config struct {
 	Entity     EntityConfig     `yaml:"entity"`
 	CDC        CDCConfig        `yaml:"cdc"`
 	Feed       FeedConfig       `yaml:"feed"`
-	Teams      []TeamConfig     `yaml:"teams"`
+	ACL        ACLConfig        `yaml:"acl"`
 }
 
 type DatasourceConfig struct {
@@ -155,8 +155,15 @@ type ServerConfig struct {
 	DefaultClientVersion string `yaml:"default_client_version"`
 }
 
-type TeamConfig struct {
-	Name            string `yaml:"name"`
-	ReadOnly        bool   `yaml:"read_only"`
-	QueryLatencySLA uint   `yaml:"query_latency_sla"`
+type ACLConfig struct {
+	Strict bool      `yaml:"strict"`
+	Teams  []TeamACL `yaml:"teams"`
+}
+
+type TeamACL struct {
+	Name          string   `yaml:"name"`
+	Admin         bool     `yaml:"admin"`
+	Read          []string `yaml:"read"`
+	Write         []string `yaml:"write"`
+	TraceRequired bool     `yaml:"trace_required"`
 }

@@ -14,8 +14,10 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/app"
+	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/entity"
+	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
 	"github.com/square/etre/team"
 
@@ -31,7 +33,7 @@ type API struct {
 	es                   entity.Store
 	validate             entity.Validator
 	ff                   cdc.FeedFactory
-	teamAuth             team.Authorizer
+	auth                 auth.Plugin
 	defaultClientVersion string
 	// --
 	echo *echo.Echo
@@ -46,7 +48,7 @@ func NewAPI(appCtx app.Context) API {
 		es:                   appCtx.EntityStore,
 		validate:             appCtx.EntityValidator,
 		ff:                   appCtx.FeedFactory,
-		teamAuth:             appCtx.TeamAuth,
+		auth:                 appCtx.AuthPlugin,
 		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,
 		// --
 		echo: echo.New(),
@@ -82,6 +84,16 @@ func NewAPI(appCtx app.Context) API {
 			c.Set("clientVersion", m[0][1]) // 0.9
 
 			// -----------------------------------------------------------------------
+			// Auth and Team
+			// -----------------------------------------------------------------------
+			// Before every route, get and set the team identified by the header:
+			t, err := api.auth.Authenticate(c.Request())
+			if err != nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("access denied: %s", err.Error()))
+			}
+			c.Set("team", t)
+
+			// -----------------------------------------------------------------------
 			// WriteOp
 			// -----------------------------------------------------------------------
 			// All writes (PUT, POST, DELETE) require a write op
@@ -95,16 +107,6 @@ func NewAPI(appCtx app.Context) API {
 			}
 
 			// -----------------------------------------------------------------------
-			// Team
-			// -----------------------------------------------------------------------
-			// Before every route, get and set the team identified by the header:
-			t, err := api.teamAuth.Team(c.Request().Header.Get("X-Etre-Team"))
-			if err != nil {
-				return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
-			}
-			c.Set("team", t)
-
-			// -----------------------------------------------------------------------
 			// Metrics
 			// -----------------------------------------------------------------------
 			// All routes with an :entity param query the db, so increment
@@ -112,7 +114,9 @@ func NewAPI(appCtx app.Context) API {
 			// controller. Also set t0 for measuring query latency.
 			entityType := c.Param("type")
 			if entityType != "" {
-				t.Metrics.Entity[entityType].Query.All.Inc(1)
+				em := mg.NewMetrics(caller.MetricGroups)
+				mg.Inc(metrics.Query, entityType, 1)
+				//t.Metrics.Entity[entityType].Query.All.Inc(1)
 				c.Set("t0", time.Now()) // query start time
 
 				// GET with :entity is a read. PUT, POST, and DELETE are writes,
@@ -120,7 +124,7 @@ func NewAPI(appCtx app.Context) API {
 				switch c.Request().Method {
 				case "GET":
 					t.Metrics.Entity[entityType].Query.Read.Inc(1)
-					if err := api.teamAuth.Allowed(t, team.OP_READ, entityType); err != nil {
+					if err := api.auth.Allowed(t, team.OP_READ, entityType); err != nil {
 						return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 					}
 				case "PUT", "POST", "DELETE":
@@ -224,7 +228,8 @@ func (api API) getEntitiesHandler(c echo.Context) error {
 	entityType := c.Param("type")      // from resource path
 	t := c.Get("team").(team.Team)     // team.Team from middleware
 	em := t.Metrics.Entity[entityType] // entity metrics
-	em.Query.ReadQuery.Inc(1)
+	//em.Query.ReadQuery.Inc(1)
+	mg.Inc(metrics.ReadQuery, entityType, 1)
 
 	// Validate
 	if err := validateParams(c, false); err != nil {
@@ -246,7 +251,8 @@ func (api API) getEntitiesHandler(c echo.Context) error {
 
 	// Label metrics
 	for _, p := range q.Predicates {
-		em.ReadLabel(p.Label)
+		mg.IncLabel(metrics.LabelRead, p.Label)
+		//em.ReadLabel(p.Label)
 	}
 
 	// Query Filter
@@ -539,7 +545,7 @@ func (api API) entityDeleteLabelHandler(c echo.Context) error {
 // --------------------------------------------------------------------------
 
 func (api API) metricsHandler(c echo.Context) error {
-	teams := api.teamAuth.List()
+	teams := api.auth.Teams()
 	all := etre.Metrics{
 		Teams: make([]etre.MetricsReport, len(teams)),
 	}
@@ -623,6 +629,7 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 	t := c.Get("team").(team.Team)
 	switch err {
 	case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam:
+		mg.GlobalInc(m.ClientError, 1)
 		t.Metrics.Global.ClientError.Inc(1)
 	case ErrDb:
 		t.Metrics.Global.DbError.Inc(1)
