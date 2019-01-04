@@ -9,7 +9,7 @@ type MetricsReport struct {
 	Group  string                          `json:"group"`
 	Global *MetricsGlobalReport            `json:"global"`
 	Entity map[string]*MetricsEntityReport `json:"entity"`
-	CDC    *MetricsCDCReport               `json:"cdc,omitempty"`
+	CDC    *MetricsCDCReport               `json:"cdc"`
 }
 
 type MetricsGlobalReport struct {
@@ -19,7 +19,7 @@ type MetricsGlobalReport struct {
 }
 
 type MetricsEntityReport struct {
-	EntityType string                         `json:"entityType"`
+	EntityType string                         `json:"entity-type"`
 	Query      *MetricsQueryReport            `json:"query"`
 	Label      map[string]*MetricsLabelReport `json:"label"`
 	Trace      map[string]map[string]int64    `json:"trace"`

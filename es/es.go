@@ -176,6 +176,29 @@ func Run(ctx app.Context) {
 	if set.Size > 0 {
 		ec = ec.WithSet(set)
 	}
+	if ctx.Options.Trace != "" {
+		// Validate --trace because client and server do not
+		keyValPairs := strings.Split(ctx.Options.Trace, ",")
+		for _, kv := range keyValPairs {
+			p := strings.SplitN(kv, "=", 2)
+			if len(p) != 2 {
+				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' missing '=' between key and value\n",
+					ctx.Options.Trace, kv)
+				os.Exit(1)
+			}
+			if p[0] == "" {
+				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' has empty key\n",
+					ctx.Options.Trace, kv, len(p), p)
+				os.Exit(1)
+			}
+			if p[1] == "" {
+				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' has empty value\n",
+					ctx.Options.Trace, kv, len(p), p)
+				os.Exit(1)
+			}
+		}
+		ec = ec.WithTrace(ctx.Options.Trace)
+	}
 
 	// //////////////////////////////////////////////////////////////////////
 	// Ping

@@ -53,6 +53,11 @@ type EntityClient interface {
 	// caller must ensure that Set.Size is greater than zero and Set.Op and Set.Id are nonempty
 	// strings.
 	WithSet(Set) EntityClient
+
+	// WithTrace returns a new EntityClient that sends the trace string every request
+	// for server-side metrics. The trace string is a comma-separated list of key=value
+	// pairs like: app=foo,host=bar. Invalid trace values are silently ignored by the server.
+	WithTrace(string) EntityClient
 }
 
 // EntityClients represents type-specific entity clients keyed on user-defined const
@@ -74,16 +79,12 @@ type EntityClients map[string]EntityClient
 
 // Internal implementation of EntityClient interface using http.Client. See NewEntityClient.
 type entityClient struct {
-	entityType string
-	addr       string
-	httpClient *http.Client
-	set        Set
+	entityType       string
+	addr             string
+	httpClient       *http.Client
+	set              Set
+	traceHeaderValue string
 }
-
-const (
-	oneWR   = true
-	multiWR = false
-)
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
 // with the given http.Client. An Etre client is bound to the specified entity
@@ -103,6 +104,12 @@ func (c entityClient) WithSet(set Set) EntityClient {
 	// This func makes use of copy on write:
 	new := c      // new = c (same memory address)
 	new.set = set // on write to new, new becomes its own var (different memory address)
+	return new
+}
+
+func (c entityClient) WithTrace(trace string) EntityClient {
+	new := c
+	new.traceHeaderValue = trace
 	return new
 }
 
@@ -314,7 +321,10 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 		return nil, nil, fmt.Errorf("http.NewRequest: %s", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Etre-Version", VERSION)
+	req.Header.Set(VERSION_HEADER, VERSION)
+	if c.traceHeaderValue != "" {
+		req.Header.Set(TRACE_HEADER, c.traceHeaderValue)
+	}
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
@@ -378,6 +388,7 @@ type MockEntityClient struct {
 	DeleteLabelFunc func(id string, label string) (WriteResult, error)
 	EntityTypeFunc  func() string
 	WithSetFunc     func(Set) EntityClient
+	WithTraceFunc   func(string) EntityClient
 }
 
 func (c MockEntityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
@@ -446,6 +457,13 @@ func (c MockEntityClient) EntityType() string {
 func (c MockEntityClient) WithSet(set Set) EntityClient {
 	if c.WithSetFunc != nil {
 		return c.WithSetFunc(set)
+	}
+	return c
+}
+
+func (c MockEntityClient) WithTrace(trace string) EntityClient {
+	if c.WithTraceFunc != nil {
+		return c.WithTraceFunc(trace)
 	}
 	return c
 }

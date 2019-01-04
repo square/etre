@@ -46,6 +46,7 @@ type Options struct {
 	SetSize     int    `arg:"--set-size,env:SET_SIZE"`
 	Strict      bool   `arg:"env" yaml:"strict"`
 	Timeout     uint   `arg:"env" yaml:"timeout"`
+	Trace       string `arg:"env" yaml:"trace"`
 	Update      bool
 	Version     bool `arg:"-v"`
 }
@@ -116,6 +117,7 @@ func Help() {
 		"  --set-size      User-defined set size for --update and --delete (must be > 0)\n"+
 		"  --strict        Error if query or --delete does not match entities\n"+
 		"  --timeout       API timeout, milliseconds (default: %d)\n"+
+		"  --trace         Comma-separated key=val pairs for server metrics\n"+
 		"  --update        Apply patches to one entity by id\n"+
 		"  --version       Print version\n\n",
 		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_TIMEOUT)

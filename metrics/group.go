@@ -10,9 +10,9 @@ type Group struct {
 
 var _ = &Group{} // ensure Group implements Metrics
 
-func NewGroup(names []string, store Store) Metrics {
-	groups := make([]*entityTypeMetrics, len(names))
-	for i, groupName := range names {
+func NewGroup(groupNames []string, store Store) Metrics {
+	groups := make([]*entityTypeMetrics, len(groupNames))
+	for i, groupName := range groupNames {
 		sm := store.Get(groupName)
 		if sm == nil {
 			sm = NewMetrics()

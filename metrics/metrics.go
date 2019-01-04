@@ -79,6 +79,8 @@ const (
 	DbError
 	APIError
 	ClientError
+
+	CDCClients
 )
 
 type Metrics interface {
@@ -114,6 +116,7 @@ var _ = &metrics{} // ensure metrics implements Metrics
 type metrics struct {
 	global *globalMetrics
 	entity map[string]*entityMetrics
+	cdc    *cdcMetrics
 	*sync.Mutex
 	report etre.MetricsReport
 }
@@ -128,7 +131,6 @@ type entityMetrics struct {
 	query *queryMetrics
 	label map[string]*labelMetrics
 	trace map[string]map[string]gm.Counter
-	cdc   *cdcMetrics
 }
 
 type queryMetrics struct {
@@ -168,11 +170,15 @@ func NewMetrics() *metrics {
 			APIError:    gm.NewCounter(),
 			ClientError: gm.NewCounter(),
 		},
+		cdc: &cdcMetrics{
+			Clients: gm.NewCounter(),
+		},
 		entity: map[string]*entityMetrics{},
 		Mutex:  &sync.Mutex{},
 		report: etre.MetricsReport{
 			Global: &etre.MetricsGlobalReport{},
 			Entity: map[string]*etre.MetricsEntityReport{},
+			CDC:    &etre.MetricsCDCReport{},
 		},
 	}
 }
@@ -220,6 +226,8 @@ func (m *metrics) Report() etre.MetricsReport {
 	m.report.Global.DbError = m.global.DbError.Count()
 	m.report.Global.APIError = m.global.APIError.Count()
 	m.report.Global.ClientError = m.global.ClientError.Count()
+
+	m.report.CDC.Clients = m.cdc.Clients.Count()
 
 	for entityType := range m.entity {
 		em := m.entity[entityType]
@@ -332,9 +340,6 @@ func (m *entityTypeMetrics) EntityType(entityType string) {
 		},
 		label: map[string]*labelMetrics{},
 		trace: map[string]map[string]gm.Counter{},
-		cdc: &cdcMetrics{
-			Clients: gm.NewCounter(),
-		},
 	}
 
 	m.report.Entity[entityType] = &etre.MetricsEntityReport{
@@ -378,6 +383,12 @@ func (m *entityTypeMetrics) Inc(mn byte, n int64) {
 		m.em.query.DeleteBulk.Inc(n)
 	case DeleteLabel:
 		m.em.query.DeleteLabel.Inc(n)
+	case CDCClients:
+		if n > 0 {
+			m.cdc.Clients.Inc(n)
+		} else {
+			m.cdc.Clients.Dec(n)
+		}
 	default:
 		errMsg := fmt.Sprintf("non-counter metric number passed to Inc: %d", mn)
 		panic(errMsg)
@@ -433,64 +444,4 @@ func (m *entityTypeMetrics) Trace(trace map[string]string) {
 		}
 		cnt.Inc(1)
 	}
-}
-
-// --------------------------------------------------------------------------
-
-type Factory interface {
-	Make() Metrics
-}
-
-type factory struct{}
-
-func NewFactory() factory {
-	return factory{}
-}
-
-func (f factory) Make() Metrics {
-	return NewMetrics()
-}
-
-type Store interface {
-	Add(m Metrics, name string) error
-	Get(name string) Metrics
-	Names() []string
-}
-
-type memoryStore struct {
-	metrics map[string]Metrics
-	*sync.RWMutex
-}
-
-func NewMemoryStore() Store {
-	return &memoryStore{
-		metrics: map[string]Metrics{},
-		RWMutex: &sync.RWMutex{},
-	}
-}
-
-func (s *memoryStore) Add(m Metrics, name string) error {
-	s.Lock()
-	defer s.Unlock()
-	if _, ok := s.metrics[name]; ok {
-		return fmt.Errorf("metrics for %s already stored", name)
-	}
-	s.metrics[name] = m
-	return nil
-}
-
-func (s *memoryStore) Get(name string) Metrics {
-	s.RLock()
-	defer s.RUnlock()
-	return s.metrics[name]
-}
-
-func (s *memoryStore) Names() []string {
-	s.RLock()
-	names := make([]string, 0, len(s.metrics))
-	for k := range s.metrics {
-		names = append(names, k)
-	}
-	s.RUnlock()
-	return names
 }

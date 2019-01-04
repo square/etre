@@ -8,11 +8,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/config"
 	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
-	"github.com/square/etre/team"
+	"github.com/square/etre/metrics"
 	"github.com/square/etre/test/mock"
 )
 
@@ -22,7 +23,9 @@ type Context struct {
 	EntityValidator entity.Validator
 	CDCStore        cdc.Store
 	FeedFactory     cdc.FeedFactory
-	TeamAuth        team.Authorizer
+	AuthPlugin      auth.Plugin
+	MetricsStore    metrics.Store
+	MetricsFactory  metrics.Factory
 }
 
 func DefaultContext(config config.Config) Context {
@@ -149,15 +152,11 @@ func DefaultContext(config config.Config) Context {
 	entityValidator := entity.NewValidator(config.Entity.Types)
 
 	// //////////////////////////////////////////////////////////////////////
-	// Teams: auth, metrcs, etc.
+	// Auth and metrics
 	// //////////////////////////////////////////////////////////////////////
 
-	var teamAuth team.Authorizer
-	if len(config.Teams) > 0 {
-		teamAuth = team.NewOrgAuthorizer(config.Teams, config.Entity.Types)
-	} else {
-		teamAuth = team.NewAllowAll(config.Entity.Types)
-	}
+	authPlugin := auth.NewManager(nil, auth.AllowAll{})
+	metricsStore := metrics.NewMemoryStore()
 
 	return Context{
 		Config:          config,
@@ -165,6 +164,8 @@ func DefaultContext(config config.Config) Context {
 		EntityValidator: entityValidator,
 		CDCStore:        cdcStore,
 		FeedFactory:     feedFactory,
-		TeamAuth:        teamAuth,
+		AuthPlugin:      authPlugin,
+		MetricsStore:    metricsStore,
+		MetricsFactory:  metrics.GroupFactory{Store: metricsStore},
 	}
 }

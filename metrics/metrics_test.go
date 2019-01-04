@@ -134,7 +134,7 @@ func TestEntityMetrics(t *testing.T) {
 				},
 			},
 		},
-		CDC: nil, // &etre.MetricsCDCReport{},
+		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em.Report()
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -182,7 +182,7 @@ func TestMultipleEntityMetrics(t *testing.T) {
 				Trace: map[string]map[string]int64{},
 			},
 		},
-		CDC: nil, // &etre.MetricsCDCReport{},
+		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em.Report()
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -239,7 +239,7 @@ func TestSharedEntityMetrics(t *testing.T) {
 				Trace: map[string]map[string]int64{},
 			},
 		},
-		CDC: nil, // &etre.MetricsCDCReport{},
+		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em1.Report()
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -275,7 +275,7 @@ func TestMemoryStore(t *testing.T) {
 				Trace: map[string]map[string]int64{},
 			},
 		},
-		CDC: nil, // &etre.MetricsCDCReport{},
+		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em.Report()
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {

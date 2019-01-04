@@ -15,10 +15,11 @@ import (
 	"github.com/square/etre"
 	"github.com/square/etre/api"
 	"github.com/square/etre/app"
+	"github.com/square/etre/auth"
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
+	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
-	"github.com/square/etre/team"
 	"github.com/square/etre/test"
 	"github.com/square/etre/test/mock"
 
@@ -53,6 +54,7 @@ var (
 	es            *mock.EntityStore
 	defaultServer *httptest.Server
 	mu            = &sync.Mutex{}
+	metricsrec    = mock.NewMetricsRecorder()
 )
 
 func setup(t *testing.T) {
@@ -87,12 +89,16 @@ func setup(t *testing.T) {
 			EntityValidator: validate,
 			CDCStore:        nil,
 			FeedFactory:     &mock.FeedFactory{},
-			TeamAuth:        team.NewAllowAll([]string{entityType}),
+			AuthPlugin:      auth.NewAllowAll(),
+			MetricsStore:    nil, // only needed for GET /metrics
+			MetricsFactory:  mock.MetricsFactory{MetricRecorder: metricsrec},
 		}
 		defaultAPI := api.NewAPI(appCtx)
 		defaultServer = httptest.NewServer(defaultAPI)
 		t.Logf("started test HTTP server: %s\n", defaultServer.URL)
 	}
+
+	metricsrec.Reset()
 
 	createIds = nil
 	updateEntities = nil
@@ -165,6 +171,21 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
 		t.Logf("%+v", actual.Error)
+		t.Error(diffs)
+	}
+
+	// Verify proper metrics are incremented: first, API always sets entity type.
+	// Then it increments Query for every query. Since this is a write, +1 to Write.
+	// It's an insert type write, so +1 to Insert. And finally, every query's
+	// reponse time (latency) is recorded.
+	expectMetrics := []mock.MetricMethodArgs{
+		{Method: "EntityType", StringVal: entityType},
+		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
+		{Method: "Inc", Metric: metrics.Write, IntVal: 1},
+		{Method: "Inc", Metric: metrics.Insert, IntVal: 1},
+		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
+	}
+	if diffs := deep.Equal(metricsrec.Called, expectMetrics); diffs != nil {
 		t.Error(diffs)
 	}
 }
@@ -942,7 +963,7 @@ func TestDeleteLabelHandler(t *testing.T) {
 		t.Errorf("got label %s, expected baz", gotLabel)
 	}
 	expectWO := entity.WriteOp{
-		User:       "?",
+		User:       "etre",
 		EntityType: entityType,
 		EntityId:   seedId0,
 	}
