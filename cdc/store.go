@@ -1,7 +1,6 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
-// Package cdc provides interfaces for reading and writing change data capture
-// (CDC) events.
+// Package cdc provides interfaces for reading and writing change data capture (CDC) events.
 package cdc
 
 import (
@@ -191,4 +190,14 @@ func (e ErrWriteEvent) Error() string {
 		msg = fmt.Sprintf("%s (file error: %s)", msg, e.fileError)
 	}
 	return msg
+}
+
+type NoopStore struct{}
+
+func (s NoopStore) Write(e etre.CDCEvent) error {
+	return nil
+}
+
+func (s NoopStore) Read(filter Filter) ([]etre.CDCEvent, error) {
+	return nil, nil
 }

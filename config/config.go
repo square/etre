@@ -12,7 +12,7 @@ import (
 const (
 	DEFAULT_ADDR                  = "127.0.0.1:8050"
 	DEFAULT_DATASOURCE_URL        = "mongodb://localhost:27017"
-	DEFAULT_DB                    = "etre"
+	DEFAULT_DB                    = "etre_dev"
 	DEFAULT_DB_TIMEOUT            = 5000
 	DEFAULT_CDC_COLLECTION        = "" // disabled
 	DEFAULT_CDC_DELAY_COLLECTION  = "cdc_delay"
@@ -27,8 +27,7 @@ const (
 var reservedNames = []string{"entity", "entities"}
 
 func Load(file string) (Config, error) {
-	var err error
-	file, err = filepath.Abs(file)
+	file, err := filepath.Abs(file)
 	if err != nil {
 		return Config{}, err
 	}
@@ -54,20 +53,21 @@ func Load(file string) (Config, error) {
 			StreamerBufferSize: DEFAULT_FEED_BUFFER_SIZE,
 			PollInterval:       DEFAULT_FEED_POLL_INTERVAL,
 		},
+		ACL: ACLConfig{},
 	}
 
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
 		// err includes file name, e.g. "read config file: open <file>: no such file or directory"
-		return config, fmt.Errorf("cannot read config file: %s", err)
+		return Config{}, fmt.Errorf("cannot read config file: %s", err)
 	}
 
 	if err := yaml.Unmarshal(bytes, &config); err != nil {
-		return config, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
+		return Config{}, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
 	}
 
 	if len(config.Entity.Types) == 0 {
-		return config, fmt.Errorf("no entity types specified in %s", file)
+		return Config{}, fmt.Errorf("invalid config: no entity types specified in %s", file)
 	}
 
 	// Ensure no entityType name is a reserved word
@@ -76,7 +76,7 @@ func Load(file string) (Config, error) {
 			if t != r {
 				continue
 			}
-			return config, fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
+			return Config{}, fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
 		}
 	}
 
@@ -122,7 +122,6 @@ type CDCConfig struct {
 	WriteRetryCount int `yaml:"write_retry_count"`
 	// Wait time in milliseconds between write retry events.
 	WriteRetryWait int `yaml:"write_retry_wait"` // milliseconds
-
 	// The collection that delays are stored in.
 	DelayCollection string `yaml:"delay_collection"`
 	// If this value is positive, the delayer will always return a max timestamp
@@ -156,14 +155,13 @@ type ServerConfig struct {
 }
 
 type ACLConfig struct {
-	Strict bool      `yaml:"strict"`
-	Teams  []TeamACL `yaml:"teams"`
+	Roles []ACL `yaml:"roles"`
 }
 
-type TeamACL struct {
-	Name          string   `yaml:"name"`
-	Admin         bool     `yaml:"admin"`
-	Read          []string `yaml:"read"`
-	Write         []string `yaml:"write"`
-	TraceRequired bool     `yaml:"trace_required"`
+type ACL struct {
+	Name              string   `yaml:"name"`
+	Admin             bool     `yaml:"admin"`
+	Read              []string `yaml:"read"`
+	Write             []string `yaml:"write"`
+	TraceKeysRequired []string `yaml:"trace_keys_required"`
 }

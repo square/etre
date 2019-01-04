@@ -317,3 +317,17 @@ func (a *activeChanges) isHead(changeId string) bool {
 func (a *activeChanges) size() int {
 	return len(a.all)
 }
+
+type NoopDelayer struct{}
+
+func (d NoopDelayer) MaxTimestamp() (int64, error) {
+	return 0, nil
+}
+
+func (d NoopDelayer) BeginChange(changeId string) error {
+	return nil
+}
+
+func (d NoopDelayer) EndChange(changeId string) error {
+	return nil
+}

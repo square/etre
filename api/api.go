@@ -4,8 +4,10 @@
 package api
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -28,6 +30,7 @@ import (
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
+	appCtx               app.Context
 	addr                 string
 	es                   entity.Store
 	validate             entity.Validator
@@ -47,11 +50,12 @@ const longQueryPath = etre.API_ROOT + "/query/:type"
 // NewAPI makes a new API.
 func NewAPI(appCtx app.Context) API {
 	api := API{
+		appCtx:               appCtx,
 		addr:                 appCtx.Config.Server.Addr,
 		es:                   appCtx.EntityStore,
 		validate:             appCtx.EntityValidator,
 		ff:                   appCtx.FeedFactory,
-		auth:                 appCtx.AuthPlugin,
+		auth:                 appCtx.Auth,
 		metricsFactory:       appCtx.MetricsFactory,
 		metricsStore:         appCtx.MetricsStore,
 		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,
@@ -233,6 +237,27 @@ func (api API) Use(middleware ...echo.MiddlewareFunc) {
 
 func (api API) Router() *echo.Echo {
 	return api.echo
+}
+
+func (api API) Run() error {
+	addr := api.appCtx.Config.Server.Addr
+	crt := api.appCtx.Config.Server.TLSCert
+	key := api.appCtx.Config.Server.TLSKey
+	if crt != "" && key != "" {
+		log.Printf("Listening on %s with TLS", addr)
+		return http.ListenAndServeTLS(addr, crt, key, api)
+	}
+	log.Printf("Listening on %s", addr)
+	return http.ListenAndServe(addr, api)
+}
+
+func (api *API) Stop() error {
+	crt := api.appCtx.Config.Server.TLSCert
+	key := api.appCtx.Config.Server.TLSKey
+	if crt != "" && key != "" {
+		return api.echo.TLSServer.Shutdown(context.TODO())
+	}
+	return api.echo.Server.Shutdown(context.TODO())
 }
 
 // -----------------------------------------------------------------------------
