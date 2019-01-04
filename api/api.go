@@ -48,8 +48,8 @@ var reVersion = regexp.MustCompile(`^v?(\d+\.\d+)`)
 const longQueryPath = etre.API_ROOT + "/query/:type"
 
 // NewAPI makes a new API.
-func NewAPI(appCtx app.Context) API {
-	api := API{
+func NewAPI(appCtx app.Context) *API {
+	api := &API{
 		appCtx:               appCtx,
 		addr:                 appCtx.Config.Server.Addr,
 		es:                   appCtx.EntityStore,
@@ -225,21 +225,21 @@ func NewAPI(appCtx app.Context) API {
 }
 
 // ServeHTTP allows the API to statisfy the http.HandlerFunc interface.
-func (api API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	api.echo.ServeHTTP(w, r)
 }
 
 // Use adds middleware to the echo web server in the API. See
 // https://echo.labstack.com/middleware for more details.
-func (api API) Use(middleware ...echo.MiddlewareFunc) {
+func (api *API) Use(middleware ...echo.MiddlewareFunc) {
 	api.echo.Use(middleware...)
 }
 
-func (api API) Router() *echo.Echo {
+func (api *API) Router() *echo.Echo {
 	return api.echo
 }
 
-func (api API) Run() error {
+func (api *API) Run() error {
 	addr := api.appCtx.Config.Server.Addr
 	crt := api.appCtx.Config.Server.TLSCert
 	key := api.appCtx.Config.Server.TLSKey
@@ -264,7 +264,7 @@ func (api *API) Stop() error {
 // Query
 // -----------------------------------------------------------------------------
 
-func (api API) getEntitiesHandler(c echo.Context) error {
+func (api *API) getEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.ReadQuery, 1)
 
@@ -301,11 +301,12 @@ func (api API) getEntitiesHandler(c echo.Context) error {
 	if err != nil {
 		return readError(ErrDb.New(err.Error()))
 	}
+
 	return c.JSON(http.StatusOK, entities)
 }
 
 // Handles an edge case of having a query >2k characters.
-func (api API) queryHandler(c echo.Context) error {
+func (api *API) queryHandler(c echo.Context) error {
 	return echo.NewHTTPError(http.StatusNotImplemented, nil) // @todo
 }
 
@@ -313,7 +314,7 @@ func (api API) queryHandler(c echo.Context) error {
 // Bulk
 // -----------------------------------------------------------------------------
 
-func (api API) postEntitiesHandler(c echo.Context) error {
+func (api *API) postEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 
 	if err := validateParams(c, false); err != nil {
@@ -335,7 +336,7 @@ func (api API) postEntitiesHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, ids, err))
 }
 
-func (api API) putEntitiesHandler(c echo.Context) error {
+func (api *API) putEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 
 	if err := validateParams(c, false); err != nil {
@@ -377,7 +378,7 @@ func (api API) putEntitiesHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
-func (api API) deleteEntitiesHandler(c echo.Context) error {
+func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 
 	if err := validateParams(c, false); err != nil {
@@ -411,7 +412,7 @@ func (api API) deleteEntitiesHandler(c echo.Context) error {
 // -----------------------------------------------------------------------------
 
 // Create one entity
-func (api API) postEntityHandler(c echo.Context) error {
+func (api *API) postEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.Insert, 1)
 
@@ -511,7 +512,7 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 }
 
 // Getting all labels for a single entity.
-func (api API) entityLabelsHandler(c echo.Context) error {
+func (api *API) entityLabelsHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.ReadLabels, 1)
 
@@ -533,7 +534,7 @@ func (api API) entityLabelsHandler(c echo.Context) error {
 }
 
 // Delete one label from one entity by _id
-func (api API) entityDeleteLabelHandler(c echo.Context) error {
+func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.DeleteLabel, 1)
 
@@ -563,7 +564,7 @@ func (api API) entityDeleteLabelHandler(c echo.Context) error {
 // Stats
 // --------------------------------------------------------------------------
 
-func (api API) metricsHandler(c echo.Context) error {
+func (api *API) metricsHandler(c echo.Context) error {
 	groupNames := api.metricsStore.Names()
 	all := etre.Metrics{
 		Groups: make([]etre.MetricsReport, len(groupNames)),
@@ -577,7 +578,7 @@ func (api API) metricsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, all)
 }
 
-func (api API) statusHandler(c echo.Context) error {
+func (api *API) statusHandler(c echo.Context) error {
 	status := map[string]interface{}{
 		"ok":      true,
 		"version": etre.VERSION,
@@ -594,7 +595,7 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func (api API) changesHandler(c echo.Context) error {
+func (api *API) changesHandler(c echo.Context) error {
 	if api.ff == nil {
 		return readError(ErrCDCDisabled)
 	}

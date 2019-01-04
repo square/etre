@@ -1,6 +1,9 @@
 package app
 
 import (
+	"log"
+	"os"
+
 	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/config"
@@ -47,5 +50,28 @@ func Defaults() Context {
 }
 
 func LoadConfig(ctx Context) (config.Config, error) {
+	// No -config file specified, so try a default file if it exists
+	if ctx.ConfigFile == "" {
+		switch os.Getenv("ENVIRONMENT") {
+		case "staging":
+			ctx.ConfigFile = "config/staging.yaml"
+		case "production":
+			ctx.ConfigFile = "config/production.yaml"
+		default:
+			ctx.ConfigFile = "config/development.yaml"
+		}
+		if !exists(ctx.ConfigFile) {
+			log.Printf("No -config file and %s does not exist; using built-in defaults", ctx.ConfigFile)
+			return config.Default(), nil
+		}
+	}
+	log.Printf("Loading -config file %s", ctx.ConfigFile)
 	return config.Load(ctx.ConfigFile)
+}
+
+func exists(file string) bool {
+	if _, err := os.Stat(file); err != nil {
+		return false
+	}
+	return true
 }

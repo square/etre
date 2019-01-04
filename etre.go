@@ -175,10 +175,6 @@ func (e Error) Error() string {
 	return e.String()
 }
 
-func (e Error) IsZero() bool {
-	return e.Message == "" && e.Type == ""
-}
-
 type CDCEvent struct {
 	EventId    string  `json:"eventId" bson:"eventId"`
 	EntityId   string  `json:"entityId" bson:"entityId"`     // _id of entity

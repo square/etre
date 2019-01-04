@@ -3,11 +3,9 @@ package server
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/square/etre"
@@ -23,7 +21,7 @@ import (
 
 type Server struct {
 	appCtx app.Context
-	api    api.API
+	api    *api.API
 }
 
 func NewServer(appCtx app.Context) *Server {
@@ -32,31 +30,15 @@ func NewServer(appCtx app.Context) *Server {
 	}
 }
 
-func (s *Server) Boot() error {
+func (s *Server) Boot(configFile string) error {
 	log.SetFlags(log.Lshortfile | log.Ldate | log.Lmicroseconds)
 	log.Printf("Etre %s\n", etre.VERSION)
 
-	switch len(os.Args) {
-	case 2:
-		s.appCtx.ConfigFile = os.Args[1]
-	case 1:
-		switch os.Getenv("ENVIRONMENT") {
-		case "staging":
-			s.appCtx.ConfigFile = "config/staging.yaml"
-		case "production":
-			s.appCtx.ConfigFile = "config/production.yaml"
-		default:
-			s.appCtx.ConfigFile = "config/development.yaml"
-		}
-	default:
-		log.Printf("unknown args after config file: %s", strings.Join(os.Args[2:], " "))
-		log.Fatalf("usage: %s [config_file]", os.Args[0])
-	}
-
 	// Load config file
+	s.appCtx.ConfigFile = configFile
 	cfg, err := s.appCtx.Hooks.LoadConfig(s.appCtx)
 	if err != nil {
-		return fmt.Errorf("error loading config: %s", err)
+		log.Fatal(err)
 	}
 	s.appCtx.Config = cfg
 
@@ -94,6 +76,13 @@ func (s *Server) Boot() error {
 	}
 
 	conn := db.NewConnector(cfg.Datasource.URL, cfg.Datasource.Timeout, tlsConfig, dbCredentials)
+
+	// Verify we can connect to the db.
+	// @todo: removing this causes mgo panic "Session already closed" after 1st query
+	if _, err = conn.Connect(); err != nil {
+		log.Fatalf("cannot connect to %s: %s", cfg.Datasource.URL, err)
+	}
+	log.Printf("Connected to %s", cfg.Datasource.URL)
 
 	// //////////////////////////////////////////////////////////////////////
 	// CDC Store, Delayer, and Poller (if enabled)
@@ -227,7 +216,7 @@ func (s *Server) Stop() error {
 	return err
 }
 
-func (s *Server) API() api.API {
+func (s *Server) API() *api.API {
 	return s.api
 }
 

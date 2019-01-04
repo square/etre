@@ -363,8 +363,8 @@ func apiError(resp *http.Response, bytes []byte) error {
 	if err := json.Unmarshal(bytes, &errResp); err != nil {
 		return fmt.Errorf("json.Unmarshal: %s", err)
 	}
-	if errResp.IsZero() {
-		return fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
+	if errResp.Type == "" {
+		return fmt.Errorf("API error: HTTP status %d, response: %s", resp.StatusCode, string(bytes))
 	}
 	return fmt.Errorf("error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 }

@@ -22,17 +22,16 @@ const (
 	DEFAULT_CDC_STATIC_DELAY      = -1 // if negative, system will use a dynamic delayer
 	DEFAULT_FEED_BUFFER_SIZE      = 100
 	DEFAULT_FEED_POLL_INTERVAL    = 2000
+	DEFAULT_ENTITY_TYPE           = "host"
 )
 
 var reservedNames = []string{"entity", "entities"}
 
-func Load(file string) (Config, error) {
-	file, err := filepath.Abs(file)
-	if err != nil {
-		return Config{}, err
-	}
-
-	config := Config{
+func Default() Config {
+	return Config{
+		Entity: EntityConfig{
+			Types: []string{DEFAULT_ENTITY_TYPE},
+		},
 		Server: ServerConfig{
 			Addr: DEFAULT_ADDR,
 		},
@@ -55,6 +54,13 @@ func Load(file string) (Config, error) {
 		},
 		ACL: ACLConfig{},
 	}
+}
+
+func Load(file string) (Config, error) {
+	file, err := filepath.Abs(file)
+	if err != nil {
+		return Config{}, err
+	}
 
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -62,6 +68,7 @@ func Load(file string) (Config, error) {
 		return Config{}, fmt.Errorf("cannot read config file: %s", err)
 	}
 
+	config := Default()
 	if err := yaml.Unmarshal(bytes, &config); err != nil {
 		return Config{}, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
 	}
