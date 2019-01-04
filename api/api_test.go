@@ -89,7 +89,7 @@ func setup(t *testing.T) {
 			EntityValidator: validate,
 			CDCStore:        nil,
 			FeedFactory:     &mock.FeedFactory{},
-			AuthPlugin:      auth.NewAllowAll(),
+			Auth:            auth.NewManager(nil, auth.NewAllowAll()),
 			MetricsStore:    nil, // only needed for GET /metrics
 			MetricsFactory:  mock.MetricsFactory{MetricRecorder: metricsrec},
 		}

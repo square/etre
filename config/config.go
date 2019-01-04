@@ -153,10 +153,6 @@ type ServerConfig struct {
 	TLSKey  string `yaml:"tls_key"`
 	TLSCA   string `yaml:"tls_ca"`
 
-	// Etre will look at this HTTP header to get the username of the requestor of
-	// all API calls.
-	UsernameHeader string `yaml:"username_header"`
-
 	// If client does not set X-Etre-Version, default to this version.
 	DefaultClientVersion string `yaml:"default_client_version"`
 }

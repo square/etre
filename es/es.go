@@ -187,13 +187,11 @@ func Run(ctx app.Context) {
 				os.Exit(1)
 			}
 			if p[0] == "" {
-				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' has empty key\n",
-					ctx.Options.Trace, kv, len(p), p)
+				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' has empty key\n", ctx.Options.Trace, kv)
 				os.Exit(1)
 			}
 			if p[1] == "" {
-				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' has empty value\n",
-					ctx.Options.Trace, kv, len(p), p)
+				fmt.Fprintf(os.Stderr, "Invalid trace string: '%s': key-value pair '%s' has empty value\n", ctx.Options.Trace, kv)
 				os.Exit(1)
 			}
 		}

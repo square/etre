@@ -137,12 +137,9 @@ func NewAPI(appCtx app.Context) *API {
 					}
 
 					// All writes require a write op
-					wo := writeOp(c)
+					wo := writeOp(c, caller)
 					if err := api.validate.WriteOp(wo); err != nil {
 						return c.JSON(api.WriteResult(c, nil, err))
-					}
-					if wo.User == "" {
-						wo.User = caller.Name
 					}
 					c.Set("wo", wo)
 					if wo.SetOp != "" {
@@ -766,16 +763,9 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 	return httpStatus, wr
 }
 
-func writeOp(c echo.Context) entity.WriteOp {
-	username := ""
-	if val := c.Get("username"); val != nil {
-		if u, ok := val.(string); ok {
-			username = u
-		}
-	}
-
+func writeOp(c echo.Context, caller auth.Caller) entity.WriteOp {
 	wo := entity.WriteOp{
-		User:       username,
+		User:       caller.Name,
 		EntityType: c.Param("type"),
 		EntityId:   c.Param("id"),
 	}
