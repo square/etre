@@ -25,6 +25,7 @@ const (
 	DEFAULT_FEED_BUFFER_SIZE      = 100
 	DEFAULT_FEED_POLL_INTERVAL    = 2000
 	DEFAULT_ENTITY_TYPE           = "host"
+	DEFAULT_QUERY_LATENCY_SLA     = "1s"
 )
 
 var reservedNames = []string{"entity", "entities"}
@@ -54,8 +55,10 @@ func Default() Config {
 			StreamerBufferSize: DEFAULT_FEED_BUFFER_SIZE,
 			PollInterval:       DEFAULT_FEED_POLL_INTERVAL,
 		},
-		ACL:     ACLConfig{},
-		Metrics: MetricsConfig{},
+		ACL: ACLConfig{},
+		Metrics: MetricsConfig{
+			QueryLatencySLA: DEFAULT_QUERY_LATENCY_SLA,
+		},
 	}
 }
 
