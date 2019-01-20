@@ -52,7 +52,8 @@ func Default() Config {
 			StreamerBufferSize: DEFAULT_FEED_BUFFER_SIZE,
 			PollInterval:       DEFAULT_FEED_POLL_INTERVAL,
 		},
-		ACL: ACLConfig{},
+		ACL:     ACLConfig{},
+		Metrics: MetricsConfig{},
 	}
 }
 
@@ -97,6 +98,7 @@ type Config struct {
 	CDC        CDCConfig        `yaml:"cdc"`
 	Feed       FeedConfig       `yaml:"feed"`
 	ACL        ACLConfig        `yaml:"acl"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
 }
 
 type DatasourceConfig struct {
@@ -167,4 +169,8 @@ type ACL struct {
 	Read              []string `yaml:"read"`
 	Write             []string `yaml:"write"`
 	TraceKeysRequired []string `yaml:"trace_keys_required"`
+}
+
+type MetricsConfig struct {
+	QueryLatencySLA string `yaml:"query_latency_sla"` // duration string
 }

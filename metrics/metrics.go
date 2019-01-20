@@ -12,44 +12,47 @@ import (
 	"github.com/square/etre"
 )
 
+var (
+	defaultSampleSize int = 2000 // unique values, ~16 KiB per metric
+)
+
 // See ../metrics.go for docs of each metric. The number/order of these
 // does not matter. They are const numbers only to avoid typos and enable
 // compile-time checking, e.g. m.Inc(metrics.Reed, 1) will cause error
 // "undefined: metrics.Reed". Implementations of Metrics must ensure that
 // metric X = etre.MetricReport.X.
 const (
-	Query        byte = iota // counter
-	SetOp                    // counter
-	Labels                   // histogram
-	LatencyMs                // histogram
-	MissSLA                  // counter
-	Read                     // counter
-	ReadQuery                // counter
-	ReadId                   // counter
-	ReadLabels               // counter
-	Write                    // counter
-	CreateOne                // counter
-	CreateMany               // counter
-	CreateBulk               // histogram
-	UpdateId                 // counter
-	UpdateQuery              // counter
-	UpdateBulk               // histogram
-	DeleteId                 // counter
-	DeleteQuery              // counter
-	DeleteBulk               // histogram
-	DeleteLabel              // counter
-	LabelRead                // counter (per-label)
-	LabelUpdate              // counter (per-label)
-	LabelDelete              // counter (per-label)
-	DbError                  // counter (global)
-	APIError                 // counter (global)
-	ClientError              // counter (global)
-	CDCClients               // counter (global)
-	Unauthorized             // counter (global) HTTP 401
-	Forbidden                // counter (global) HTTP 403
-	Created                  // counter
-	Updated                  // counter
-	Deleted                  // counter
+	Query       byte = iota // counter
+	SetOp                   // counter
+	Labels                  // histogram
+	LatencyMs               // histogram
+	MissSLA                 // counter
+	Read                    // counter
+	ReadQuery               // counter
+	ReadId                  // counter
+	ReadMatch               // histogram
+	ReadLabels              // counter
+	Write                   // counter
+	CreateOne               // counter
+	CreateMany              // counter
+	CreateBulk              // histogram
+	UpdateId                // counter
+	UpdateQuery             // counter
+	UpdateBulk              // histogram
+	DeleteId                // counter
+	DeleteQuery             // counter
+	DeleteBulk              // histogram
+	DeleteLabel             // counter
+	LabelRead               // counter (per-label)
+	LabelUpdate             // counter (per-label)
+	LabelDelete             // counter (per-label)
+	DbError                 // counter (global)
+	APIError                // counter (global)
+	ClientError             // counter (global)
+	CDCClients              // counter (global)
+	Created                 // counter
+	Updated                 // counter
+	Deleted                 // counter
 )
 
 // Metrics abstracts how metrics are stored and sampled.
@@ -92,11 +95,9 @@ type metrics struct {
 }
 
 type globalMetrics struct {
-	DbError      gm.Counter
-	APIError     gm.Counter
-	ClientError  gm.Counter
-	Unauthorized gm.Counter
-	Forbidden    gm.Counter
+	DbError     gm.Counter
+	APIError    gm.Counter
+	ClientError gm.Counter
 }
 
 type entityMetrics struct {
@@ -110,6 +111,7 @@ type queryMetrics struct {
 	Read        gm.Counter
 	ReadQuery   gm.Counter
 	ReadId      gm.Counter
+	ReadMatch   gm.Histogram
 	ReadLabels  gm.Counter
 	Write       gm.Counter
 	CreateOne   gm.Counter
@@ -144,11 +146,9 @@ type cdcMetrics struct {
 func NewMetrics() *metrics {
 	return &metrics{
 		global: &globalMetrics{
-			DbError:      gm.NewCounter(),
-			APIError:     gm.NewCounter(),
-			ClientError:  gm.NewCounter(),
-			Unauthorized: gm.NewCounter(),
-			Forbidden:    gm.NewCounter(),
+			DbError:     gm.NewCounter(),
+			APIError:    gm.NewCounter(),
+			ClientError: gm.NewCounter(),
 		},
 		cdc: &cdcMetrics{
 			Clients: gm.NewCounter(),
@@ -183,10 +183,6 @@ func (m *metrics) IncError(mn byte) {
 		m.global.APIError.Inc(1)
 	case ClientError:
 		m.global.ClientError.Inc(1)
-	case Unauthorized:
-		m.global.Unauthorized.Inc(1)
-	case Forbidden:
-		m.global.Forbidden.Inc(1)
 	default:
 		errMsg := fmt.Sprintf("non-counter metric number passed to IncError: %d", mn)
 		panic(errMsg)
@@ -210,8 +206,6 @@ func (m *metrics) Report() etre.MetricsReport {
 	m.report.Global.DbError = m.global.DbError.Count()
 	m.report.Global.APIError = m.global.APIError.Count()
 	m.report.Global.ClientError = m.global.ClientError.Count()
-	m.report.Global.Unauthorized = m.global.Unauthorized.Count()
-	m.report.Global.Forbidden = m.global.Forbidden.Count()
 
 	m.report.CDC.Clients = m.cdc.Clients.Count()
 
@@ -238,6 +232,9 @@ func (m *metrics) Report() etre.MetricsReport {
 		er.Query.Created = em.query.Created.Count()
 		er.Query.Updated = em.query.Updated.Count()
 		er.Query.Deleted = em.query.Deleted.Count()
+
+		qr.ReadMatch_min, qr.ReadMatch_max, qr.ReadMatch_avg, qr.ReadMatch_med = minMaxAvgMed(em.query.ReadMatch)
+		em.query.ReadMatch.Clear()
 
 		qr.CreateBulk_min, qr.CreateBulk_max, qr.CreateBulk_avg, qr.CreateBulk_med = minMaxAvgMed(em.query.CreateBulk)
 		em.query.CreateBulk.Clear()
@@ -317,17 +314,18 @@ func (m *entityTypeMetrics) EntityType(entityType string) {
 			Read:        gm.NewCounter(),
 			ReadQuery:   gm.NewCounter(),
 			ReadId:      gm.NewCounter(),
+			ReadMatch:   gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
 			ReadLabels:  gm.NewCounter(),
 			Write:       gm.NewCounter(),
 			CreateOne:   gm.NewCounter(),
 			CreateMany:  gm.NewCounter(),
-			CreateBulk:  gm.NewHistogram(gm.NewUniformSample(1000)),
+			CreateBulk:  gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
 			UpdateId:    gm.NewCounter(),
 			UpdateQuery: gm.NewCounter(),
-			UpdateBulk:  gm.NewHistogram(gm.NewUniformSample(1000)),
+			UpdateBulk:  gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
 			DeleteId:    gm.NewCounter(),
 			DeleteQuery: gm.NewCounter(),
-			DeleteBulk:  gm.NewHistogram(gm.NewUniformSample(1000)),
+			DeleteBulk:  gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
 			DeleteLabel: gm.NewCounter(),
 			SetOp:       gm.NewCounter(),
 			Created:     gm.NewCounter(),
@@ -436,6 +434,8 @@ func (m *entityTypeMetrics) Val(mn byte, n int64) {
 		m.em.query.Latency.Update(n)
 	case Labels:
 		m.em.query.Labels.Update(n)
+	case ReadMatch:
+		m.em.query.ReadMatch.Update(n)
 	case CreateBulk:
 		m.em.query.CreateBulk.Update(n)
 	case UpdateBulk:

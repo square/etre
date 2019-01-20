@@ -39,6 +39,7 @@ type API struct {
 	metricsStore         metrics.Store
 	metricsFactory       metrics.Factory
 	defaultClientVersion string
+	queryLatencySLA      time.Duration
 	// --
 	echo *echo.Echo
 }
@@ -49,6 +50,7 @@ const longQueryPath = etre.API_ROOT + "/query/:type"
 
 // NewAPI makes a new API.
 func NewAPI(appCtx app.Context) *API {
+	queryLatencySLA, _ := time.ParseDuration(appCtx.Config.Metrics.QueryLatencySLA)
 	api := &API{
 		appCtx:               appCtx,
 		addr:                 appCtx.Config.Server.Addr,
@@ -59,6 +61,7 @@ func NewAPI(appCtx app.Context) *API {
 		metricsFactory:       appCtx.MetricsFactory,
 		metricsStore:         appCtx.MetricsStore,
 		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,
+		queryLatencySLA:      queryLatencySLA,
 		// --
 		echo: echo.New(),
 	}
@@ -129,7 +132,7 @@ func NewAPI(appCtx app.Context) *API {
 						return readError(err)
 					}
 					if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
-						gm.IncError(metrics.Forbidden)
+						// @todo gm.IncError(metrics.Forbidden)
 						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
 					}
 				} else {
@@ -150,7 +153,7 @@ func NewAPI(appCtx app.Context) *API {
 					}
 
 					if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_WRITE}); err != nil {
-						gm.IncError(metrics.Forbidden)
+						// @todo gm.IncError(metrics.Forbidden)
 						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
 					}
 				}
@@ -209,15 +212,14 @@ func NewAPI(appCtx app.Context) *API {
 
 			// Record query latency (response time) in milliseconds
 			t0 := c.Get("t0").(time.Time) // query start time
-			queryLatencyMs := int64(time.Now().Sub(t0) / time.Millisecond)
+			queryLatency := time.Now().Sub(t0)
 			gm := c.Get("gm").(metrics.Metrics)
-			gm.Val(metrics.LatencyMs, queryLatencyMs)
+			gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
 
-			// @todo
 			// Did the query take too long (miss SLA)?
-			//if t.QueryLatencySLA > 0 && uint(queryLatencyMs) > t.QueryLatencySLA {
-			//	gm.Inc(metrics.MissSLA, 1)
-			//}
+			if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
+				gm.Inc(metrics.MissSLA, 1)
+			}
 			return nil
 		}
 	}))
@@ -302,7 +304,7 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 	if err != nil {
 		return readError(ErrDb.New(err.Error()))
 	}
-
+	gm.Val(metrics.ReadMatch, int64(len(entities)))
 	return c.JSON(http.StatusOK, entities)
 }
 
@@ -370,6 +372,11 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	}
 	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
+	}
+
+	// Label metrics (update)
+	for label := range patch {
+		gm.IncLabel(metrics.LabelUpdate, label)
 	}
 
 	// Patch all entities matching query
@@ -489,6 +496,11 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	}
 	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
+	}
+
+	// Label metrics (update)
+	for label := range patch {
+		gm.IncLabel(metrics.LabelUpdate, label)
 	}
 
 	// Patch one entity by ID

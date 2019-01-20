@@ -35,13 +35,16 @@ func TestEntityMetrics(t *testing.T) {
 	em.Inc(metrics.ReadId, 105)
 	em.Inc(metrics.ReadLabels, 106)
 	em.Inc(metrics.Write, 107)
-	em.Inc(metrics.Insert, 108)
-	em.Inc(metrics.InsertBulk, 109)
-	em.Inc(metrics.Update, 110)
-	em.Inc(metrics.UpdateBulk, 111)
-	em.Inc(metrics.Delete, 112)
-	em.Inc(metrics.DeleteBulk, 113)
+	em.Inc(metrics.CreateOne, 108)
+	em.Inc(metrics.CreateMany, 115)
+	em.Inc(metrics.UpdateId, 110)
+	em.Inc(metrics.UpdateQuery, 116)
+	em.Inc(metrics.DeleteId, 112)
+	em.Inc(metrics.DeleteQuery, 117)
 	em.Inc(metrics.DeleteLabel, 114)
+	em.Inc(metrics.Created, 118)
+	em.Inc(metrics.Updated, 119)
+	em.Inc(metrics.Deleted, 120)
 
 	em.IncLabel(metrics.LabelRead, "lr")
 	em.IncLabel(metrics.LabelUpdate, "lu")
@@ -57,6 +60,11 @@ func TestEntityMetrics(t *testing.T) {
 	em.IncError(metrics.DbError)
 	em.IncError(metrics.APIError)
 	em.IncError(metrics.ClientError)
+
+	em.Val(metrics.ReadMatch, 30)
+	em.Val(metrics.CreateBulk, 40)
+	em.Val(metrics.UpdateBulk, 50)
+	em.Val(metrics.DeleteBulk, 60)
 
 	em.Val(metrics.LatencyMs, 250) // ms
 	em.Val(metrics.Labels, 5)
@@ -90,14 +98,30 @@ func TestEntityMetrics(t *testing.T) {
 					Read:           103,
 					ReadQuery:      104,
 					ReadId:         105,
+					ReadMatch_min:  30,
+					ReadMatch_max:  30,
+					ReadMatch_avg:  30,
+					ReadMatch_med:  30,
 					ReadLabels:     106,
 					Write:          107,
-					Insert:         108,
-					InsertBulk:     109,
-					Update:         110,
-					UpdateBulk:     111,
-					Delete:         112,
-					DeleteBulk:     113,
+					CreateOne:      108,
+					CreateMany:     115,
+					CreateBulk_min: 40,
+					CreateBulk_max: 40,
+					CreateBulk_avg: 40,
+					CreateBulk_med: 40,
+					UpdateId:       110,
+					UpdateQuery:    116,
+					UpdateBulk_min: 50,
+					UpdateBulk_max: 50,
+					UpdateBulk_avg: 50,
+					UpdateBulk_med: 50,
+					DeleteId:       112,
+					DeleteQuery:    117,
+					DeleteBulk_min: 60,
+					DeleteBulk_max: 60,
+					DeleteBulk_avg: 60,
+					DeleteBulk_med: 60,
 					DeleteLabel:    114,
 					Labels_min:     5,
 					Labels_max:     20,
@@ -106,6 +130,9 @@ func TestEntityMetrics(t *testing.T) {
 					LatencyMs_max:  250,
 					LatencyMs_p99:  250,
 					LatencyMs_p999: 250,
+					Created:        118,
+					Updated:        119,
+					Deleted:        120,
 				},
 				Label: map[string]*etre.MetricsLabelReport{
 					"lr": &etre.MetricsLabelReport{

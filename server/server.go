@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -38,7 +39,7 @@ func (s *Server) Boot(configFile string) error {
 	s.appCtx.ConfigFile = configFile
 	cfg, err := s.appCtx.Hooks.LoadConfig(s.appCtx)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("error loading config: %s", err)
 	}
 	s.appCtx.Config = cfg
 
@@ -49,12 +50,11 @@ func (s *Server) Boot(configFile string) error {
 	if cfg.Datasource.TLSCert != "" && cfg.Datasource.TLSKey != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.Datasource.TLSCert, cfg.Datasource.TLSKey)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-
 		caCert, err := ioutil.ReadFile(cfg.Datasource.TLSCA)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
@@ -80,7 +80,7 @@ func (s *Server) Boot(configFile string) error {
 	// Verify we can connect to the db.
 	// @todo: removing this causes mgo panic "Session already closed" after 1st query
 	if _, err = conn.Connect(); err != nil {
-		log.Fatalf("cannot connect to %s: %s", cfg.Datasource.URL, err)
+		return fmt.Errorf("cannot connect to %s: %s", cfg.Datasource.URL, err)
 	}
 	log.Printf("Connected to %s", cfg.Datasource.URL)
 
@@ -172,7 +172,7 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	acls, err := MapConfigACLRoles(cfg.ACL.Roles)
 	if err != nil {
-		log.Fatalf("invalid ACL role: %s", err)
+		return fmt.Errorf("invalid ACL role: %s", err)
 	}
 	s.appCtx.Auth = auth.NewManager(acls, s.appCtx.Plugins.Auth)
 
@@ -181,6 +181,10 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	s.appCtx.MetricsStore = metrics.NewMemoryStore()
 	s.appCtx.MetricsFactory = metrics.GroupFactory{Store: s.appCtx.MetricsStore}
+
+	if _, err := time.ParseDuration(s.appCtx.Config.Metrics.QueryLatencySLA); err != nil {
+		return fmt.Errorf("invalid config.metrics.query_latency_sla: %s: %s", s.appCtx.Config.Metrics.QueryLatencySLA, err)
+	}
 
 	// //////////////////////////////////////////////////////////////////////
 	// API

@@ -13,11 +13,9 @@ type MetricsReport struct {
 }
 
 type MetricsGlobalReport struct {
-	DbError      int64 `json:"db-error"`
-	APIError     int64 `json:"api-error"`
-	ClientError  int64 `json:"client-error"`
-	Unauthorized int64 `json:"unauthorized"` // HTTP status 401
-	Forbidden    int64 `json:"forbidden"`    // HTTP status 403
+	DbError     int64 `json:"db-error"`
+	APIError    int64 `json:"api-error"`
+	ClientError int64 `json:"client-error"`
 }
 
 type MetricsEntityReport struct {
@@ -29,10 +27,7 @@ type MetricsEntityReport struct {
 
 type MetricsQueryReport struct {
 	// Query counter is the grand total number of queries. Every authenticated
-	// query increments Query by 1. If authentication fails, the global Unauthorized
-	// counter is incremented by 1 instead.
-	//
-	// Query = Read + Write. Query is used to calculate total QPS.
+	// query increments Query by 1. Query = Read + Write.
 	Query int64 `json:"query"`
 
 	// Read counter is the total number of read queries. All read queries
@@ -43,6 +38,7 @@ type MetricsQueryReport struct {
 	// These API endpoints increment ReadQuery by 1:
 	//   GET  /api/v1/entities/:type
 	//   POST /api/v1/query/:type
+	// See Labels stats for the number of labels used in the query.
 	ReadQuery int64 `json:"read-query"`
 
 	// ReadId counter is the number of reads by entity ID. It is a subset of Read.
@@ -54,6 +50,14 @@ type MetricsQueryReport struct {
 	// These API endpoints increment ReadLabels by 1:
 	//   GET /api/v1/entity/:type/:id/labels
 	ReadLabels int64 `json:"read-labels"`
+
+	// ReadMatch stats represent the number of entities that matched the read
+	// query and were returned to the client. See Labels stats for the number
+	// of labels used in the query.
+	ReadMatch_min int64 `json:"read-match_min"`
+	ReadMatch_max int64 `json:"read-match_max"`
+	ReadMatch_avg int64 `json:"read-match_avg"`
+	ReadMatch_med int64 `json:"read-match_med"`
 
 	// Write counter is the grand total number of write queries. All write queries
 	// increment Write by 1. Write = CreateOne + CreateMany + UpdateId +
@@ -84,6 +88,7 @@ type MetricsQueryReport struct {
 	// They are a subset of Write. These API endpoints increment the metrics:
 	//   PUT /api/v1/entity/:type/:id (id)
 	//   PUT /api/v1/entities/:type   (query)
+	// See Labels stats for the number of labels used in the UpdateQuery query.
 	UpdateId    int64 `json:"update-id"`
 	UpdateQuery int64 `json:"update-query"`
 
@@ -100,6 +105,7 @@ type MetricsQueryReport struct {
 	// They are a subset of Write. These API endpoints increment the metrics:
 	//   DELETE /api/v1/entity/:type   (id)
 	//   DELETE /api/v1/entities/:type (query)
+	// See Labels stats for the number of labels used in the DeleteQuery query.
 	DeleteId    int64 `json:"delete-id"`
 	DeleteQuery int64 `json:"delete-query"`
 
@@ -156,7 +162,7 @@ type MetricsQueryReport struct {
 	LatencyMs_p999 float64 `json:"latency-ms_p999"`
 
 	// MissSLA counter is the number of queries with LatencyMs greater than
-	// the configured query latency SLA.
+	// the configured query latency SLA (config.metrics.query_latency_sla).
 	MissSLA int64 `json:"miss-sla"`
 }
 

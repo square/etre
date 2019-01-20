@@ -176,16 +176,19 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 
 	// Verify proper metrics are incremented: first, API always sets entity type.
 	// Then it increments Query for every query. Since this is a write, +1 to Write.
-	// It's an insert type write, so +1 to Create. And finally, every query's
-	// reponse time (latency) is recorded.
+	// It's an insert type write, so +1 to CreateOne. And it's successful so +1 to
+	// Created. And finally, every query's reponse time (latency) is recorded.
 	expectMetrics := []mock.MetricMethodArgs{
 		{Method: "EntityType", StringVal: entityType},
 		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
 		{Method: "Inc", Metric: metrics.Write, IntVal: 1},
-		{Method: "Inc", Metric: metrics.Create, IntVal: 1},
+		{Method: "Inc", Metric: metrics.CreateOne, IntVal: 1},
+		{Method: "Inc", Metric: metrics.Created, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	if diffs := deep.Equal(metricsrec.Called, expectMetrics); diffs != nil {
+		t.Logf("   got: %+v", metricsrec.Called)
+		t.Logf("expect: %+v", expectMetrics)
 		t.Error(diffs)
 	}
 }
