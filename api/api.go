@@ -96,6 +96,7 @@ func NewAPI(appCtx app.Context) *API {
 			m := reVersion.FindAllStringSubmatch(clientVersion, 1) // v0.9.0-alpha -> [ [v0.9, 0.9] ]
 			if len(m) != 1 {
 				errMsg := fmt.Sprintf("invalid client (es) version from %s: '%s', does not match %s (%v)", vf, clientVersion, reVersion, m)
+				log.Println(errMsg)
 				return echo.NewHTTPError(http.StatusBadRequest, errMsg)
 			}
 			c.Set("clientVersion", m[0][1]) // 0.9
@@ -106,6 +107,7 @@ func NewAPI(appCtx app.Context) *API {
 			caller, err := api.auth.Authenticate(c.Request())
 			if err != nil {
 				//gm.IncError(metrics.Unauthorized)
+				log.Printf("Authenticate error: %s", err)
 				return echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("access denied: %s", err.Error()))
 			}
 			c.Set("caller", caller)
@@ -201,6 +203,11 @@ func NewAPI(appCtx app.Context) *API {
 		return func(c echo.Context) error {
 			if err := next(c); err != nil {
 				c.Error(err)
+			}
+
+			// Caller is nil on authenticate error, which means no metrics
+			if c.Get("caller") == nil {
+				return nil
 			}
 
 			// Same as above: if the route has :entity param, it queried the db,
