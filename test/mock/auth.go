@@ -1,3 +1,5 @@
+// Copyright 2019, Square, Inc.
+
 package mock
 
 import (

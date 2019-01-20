@@ -1,4 +1,4 @@
-// Copyright 2019, Square, Inc.
+// Copyright 2018-2019, Square, Inc.
 
 // Package metrics provides Etre metrics.
 package metrics

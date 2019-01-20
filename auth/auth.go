@@ -1,4 +1,4 @@
-// Copyright 2019, Square, Inc.
+// Copyright 2018-2019, Square, Inc.
 
 // Package auth provides team-based authentication and authorization.
 package auth

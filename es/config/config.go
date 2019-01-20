@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 // Package config handles config files, -config, and env vars at startup.
 package config

@@ -1,4 +1,4 @@
-// Copyright 2017-2018, Square, Inc.
+// Copyright 2019, Square, Inc.
 
 // Package app provides app context and extensions: hooks and plugins.
 package app

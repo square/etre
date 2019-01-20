@@ -1,3 +1,5 @@
+// Copyright 2018-2019, Square, Inc.
+
 package etre
 
 type Metrics struct {

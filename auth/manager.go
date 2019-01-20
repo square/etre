@@ -1,4 +1,4 @@
-// Copyright 2018, Square, Inc.
+// Copyright 2018-2019, Square, Inc.
 
 package auth
 

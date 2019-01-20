@@ -1,4 +1,4 @@
-// Copyright 2017-2018, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 // Package entity is a connector to execute CRUD commands for a single entity and
 // many entities on a DB instance.

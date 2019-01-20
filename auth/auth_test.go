@@ -1,3 +1,5 @@
+// Copyright 2018-2019, Square, Inc.
+
 package auth_test
 
 import (
