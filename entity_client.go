@@ -54,7 +54,7 @@ type EntityClient interface {
 	// strings.
 	WithSet(Set) EntityClient
 
-	// WithTrace returns a new EntityClient that sends the trace string every request
+	// WithTrace returns a new EntityClient that sends the trace string with every request
 	// for server-side metrics. The trace string is a comma-separated list of key=value
 	// pairs like: app=foo,host=bar. Invalid trace values are silently ignored by the server.
 	WithTrace(string) EntityClient

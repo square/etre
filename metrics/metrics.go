@@ -1,3 +1,6 @@
+// Copyright 2019, Square, Inc.
+
+// Package metrics provides Etre metrics.
 package metrics
 
 import (
@@ -9,80 +12,47 @@ import (
 	"github.com/square/etre"
 )
 
+// See ../metrics.go for docs of each metric. The number/order of these
+// does not matter. They are const numbers only to avoid typos and enable
+// compile-time checking, e.g. m.Inc(metrics.Reed, 1) will cause error
+// "undefined: metrics.Reed". Implementations of Metrics must ensure that
+// metric X = etre.MetricReport.X.
 const (
-	// Query counter is the grand total number of queries to the server.
-	// It can be used to calculate overall QPS.
-	Query byte = iota
-
-	// SetOp counter is the total number of queries that used a set op.
-	SetOp
-
-	// Labels gauge is the number of labels used by a query. The _min, _max,
-	// _avg, and _med (median) stats are reported for Labels.
-	Labels
-
-	// LatencyMs gauge is response time (in milliseconds) of a query. The _max,
-	// _p99 (99th percentile/top 1%), and _p999 (99.9th percentile/top 0.1%)
-	// stats are reported for LatencyMs.
-	LatencyMs
-
-	// MissSLA counter is the total number of queries with LatencyMs
-	// greater than the configured query latency SLA.
-	MissSLA
-
-	// Read counter is the grand total number of read queries to the server.
-	Read
-
-	// ReadQuery counter is the total number of read queries that selected
-	// entities with a query string (e.g. "host=foo,env=production").
-	// GET /entities and POST /query
-	ReadQuery
-
-	// ReadId counter is the total number of read queries that selected one
-	// entity by its unique _id.
-	// GET /entity/:id
-	ReadId
-
-	// ReadLabels counter is the total number of read label queries.
-	// GET /entity/:id/:label
-	ReadLabels
-
-	// Write counter is the grand total number of write queries to the server.
-	// PUT, POST, DELETE * (except ^)
-	Write
-
-	// POST /entity
-	Insert
-
-	// POST /entities
-	InsertBulk
-
-	// PUT /entity/:id
-	Update
-
-	// PUT /entities?query
-	UpdateBulk
-
-	// DELETE /entity/:id
-	Delete
-
-	// DELETE /entities?query
-	DeleteBulk
-
-	// DELETE /entity/:id/labels/:label
-	DeleteLabel
-
-	LabelRead
-	LabelUpdate
-	LabelDelete
-
-	DbError
-	APIError
-	ClientError
-
-	CDCClients
+	Query        byte = iota // counter
+	SetOp                    // counter
+	Labels                   // histogram
+	LatencyMs                // histogram
+	MissSLA                  // counter
+	Read                     // counter
+	ReadQuery                // counter
+	ReadId                   // counter
+	ReadLabels               // counter
+	Write                    // counter
+	CreateOne                // counter
+	CreateMany               // counter
+	CreateBulk               // histogram
+	UpdateId                 // counter
+	UpdateQuery              // counter
+	UpdateBulk               // histogram
+	DeleteId                 // counter
+	DeleteQuery              // counter
+	DeleteBulk               // histogram
+	DeleteLabel              // counter
+	LabelRead                // counter (per-label)
+	LabelUpdate              // counter (per-label)
+	LabelDelete              // counter (per-label)
+	DbError                  // counter (global)
+	APIError                 // counter (global)
+	ClientError              // counter (global)
+	CDCClients               // counter (global)
+	Unauthorized             // counter (global) HTTP 401
+	Forbidden                // counter (global) HTTP 403
+	Created                  // counter
+	Updated                  // counter
+	Deleted                  // counter
 )
 
+// Metrics abstracts how metrics are stored and sampled.
 type Metrics interface {
 	// EntityType binds the Metrics instance to an entity type before calling
 	// other methods. This method must be called first.
@@ -95,7 +65,7 @@ type Metrics interface {
 	// The metric must be LabelRead, LabelUpdate, or LabelDelete.
 	IncLabel(mn byte, label string)
 
-	// IncError increments the metric name (mn) by 1. The metirc must be one
+	// IncError increments the metric name (mn) by 1. The metric must be one
 	// of the *Error metrics.
 	IncError(mn byte)
 
@@ -111,7 +81,7 @@ type Metrics interface {
 	Report() etre.MetricsReport
 }
 
-var _ = &metrics{} // ensure metrics implements Metrics
+var _ Metrics = &metrics{} // ensure metrics implements Metrics
 
 type metrics struct {
 	global *globalMetrics
@@ -122,9 +92,11 @@ type metrics struct {
 }
 
 type globalMetrics struct {
-	DbError     gm.Counter
-	APIError    gm.Counter
-	ClientError gm.Counter
+	DbError      gm.Counter
+	APIError     gm.Counter
+	ClientError  gm.Counter
+	Unauthorized gm.Counter
+	Forbidden    gm.Counter
 }
 
 type entityMetrics struct {
@@ -140,17 +112,23 @@ type queryMetrics struct {
 	ReadId      gm.Counter
 	ReadLabels  gm.Counter
 	Write       gm.Counter
-	Insert      gm.Counter
-	InsertBulk  gm.Counter
-	Update      gm.Counter
-	UpdateBulk  gm.Counter
-	Delete      gm.Counter
-	DeleteBulk  gm.Counter
+	CreateOne   gm.Counter
+	CreateMany  gm.Counter
+	CreateBulk  gm.Histogram
+	UpdateId    gm.Counter
+	UpdateQuery gm.Counter
+	UpdateBulk  gm.Histogram
+	DeleteId    gm.Counter
+	DeleteQuery gm.Counter
+	DeleteBulk  gm.Histogram
 	DeleteLabel gm.Counter
 	SetOp       gm.Counter
 	Labels      gm.Histogram
 	Latency     gm.Histogram
 	MissSLA     gm.Counter
+	Created     gm.Counter
+	Updated     gm.Counter
+	Deleted     gm.Counter
 }
 
 type labelMetrics struct {
@@ -166,9 +144,11 @@ type cdcMetrics struct {
 func NewMetrics() *metrics {
 	return &metrics{
 		global: &globalMetrics{
-			DbError:     gm.NewCounter(),
-			APIError:    gm.NewCounter(),
-			ClientError: gm.NewCounter(),
+			DbError:      gm.NewCounter(),
+			APIError:     gm.NewCounter(),
+			ClientError:  gm.NewCounter(),
+			Unauthorized: gm.NewCounter(),
+			Forbidden:    gm.NewCounter(),
 		},
 		cdc: &cdcMetrics{
 			Clients: gm.NewCounter(),
@@ -203,6 +183,10 @@ func (m *metrics) IncError(mn byte) {
 		m.global.APIError.Inc(1)
 	case ClientError:
 		m.global.ClientError.Inc(1)
+	case Unauthorized:
+		m.global.Unauthorized.Inc(1)
+	case Forbidden:
+		m.global.Forbidden.Inc(1)
 	default:
 		errMsg := fmt.Sprintf("non-counter metric number passed to IncError: %d", mn)
 		panic(errMsg)
@@ -226,12 +210,15 @@ func (m *metrics) Report() etre.MetricsReport {
 	m.report.Global.DbError = m.global.DbError.Count()
 	m.report.Global.APIError = m.global.APIError.Count()
 	m.report.Global.ClientError = m.global.ClientError.Count()
+	m.report.Global.Unauthorized = m.global.Unauthorized.Count()
+	m.report.Global.Forbidden = m.global.Forbidden.Count()
 
 	m.report.CDC.Clients = m.cdc.Clients.Count()
 
 	for entityType := range m.entity {
 		em := m.entity[entityType]
 		er := m.report.Entity[entityType]
+		qr := er.Query
 
 		er.Query.Query = em.query.Query.Count()
 		er.Query.Read = em.query.Read.Count()
@@ -239,20 +226,29 @@ func (m *metrics) Report() etre.MetricsReport {
 		er.Query.ReadId = em.query.ReadId.Count()
 		er.Query.ReadLabels = em.query.ReadLabels.Count()
 		er.Query.Write = em.query.Write.Count()
-		er.Query.Insert = em.query.Insert.Count()
-		er.Query.InsertBulk = em.query.InsertBulk.Count()
-		er.Query.Update = em.query.Update.Count()
-		er.Query.UpdateBulk = em.query.UpdateBulk.Count()
-		er.Query.Delete = em.query.Delete.Count()
-		er.Query.DeleteBulk = em.query.DeleteBulk.Count()
+		er.Query.CreateOne = em.query.CreateOne.Count()
+		er.Query.CreateMany = em.query.CreateMany.Count()
+		er.Query.UpdateId = em.query.UpdateId.Count()
+		er.Query.UpdateQuery = em.query.UpdateQuery.Count()
+		er.Query.DeleteId = em.query.DeleteId.Count()
+		er.Query.DeleteQuery = em.query.DeleteQuery.Count()
 		er.Query.DeleteLabel = em.query.DeleteLabel.Count()
 		er.Query.SetOp = em.query.SetOp.Count()
 		er.Query.MissSLA = em.query.MissSLA.Count()
+		er.Query.Created = em.query.Created.Count()
+		er.Query.Updated = em.query.Updated.Count()
+		er.Query.Deleted = em.query.Deleted.Count()
 
-		er.Query.Labels_min = em.query.Labels.Min()
-		er.Query.Labels_max = em.query.Labels.Max()
-		er.Query.Labels_avg = int64(em.query.Labels.Mean())
-		er.Query.Labels_med = int64(em.query.Labels.Percentile(0.50))
+		qr.CreateBulk_min, qr.CreateBulk_max, qr.CreateBulk_avg, qr.CreateBulk_med = minMaxAvgMed(em.query.CreateBulk)
+		em.query.CreateBulk.Clear()
+
+		qr.UpdateBulk_min, qr.UpdateBulk_max, qr.UpdateBulk_avg, qr.UpdateBulk_med = minMaxAvgMed(em.query.UpdateBulk)
+		em.query.UpdateBulk.Clear()
+
+		qr.DeleteBulk_min, qr.DeleteBulk_max, qr.DeleteBulk_avg, qr.DeleteBulk_med = minMaxAvgMed(em.query.DeleteBulk)
+		em.query.DeleteBulk.Clear()
+
+		qr.Labels_min, qr.Labels_max, qr.Labels_avg, qr.Labels_med = minMaxAvgMed(em.query.Labels)
 		em.query.Labels.Clear()
 
 		p := em.query.Latency.Percentiles([]float64{0.99, 0.999})
@@ -284,9 +280,13 @@ func (m *metrics) Report() etre.MetricsReport {
 	return m.report
 }
 
+func minMaxAvgMed(h gm.Histogram) (int64, int64, int64, int64) {
+	return h.Min(), h.Max(), int64(h.Mean()), int64(h.Percentile(0.50))
+}
+
 // --------------------------------------------------------------------------
 
-var _ = entityTypeMetrics{} // ensure metrics implements Metrics
+var _ Metrics = &entityTypeMetrics{} // ensure metrics implements Metrics
 
 type entityTypeMetrics struct {
 	*metrics                // embedded, provides implements Metrics except EntityType()
@@ -319,14 +319,20 @@ func (m *entityTypeMetrics) EntityType(entityType string) {
 			ReadId:      gm.NewCounter(),
 			ReadLabels:  gm.NewCounter(),
 			Write:       gm.NewCounter(),
-			Insert:      gm.NewCounter(),
-			InsertBulk:  gm.NewCounter(),
-			Update:      gm.NewCounter(),
-			UpdateBulk:  gm.NewCounter(),
-			Delete:      gm.NewCounter(),
-			DeleteBulk:  gm.NewCounter(),
+			CreateOne:   gm.NewCounter(),
+			CreateMany:  gm.NewCounter(),
+			CreateBulk:  gm.NewHistogram(gm.NewUniformSample(1000)),
+			UpdateId:    gm.NewCounter(),
+			UpdateQuery: gm.NewCounter(),
+			UpdateBulk:  gm.NewHistogram(gm.NewUniformSample(1000)),
+			DeleteId:    gm.NewCounter(),
+			DeleteQuery: gm.NewCounter(),
+			DeleteBulk:  gm.NewHistogram(gm.NewUniformSample(1000)),
 			DeleteLabel: gm.NewCounter(),
 			SetOp:       gm.NewCounter(),
+			Created:     gm.NewCounter(),
+			Updated:     gm.NewCounter(),
+			Deleted:     gm.NewCounter(),
 			Labels: gm.NewHistogram(
 				// Possible values are [1, len(all labels)]. A reasonable
 				// guess is that an entity has < 512 labels.
@@ -369,20 +375,26 @@ func (m *entityTypeMetrics) Inc(mn byte, n int64) {
 		m.em.query.ReadLabels.Inc(n)
 	case Write:
 		m.em.query.Write.Inc(n)
-	case Insert:
-		m.em.query.Insert.Inc(n)
-	case InsertBulk:
-		m.em.query.InsertBulk.Inc(n)
-	case Update:
-		m.em.query.Update.Inc(n)
-	case UpdateBulk:
-		m.em.query.UpdateBulk.Inc(n)
-	case Delete:
-		m.em.query.Delete.Inc(n)
-	case DeleteBulk:
-		m.em.query.DeleteBulk.Inc(n)
+	case CreateOne:
+		m.em.query.CreateOne.Inc(n)
+	case CreateMany:
+		m.em.query.CreateMany.Inc(n)
+	case UpdateId:
+		m.em.query.UpdateId.Inc(n)
+	case UpdateQuery:
+		m.em.query.UpdateQuery.Inc(n)
+	case DeleteId:
+		m.em.query.DeleteId.Inc(n)
+	case DeleteQuery:
+		m.em.query.DeleteQuery.Inc(n)
 	case DeleteLabel:
 		m.em.query.DeleteLabel.Inc(n)
+	case Created:
+		m.em.query.Created.Inc(n)
+	case Updated:
+		m.em.query.Updated.Inc(n)
+	case Deleted:
+		m.em.query.Deleted.Inc(n)
 	case CDCClients:
 		if n > 0 {
 			m.cdc.Clients.Inc(n)
@@ -424,6 +436,12 @@ func (m *entityTypeMetrics) Val(mn byte, n int64) {
 		m.em.query.Latency.Update(n)
 	case Labels:
 		m.em.query.Labels.Update(n)
+	case CreateBulk:
+		m.em.query.CreateBulk.Update(n)
+	case UpdateBulk:
+		m.em.query.UpdateBulk.Update(n)
+	case DeleteBulk:
+		m.em.query.DeleteBulk.Update(n)
 	default:
 		errMsg := fmt.Sprintf("non-gauge metric number passed to Val: %d", mn)
 		panic(errMsg)

@@ -102,6 +102,7 @@ func NewAPI(appCtx app.Context) *API {
 			// -----------------------------------------------------------------------
 			caller, err := api.auth.Authenticate(c.Request())
 			if err != nil {
+				//gm.IncError(metrics.Unauthorized)
 				return echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("access denied: %s", err.Error()))
 			}
 			c.Set("caller", caller)
@@ -109,14 +110,15 @@ func NewAPI(appCtx app.Context) *API {
 			// -----------------------------------------------------------------------
 			// Metrics
 			// -----------------------------------------------------------------------
+			gm := api.metricsFactory.Make(caller.MetricGroups) // metrics
+			c.Set("gm", gm)
+
 			// Routes with an :entity param query the db, so increment query.Metrics
 			// and query.Read or .Write depending on the route. Specific Read/Write
 			// metrics are set in the controller.
-			gm := api.metricsFactory.Make(caller.MetricGroups)
 			if caller.Trace != nil {
 				gm.Trace(caller.Trace)
 			}
-			c.Set("gm", gm)
 			if entityType != "" {
 				gm.EntityType(entityType) // bind to entity type
 				gm.Inc(metrics.Query, 1)  // all queries
@@ -127,7 +129,8 @@ func NewAPI(appCtx app.Context) *API {
 						return readError(err)
 					}
 					if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
-						return echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("access denied: %s", err.Error()))
+						gm.IncError(metrics.Forbidden)
+						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
 					}
 				} else {
 					// Write
@@ -147,7 +150,8 @@ func NewAPI(appCtx app.Context) *API {
 					}
 
 					if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_WRITE}); err != nil {
-						return echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("access denied: %s", err.Error()))
+						gm.IncError(metrics.Forbidden)
+						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
 					}
 				}
 			}
@@ -313,6 +317,7 @@ func (api *API) queryHandler(c echo.Context) error {
 
 func (api *API) postEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
+	gm.Inc(metrics.CreateMany, 1)
 
 	if err := validateParams(c, false); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
@@ -323,18 +328,20 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 	if err := c.Bind(&entities); err != nil {
 		return c.JSON(api.WriteResult(c, nil, ErrInternal.New(err.Error())))
 	}
-	gm.Inc(metrics.InsertBulk, int64(len(entities)))
+	gm.Val(metrics.CreateBulk, int64(len(entities))) // inc before validating
 	if err := api.validate.Entities(entities, entity.VALIDATE_ON_CREATE); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
 	}
 
 	wo := c.Get("wo").(entity.WriteOp)
 	ids, err := api.es.CreateEntities(wo, entities)
+	gm.Inc(metrics.Created, int64(len(ids)))
 	return c.JSON(api.WriteResult(c, ids, err))
 }
 
 func (api *API) putEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
+	gm.Inc(metrics.UpdateQuery, 1)
 
 	if err := validateParams(c, false); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
@@ -361,9 +368,6 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	if err := c.Bind(&patch); err != nil {
 		return c.JSON(api.WriteResult(c, nil, ErrInternal.New(err.Error())))
 	}
-	for label := range patch {
-		gm.IncLabel(metrics.LabelUpdate, label)
-	}
 	if err := api.validate.Entities([]etre.Entity{patch}, entity.VALIDATE_ON_UPDATE); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
 	}
@@ -371,12 +375,14 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	// Patch all entities matching query
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.UpdateEntities(wo, q, patch)
-	gm.Inc(metrics.UpdateBulk, int64(len(entities)))
+	gm.Val(metrics.UpdateBulk, int64(len(entities)))
+	gm.Inc(metrics.Updated, int64(len(entities)))
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
 func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
+	gm.Inc(metrics.DeleteQuery, 1)
 
 	if err := validateParams(c, false); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
@@ -400,7 +406,8 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.DeleteEntities(wo, q)
-	gm.Inc(metrics.DeleteBulk, int64(len(entities)))
+	gm.Val(metrics.DeleteBulk, int64(len(entities)))
+	gm.Inc(metrics.Deleted, int64(len(entities)))
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
@@ -411,7 +418,7 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 // Create one entity
 func (api *API) postEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
-	gm.Inc(metrics.Insert, 1)
+	gm.Inc(metrics.CreateOne, 1)
 
 	if err := validateParams(c, false); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
@@ -430,6 +437,9 @@ func (api *API) postEntityHandler(c echo.Context) error {
 	// Create new entity
 	wo := c.Get("wo").(entity.WriteOp)
 	ids, err := api.es.CreateEntities(wo, entities)
+	if err == nil {
+		gm.Inc(metrics.Created, 1)
+	}
 	return c.JSON(api.WriteResult(c, ids, err))
 }
 
@@ -466,7 +476,7 @@ func (api *API) getEntityHandler(c echo.Context) error {
 // Patch one entity by _id
 func (api *API) putEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
-	gm.Inc(metrics.Update, 1)
+	gm.Inc(metrics.UpdateId, 1)
 
 	if err := validateParams(c, true); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
@@ -487,13 +497,16 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	if err == nil && len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
 	}
+	if len(entities) == 1 {
+		gm.Inc(metrics.Updated, 1)
+	}
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
 // Delete one entity by _id
 func (api *API) deleteEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
-	gm.Inc(metrics.Delete, 1)
+	gm.Inc(metrics.DeleteId, 1)
 
 	if err := validateParams(c, true); err != nil {
 		return c.JSON(api.WriteResult(c, nil, err))
@@ -504,6 +517,9 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 	entities, err := api.es.DeleteEntities(wo, query.IdEqual(wo.EntityId))
 	if err == nil && len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
+	}
+	if len(entities) == 1 {
+		gm.Inc(metrics.Deleted, 1)
 	}
 	return c.JSON(api.WriteResult(c, entities, err))
 }
