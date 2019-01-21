@@ -226,6 +226,10 @@ func (s *Server) API() *api.API {
 	return s.api
 }
 
+func (s *Server) Context() app.Context {
+	return s.appCtx
+}
+
 func MapConfigACLRoles(aclRoles []config.ACL) ([]auth.ACL, error) {
 	acls := make([]auth.ACL, len(aclRoles))
 	for i, acl := range aclRoles {

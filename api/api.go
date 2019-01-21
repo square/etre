@@ -30,8 +30,9 @@ import (
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
-	appCtx               app.Context
 	addr                 string
+	crt                  string
+	key                  string
 	es                   entity.Store
 	validate             entity.Validator
 	ff                   cdc.FeedFactory
@@ -52,8 +53,9 @@ const longQueryPath = etre.API_ROOT + "/query/:type"
 func NewAPI(appCtx app.Context) *API {
 	queryLatencySLA, _ := time.ParseDuration(appCtx.Config.Metrics.QueryLatencySLA)
 	api := &API{
-		appCtx:               appCtx,
 		addr:                 appCtx.Config.Server.Addr,
+		crt:                  appCtx.Config.Server.TLSCert,
+		key:                  appCtx.Config.Server.TLSKey,
 		es:                   appCtx.EntityStore,
 		validate:             appCtx.EntityValidator,
 		ff:                   appCtx.FeedFactory,
@@ -250,21 +252,16 @@ func (api *API) Router() *echo.Echo {
 }
 
 func (api *API) Run() error {
-	addr := api.appCtx.Config.Server.Addr
-	crt := api.appCtx.Config.Server.TLSCert
-	key := api.appCtx.Config.Server.TLSKey
-	if crt != "" && key != "" {
-		log.Printf("Listening on %s with TLS", addr)
-		return http.ListenAndServeTLS(addr, crt, key, api)
+	if api.crt != "" && api.key != "" {
+		log.Printf("Listening on %s with TLS", api.addr)
+		return http.ListenAndServeTLS(api.addr, api.crt, api.key, api)
 	}
-	log.Printf("Listening on %s", addr)
-	return http.ListenAndServe(addr, api)
+	log.Printf("Listening on %s", api.addr)
+	return http.ListenAndServe(api.addr, api)
 }
 
 func (api *API) Stop() error {
-	crt := api.appCtx.Config.Server.TLSCert
-	key := api.appCtx.Config.Server.TLSKey
-	if crt != "" && key != "" {
+	if api.crt != "" && api.key != "" {
 		return api.echo.TLSServer.Shutdown(context.TODO())
 	}
 	return api.echo.Server.Shutdown(context.TODO())
