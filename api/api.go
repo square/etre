@@ -127,9 +127,10 @@ func NewAPI(appCtx app.Context) *API {
 				gm.Trace(caller.Trace)
 			}
 			if entityType != "" {
+				method := c.Request().Method
 				gm.EntityType(entityType) // bind to entity type
 				gm.Inc(metrics.Query, 1)  // all queries
-				if c.Request().Method == "GET" || c.Path() == longQueryPath {
+				if method == "GET" || c.Path() == longQueryPath {
 					// Read
 					gm.Inc(metrics.Read, 1)
 					if err := api.validate.EntityType(entityType); err != nil {
@@ -139,7 +140,7 @@ func NewAPI(appCtx app.Context) *API {
 						// @todo gm.IncError(metrics.Forbidden)
 						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
 					}
-				} else {
+				} else if method == "PUT" || method == "POST" || method == "DELETE" {
 					// Write
 					gm.Inc(metrics.Write, 1)
 					if err := api.validate.EntityType(entityType); err != nil {
