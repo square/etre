@@ -26,6 +26,14 @@
   revision = "e80c3b7ed292b052c7083b6fd7154a8422c33f65"
 
 [[projects]]
+  digest = "1:478107d9a49d18409c05165b66408cd93fbcda9510d2146d4b36725470dabebd"
+  name = "github.com/daniel-nichter/go-metrics"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "474303e9c337b3559d62ca46a518dc3867769ae1"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:76dc72490af7174349349838f2fe118996381b31ea83243812a97e5a0fd5ed55"
   name = "github.com/dgrijalva/jwt-go"
   packages = ["."]
@@ -112,14 +120,6 @@
   version = "v0.0.3"
 
 [[projects]]
-  branch = "master"
-  digest = "1:d38f81081a389f1466ec98192cf9115a82158854d6f01e1c23e2e7554b97db71"
-  name = "github.com/rcrowley/go-metrics"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "3113b8401b8a98917cde58f8bbd42a1b1c03b1fd"
-
-[[projects]]
   digest = "1:2e76a73cb51f42d63a2a1a85b3dc5731fd4faf6821b434bd0ef2c099186031d6"
   name = "github.com/rs/xid"
   packages = ["."]
@@ -180,6 +180,7 @@
   input-imports = [
     "github.com/Sirupsen/logrus",
     "github.com/alexflint/go-arg",
+    "github.com/daniel-nichter/go-metrics",
     "github.com/globalsign/mgo",
     "github.com/globalsign/mgo/bson",
     "github.com/go-test/deep",
@@ -187,7 +188,6 @@
     "github.com/gorilla/websocket",
     "github.com/labstack/echo",
     "github.com/labstack/echo/middleware",
-    "github.com/rcrowley/go-metrics",
     "github.com/rs/xid",
     "gopkg.in/yaml.v2",
   ]

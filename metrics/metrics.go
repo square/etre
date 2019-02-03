@@ -8,12 +8,18 @@ import (
 	"sync"
 	"time"
 
-	gm "github.com/rcrowley/go-metrics"
+	gm "github.com/daniel-nichter/go-metrics"
 	"github.com/square/etre"
 )
 
 var (
-	defaultSampleSize int = 2000 // unique values, ~16 KiB per metric
+	defaultSampleSize int = 2000  // unique values, ~16 KiB per metric
+	latencySampleSize int = 10000 // unique values, ~80 KiB
+)
+
+var (
+	latencyConfig = gm.Config{Percentiles: []float64{0.99, 0.999}}
+	medConfig     = gm.Config{Percentiles: []float64{0.5}}
 )
 
 // See ../metrics.go for docs of each metric. The number/order of these
@@ -95,52 +101,52 @@ type metrics struct {
 }
 
 type globalMetrics struct {
-	DbError     gm.Counter
-	APIError    gm.Counter
-	ClientError gm.Counter
+	DbError     *gm.Counter
+	APIError    *gm.Counter
+	ClientError *gm.Counter
 }
 
 type entityMetrics struct {
 	query *queryMetrics
 	label map[string]*labelMetrics
-	trace map[string]map[string]gm.Counter
+	trace map[string]map[string]*gm.Counter
 }
 
 type queryMetrics struct {
-	Query       gm.Counter
-	Read        gm.Counter
-	ReadQuery   gm.Counter
-	ReadId      gm.Counter
-	ReadMatch   gm.Histogram
-	ReadLabels  gm.Counter
-	Write       gm.Counter
-	CreateOne   gm.Counter
-	CreateMany  gm.Counter
-	CreateBulk  gm.Histogram
-	UpdateId    gm.Counter
-	UpdateQuery gm.Counter
-	UpdateBulk  gm.Histogram
-	DeleteId    gm.Counter
-	DeleteQuery gm.Counter
-	DeleteBulk  gm.Histogram
-	DeleteLabel gm.Counter
-	SetOp       gm.Counter
-	Labels      gm.Histogram
-	Latency     gm.Histogram
-	MissSLA     gm.Counter
-	Created     gm.Counter
-	Updated     gm.Counter
-	Deleted     gm.Counter
+	Query       *gm.Counter
+	Read        *gm.Counter
+	ReadQuery   *gm.Counter
+	ReadId      *gm.Counter
+	ReadMatch   *gm.Histogram
+	ReadLabels  *gm.Counter
+	Write       *gm.Counter
+	CreateOne   *gm.Counter
+	CreateMany  *gm.Counter
+	CreateBulk  *gm.Histogram
+	UpdateId    *gm.Counter
+	UpdateQuery *gm.Counter
+	UpdateBulk  *gm.Histogram
+	DeleteId    *gm.Counter
+	DeleteQuery *gm.Counter
+	DeleteBulk  *gm.Histogram
+	DeleteLabel *gm.Counter
+	SetOp       *gm.Counter
+	Labels      *gm.Histogram
+	Latency     *gm.Histogram
+	MissSLA     *gm.Counter
+	Created     *gm.Counter
+	Updated     *gm.Counter
+	Deleted     *gm.Counter
 }
 
 type labelMetrics struct {
-	Read   gm.Counter
-	Update gm.Counter
-	Delete gm.Counter
+	Read   *gm.Counter
+	Update *gm.Counter
+	Delete *gm.Counter
 }
 
 type cdcMetrics struct {
-	Clients gm.Counter
+	Clients *gm.Counter
 }
 
 func NewMetrics() *metrics {
@@ -178,11 +184,11 @@ func (m *metrics) IncLabel(mn byte, label string) {
 func (m *metrics) IncError(mn byte) {
 	switch mn {
 	case DbError:
-		m.global.DbError.Inc(1)
+		m.global.DbError.Add(1)
 	case APIError:
-		m.global.APIError.Inc(1)
+		m.global.APIError.Add(1)
 	case ClientError:
-		m.global.ClientError.Inc(1)
+		m.global.ClientError.Add(1)
 	default:
 		errMsg := fmt.Sprintf("non-counter metric number passed to IncError: %d", mn)
 		panic(errMsg)
@@ -233,26 +239,16 @@ func (m *metrics) Report() etre.MetricsReport {
 		er.Query.Updated = em.query.Updated.Count()
 		er.Query.Deleted = em.query.Deleted.Count()
 
+		// Histograms
 		qr.ReadMatch_min, qr.ReadMatch_max, qr.ReadMatch_avg, qr.ReadMatch_med = minMaxAvgMed(em.query.ReadMatch)
-		em.query.ReadMatch.Clear()
-
 		qr.CreateBulk_min, qr.CreateBulk_max, qr.CreateBulk_avg, qr.CreateBulk_med = minMaxAvgMed(em.query.CreateBulk)
-		em.query.CreateBulk.Clear()
-
 		qr.UpdateBulk_min, qr.UpdateBulk_max, qr.UpdateBulk_avg, qr.UpdateBulk_med = minMaxAvgMed(em.query.UpdateBulk)
-		em.query.UpdateBulk.Clear()
-
 		qr.DeleteBulk_min, qr.DeleteBulk_max, qr.DeleteBulk_avg, qr.DeleteBulk_med = minMaxAvgMed(em.query.DeleteBulk)
-		em.query.DeleteBulk.Clear()
-
 		qr.Labels_min, qr.Labels_max, qr.Labels_avg, qr.Labels_med = minMaxAvgMed(em.query.Labels)
-		em.query.Labels.Clear()
-
-		p := em.query.Latency.Percentiles([]float64{0.99, 0.999})
-		er.Query.LatencyMs_max = float64(em.query.Latency.Max())
-		er.Query.LatencyMs_p99 = p[0]
-		er.Query.LatencyMs_p999 = p[1]
-		em.query.Latency.Clear()
+		latencySnap := em.query.Latency.Snapshot(true)
+		er.Query.LatencyMs_max = latencySnap.Max
+		er.Query.LatencyMs_p99 = latencySnap.Percentile[0.99]
+		er.Query.LatencyMs_p999 = latencySnap.Percentile[0.999]
 
 		for label, lm := range em.label {
 			lr, ok := er.Label[label]
@@ -277,8 +273,13 @@ func (m *metrics) Report() etre.MetricsReport {
 	return m.report
 }
 
-func minMaxAvgMed(h gm.Histogram) (int64, int64, int64, int64) {
-	return h.Min(), h.Max(), int64(h.Mean()), int64(h.Percentile(0.50))
+func minMaxAvgMed(h *gm.Histogram) (int64, int64, int64, int64) {
+	snap := h.Snapshot(true)
+	var avg int64
+	if snap.N > 0 {
+		avg = int64(snap.Sum / float64(snap.N))
+	}
+	return int64(snap.Min), int64(snap.Max), avg, int64(snap.Percentile[0.50])
 }
 
 // --------------------------------------------------------------------------
@@ -314,36 +315,29 @@ func (m *entityTypeMetrics) EntityType(entityType string) {
 			Read:        gm.NewCounter(),
 			ReadQuery:   gm.NewCounter(),
 			ReadId:      gm.NewCounter(),
-			ReadMatch:   gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
+			ReadMatch:   gm.NewHistogram(medConfig),
 			ReadLabels:  gm.NewCounter(),
 			Write:       gm.NewCounter(),
 			CreateOne:   gm.NewCounter(),
 			CreateMany:  gm.NewCounter(),
-			CreateBulk:  gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
+			CreateBulk:  gm.NewHistogram(medConfig),
 			UpdateId:    gm.NewCounter(),
 			UpdateQuery: gm.NewCounter(),
-			UpdateBulk:  gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
+			UpdateBulk:  gm.NewHistogram(medConfig),
 			DeleteId:    gm.NewCounter(),
 			DeleteQuery: gm.NewCounter(),
-			DeleteBulk:  gm.NewHistogram(gm.NewUniformSample(defaultSampleSize)),
+			DeleteBulk:  gm.NewHistogram(medConfig),
 			DeleteLabel: gm.NewCounter(),
 			SetOp:       gm.NewCounter(),
 			Created:     gm.NewCounter(),
 			Updated:     gm.NewCounter(),
 			Deleted:     gm.NewCounter(),
-			Labels: gm.NewHistogram(
-				// Possible values are [1, len(all labels)]. A reasonable
-				// guess is that an entity has < 512 labels.
-				gm.NewUniformSample(512),
-			),
-			Latency: gm.NewHistogram(
-				// https://www.app-metrics.io/getting-started/reservoir-sampling/
-				gm.NewExpDecaySample(1028, 0.015),
-			),
-			MissSLA: gm.NewCounter(),
+			Labels:      gm.NewHistogram(medConfig),
+			Latency:     gm.NewHistogram(latencyConfig),
+			MissSLA:     gm.NewCounter(),
 		},
 		label: map[string]*labelMetrics{},
-		trace: map[string]map[string]gm.Counter{},
+		trace: map[string]map[string]*gm.Counter{},
 	}
 
 	m.report.Entity[entityType] = &etre.MetricsEntityReport{
@@ -358,47 +352,43 @@ func (m *entityTypeMetrics) EntityType(entityType string) {
 func (m *entityTypeMetrics) Inc(mn byte, n int64) {
 	switch mn {
 	case Query:
-		m.em.query.Query.Inc(n)
+		m.em.query.Query.Add(n)
 	case SetOp:
-		m.em.query.SetOp.Inc(n)
+		m.em.query.SetOp.Add(n)
 	case MissSLA:
-		m.em.query.MissSLA.Inc(n)
+		m.em.query.MissSLA.Add(n)
 	case Read:
-		m.em.query.Read.Inc(n)
+		m.em.query.Read.Add(n)
 	case ReadQuery:
-		m.em.query.ReadQuery.Inc(n)
+		m.em.query.ReadQuery.Add(n)
 	case ReadId:
-		m.em.query.ReadId.Inc(n)
+		m.em.query.ReadId.Add(n)
 	case ReadLabels:
-		m.em.query.ReadLabels.Inc(n)
+		m.em.query.ReadLabels.Add(n)
 	case Write:
-		m.em.query.Write.Inc(n)
+		m.em.query.Write.Add(n)
 	case CreateOne:
-		m.em.query.CreateOne.Inc(n)
+		m.em.query.CreateOne.Add(n)
 	case CreateMany:
-		m.em.query.CreateMany.Inc(n)
+		m.em.query.CreateMany.Add(n)
 	case UpdateId:
-		m.em.query.UpdateId.Inc(n)
+		m.em.query.UpdateId.Add(n)
 	case UpdateQuery:
-		m.em.query.UpdateQuery.Inc(n)
+		m.em.query.UpdateQuery.Add(n)
 	case DeleteId:
-		m.em.query.DeleteId.Inc(n)
+		m.em.query.DeleteId.Add(n)
 	case DeleteQuery:
-		m.em.query.DeleteQuery.Inc(n)
+		m.em.query.DeleteQuery.Add(n)
 	case DeleteLabel:
-		m.em.query.DeleteLabel.Inc(n)
+		m.em.query.DeleteLabel.Add(n)
 	case Created:
-		m.em.query.Created.Inc(n)
+		m.em.query.Created.Add(n)
 	case Updated:
-		m.em.query.Updated.Inc(n)
+		m.em.query.Updated.Add(n)
 	case Deleted:
-		m.em.query.Deleted.Inc(n)
+		m.em.query.Deleted.Add(n)
 	case CDCClients:
-		if n > 0 {
-			m.cdc.Clients.Inc(n)
-		} else {
-			m.cdc.Clients.Dec(n)
-		}
+		m.cdc.Clients.Add(n)
 	default:
 		errMsg := fmt.Sprintf("non-counter metric number passed to Inc: %d", mn)
 		panic(errMsg)
@@ -417,11 +407,11 @@ func (m *entityTypeMetrics) IncLabel(mn byte, label string) {
 	}
 	switch mn {
 	case LabelRead:
-		lm.Read.Inc(1)
+		lm.Read.Add(1)
 	case LabelUpdate:
-		lm.Update.Inc(1)
+		lm.Update.Add(1)
 	case LabelDelete:
-		lm.Delete.Inc(1)
+		lm.Delete.Add(1)
 	default:
 		errMsg := fmt.Sprintf("non-counter metric number passed to IncLabel: %d", mn)
 		panic(errMsg)
@@ -429,19 +419,20 @@ func (m *entityTypeMetrics) IncLabel(mn byte, label string) {
 }
 
 func (m *entityTypeMetrics) Val(mn byte, n int64) {
+	f := float64(n)
 	switch mn {
 	case LatencyMs:
-		m.em.query.Latency.Update(n)
+		m.em.query.Latency.Record(f)
 	case Labels:
-		m.em.query.Labels.Update(n)
+		m.em.query.Labels.Record(f)
 	case ReadMatch:
-		m.em.query.ReadMatch.Update(n)
+		m.em.query.ReadMatch.Record(f)
 	case CreateBulk:
-		m.em.query.CreateBulk.Update(n)
+		m.em.query.CreateBulk.Record(f)
 	case UpdateBulk:
-		m.em.query.UpdateBulk.Update(n)
+		m.em.query.UpdateBulk.Record(f)
 	case DeleteBulk:
-		m.em.query.DeleteBulk.Update(n)
+		m.em.query.DeleteBulk.Record(f)
 	default:
 		errMsg := fmt.Sprintf("non-gauge metric number passed to Val: %d", mn)
 		panic(errMsg)
@@ -452,7 +443,7 @@ func (m *entityTypeMetrics) Trace(trace map[string]string) {
 	for traceMetric, traceValue := range trace {
 		traceValues, ok := m.em.trace[traceMetric]
 		if !ok {
-			traceValues = map[string]gm.Counter{}
+			traceValues = map[string]*gm.Counter{}
 			m.em.trace[traceMetric] = traceValues
 		}
 		cnt, ok := traceValues[traceValue]
@@ -460,6 +451,6 @@ func (m *entityTypeMetrics) Trace(trace map[string]string) {
 			cnt = gm.NewCounter()
 			traceValues[traceValue] = cnt
 		}
-		cnt.Inc(1)
+		cnt.Add(1)
 	}
 }
