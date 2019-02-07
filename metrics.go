@@ -24,7 +24,7 @@ type MetricsEntityReport struct {
 	EntityType string                         `json:"entity-type"`
 	Query      *MetricsQueryReport            `json:"query"`
 	Label      map[string]*MetricsLabelReport `json:"label"`
-	Trace      map[string]map[string]int64    `json:"trace"`
+	Trace      map[string]map[string]int64    `json:"trace,omitempty"`
 }
 
 type MetricsQueryReport struct {

@@ -158,9 +158,8 @@ func Run(ctx app.Context) {
 
 	if ctx.Options.Addr == "" {
 		fmt.Fprintf(os.Stderr, "Etre API address is not set."+
-			" It is best to specify addr in a config file (%s). Or, specify"+
-			" --addr on the command line option or set the ADDR environment"+
-			" variable. Use --ping to test addr when set.\n", config.DEFAULT_CONFIG_FILES)
+			" Set addr in a config file (%s), or specify --addr on the command line,"+
+			" or set the ES_ADDR environment variable.\n", config.DEFAULT_CONFIG_FILES)
 		os.Exit(1)
 	}
 	if ctx.Options.Debug {
@@ -176,6 +175,8 @@ func Run(ctx app.Context) {
 	if set.Size > 0 {
 		ec = ec.WithSet(set)
 	}
+
+	var trace string
 	if ctx.Options.Trace != "" {
 		// Validate --trace because client and server do not
 		keyValPairs := strings.Split(ctx.Options.Trace, ",")
@@ -195,8 +196,14 @@ func Run(ctx app.Context) {
 				os.Exit(1)
 			}
 		}
-		ec = ec.WithTrace(ctx.Options.Trace)
+		trace = ctx.Options.Trace
+	} else {
+		trace = config.DefaultTrace() // user,app,host
 	}
+	if o.Debug {
+		app.Debug("trace: %s", trace)
+	}
+	ec = ec.WithTrace(trace)
 
 	// //////////////////////////////////////////////////////////////////////
 	// Ping

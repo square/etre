@@ -44,6 +44,8 @@ func (m Manager) Authenticate(req *http.Request) (Caller, error) {
 			if len(p) != 2 {
 				continue // bad value, ignore
 			}
+			// Set trace value if not already set by plugin,
+			// i.e. values from plugin takes precedence
 			if _, ok := caller.Trace[p[0]]; ok {
 				continue // already set by plugin, ignore
 			}

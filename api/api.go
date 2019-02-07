@@ -123,13 +123,16 @@ func NewAPI(appCtx app.Context) *API {
 			// Routes with an :entity param query the db, so increment query.Metrics
 			// and query.Read or .Write depending on the route. Specific Read/Write
 			// metrics are set in the controller.
-			if caller.Trace != nil {
-				gm.Trace(caller.Trace)
-			}
 			if entityType != "" {
 				method := c.Request().Method
 				gm.EntityType(entityType) // bind to entity type
-				gm.Inc(metrics.Query, 1)  // all queries
+
+				// auth.Manager extracts trace values from X-Etre-Trace header
+				if caller.Trace != nil {
+					gm.Trace(caller.Trace)
+				}
+
+				gm.Inc(metrics.Query, 1) // all queries
 				if method == "GET" || c.Path() == longQueryPath {
 					// Read
 					gm.Inc(metrics.Read, 1)
@@ -595,13 +598,19 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 // --------------------------------------------------------------------------
 
 func (api *API) metricsHandler(c echo.Context) error {
+	// If &reset={true|false}, reset histogram samples
+	reset := false
+	switch strings.ToLower(c.Param("reset")) {
+	case "yes", "true":
+		reset = true
+	}
 	groupNames := api.metricsStore.Names()
 	all := etre.Metrics{
 		Groups: make([]etre.MetricsReport, len(groupNames)),
 	}
 	for i, name := range groupNames {
 		m := api.metricsStore.Get(name)
-		r := m.Report()
+		r := m.Report(reset)
 		r.Group = name
 		all.Groups[i] = r
 	}

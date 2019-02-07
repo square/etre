@@ -87,7 +87,7 @@ type Metrics interface {
 
 	// Report returns a snapshot of all metrics, calculating stats like average
 	// and percentiles.
-	Report() etre.MetricsReport
+	Report(reset bool) etre.MetricsReport
 }
 
 var _ Metrics = &metrics{} // ensure metrics implements Metrics
@@ -203,7 +203,7 @@ func (m *metrics) Trace(map[string]string) {
 	panic("metrics.Trace() called directly; need to call entityTypeMetrics.Trace()")
 }
 
-func (m *metrics) Report() etre.MetricsReport {
+func (m *metrics) Report(reset bool) etre.MetricsReport {
 	m.Lock()
 	defer m.Unlock()
 
@@ -240,12 +240,12 @@ func (m *metrics) Report() etre.MetricsReport {
 		er.Query.Deleted = em.query.Deleted.Count()
 
 		// Histograms
-		qr.ReadMatch_min, qr.ReadMatch_max, qr.ReadMatch_avg, qr.ReadMatch_med = minMaxAvgMed(em.query.ReadMatch)
-		qr.CreateBulk_min, qr.CreateBulk_max, qr.CreateBulk_avg, qr.CreateBulk_med = minMaxAvgMed(em.query.CreateBulk)
-		qr.UpdateBulk_min, qr.UpdateBulk_max, qr.UpdateBulk_avg, qr.UpdateBulk_med = minMaxAvgMed(em.query.UpdateBulk)
-		qr.DeleteBulk_min, qr.DeleteBulk_max, qr.DeleteBulk_avg, qr.DeleteBulk_med = minMaxAvgMed(em.query.DeleteBulk)
-		qr.Labels_min, qr.Labels_max, qr.Labels_avg, qr.Labels_med = minMaxAvgMed(em.query.Labels)
-		latencySnap := em.query.Latency.Snapshot(true)
+		qr.ReadMatch_min, qr.ReadMatch_max, qr.ReadMatch_avg, qr.ReadMatch_med = minMaxAvgMed(em.query.ReadMatch, reset)
+		qr.CreateBulk_min, qr.CreateBulk_max, qr.CreateBulk_avg, qr.CreateBulk_med = minMaxAvgMed(em.query.CreateBulk, reset)
+		qr.UpdateBulk_min, qr.UpdateBulk_max, qr.UpdateBulk_avg, qr.UpdateBulk_med = minMaxAvgMed(em.query.UpdateBulk, reset)
+		qr.DeleteBulk_min, qr.DeleteBulk_max, qr.DeleteBulk_avg, qr.DeleteBulk_med = minMaxAvgMed(em.query.DeleteBulk, reset)
+		qr.Labels_min, qr.Labels_max, qr.Labels_avg, qr.Labels_med = minMaxAvgMed(em.query.Labels, reset)
+		latencySnap := em.query.Latency.Snapshot(reset)
 		er.Query.LatencyMs_max = latencySnap.Max
 		er.Query.LatencyMs_p99 = latencySnap.Percentile[0.99]
 		er.Query.LatencyMs_p999 = latencySnap.Percentile[0.999]
@@ -273,8 +273,8 @@ func (m *metrics) Report() etre.MetricsReport {
 	return m.report
 }
 
-func minMaxAvgMed(h *gm.Histogram) (int64, int64, int64, int64) {
-	snap := h.Snapshot(true)
+func minMaxAvgMed(h *gm.Histogram, reset bool) (int64, int64, int64, int64) {
+	snap := h.Snapshot(reset)
 	var avg int64
 	if snap.N > 0 {
 		avg = int64(snap.Sum / float64(snap.N))

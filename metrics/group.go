@@ -63,6 +63,6 @@ func (mg Group) Trace(trace map[string]string) {
 	}
 }
 
-func (mg Group) Report() etre.MetricsReport {
+func (mg Group) Report(reset bool) etre.MetricsReport {
 	panic("do not call metrics.Group.Report() directly")
 }

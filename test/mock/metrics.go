@@ -78,6 +78,6 @@ func (m *MetricRecorder) Val(mn byte, n int64) {
 func (m *MetricRecorder) Trace(map[string]string) {
 }
 
-func (m *MetricRecorder) Report() etre.MetricsReport {
+func (m *MetricRecorder) Report(reset bool) etre.MetricsReport {
 	return etre.MetricsReport{}
 }

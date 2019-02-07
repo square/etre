@@ -165,7 +165,7 @@ func TestEntityMetrics(t *testing.T) {
 		},
 		CDC: &etre.MetricsCDCReport{},
 	}
-	gotReport := em.Report()
+	gotReport := em.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)
@@ -213,7 +213,7 @@ func TestMultipleEntityMetrics(t *testing.T) {
 		},
 		CDC: &etre.MetricsCDCReport{},
 	}
-	gotReport := em.Report()
+	gotReport := em.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)
@@ -270,12 +270,12 @@ func TestSharedEntityMetrics(t *testing.T) {
 		},
 		CDC: &etre.MetricsCDCReport{},
 	}
-	gotReport := em1.Report()
+	gotReport := em1.Report(false)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)
 	}
-	gotReport = em2.Report()
+	gotReport = em2.Report(false)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)
@@ -306,7 +306,7 @@ func TestMemoryStore(t *testing.T) {
 		},
 		CDC: &etre.MetricsCDCReport{},
 	}
-	gotReport := em.Report()
+	gotReport := em.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)
@@ -327,7 +327,7 @@ func TestMemoryStore(t *testing.T) {
 	if sm2 == nil {
 		t.Fatal("Get(test) returned nil, expected Metrics")
 	}
-	gotReport = sm2.Report()
+	gotReport = sm2.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)
