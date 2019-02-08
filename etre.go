@@ -1,4 +1,4 @@
-// Copyright 2017-2018, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 // Package etre provides API clients and low-level primitive data types.
 package etre
@@ -14,8 +14,10 @@ const (
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.9.0-alpha"
+	VERSION                  = "0.9.1-alpha"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
+	VERSION_HEADER           = "X-Etre-Version"
+	TRACE_HEADER             = "X-Etre-Trace"
 )
 
 var (
@@ -171,10 +173,6 @@ func (e Error) String() string {
 
 func (e Error) Error() string {
 	return e.String()
-}
-
-func (e Error) IsZero() bool {
-	return e.Message == "" && e.Type == ""
 }
 
 type CDCEvent struct {

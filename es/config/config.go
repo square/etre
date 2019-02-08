@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 // Package config handles config files, -config, and env vars at startup.
 package config
@@ -29,23 +29,24 @@ var (
 
 // Options represents typical command line options: --addr, --config, etc.
 type Options struct {
-	Addr        string `arg:"env" yaml:"addr"`
-	Config      string `arg:"env"`
-	Debug       bool   `arg:"env" yaml:"debug"`
+	Addr        string `arg:"env:ES_ADDR" yaml:"addr"`
+	Config      string `arg:"env:ES_CONFIG"`
+	Debug       bool   `arg:"env:ES_DEBUG" yaml:"debug"`
 	Delete      bool
 	DeleteLabel bool   `arg:"--delete-label"`
-	Env         string `arg:"env" yaml:"env"`
+	Env         string `arg:"env:ES_ENV" yaml:"env"`
 	Help        bool
-	JSON        bool   `arg:"env" yaml:"json"`
+	JSON        bool   `arg:"env:ES_JSON" yaml:"json"`
 	IFS         string `arg:"env" yaml:"ifs"`
-	Labels      bool   `arg:"env" yaml:"labels"`
+	Labels      bool   `arg:"env:ES_LABELS" yaml:"labels"`
 	Ping        bool
-	Old         bool   `arg:"env" yaml:"old"`
-	SetOp       string `arg:"--set-op,env:SET_OP"`
-	SetId       string `arg:"--set-id,env:SET_ID"`
-	SetSize     int    `arg:"--set-size,env:SET_SIZE"`
-	Strict      bool   `arg:"env" yaml:"strict"`
-	Timeout     uint   `arg:"env" yaml:"timeout"`
+	Old         bool   `arg:"env:ES_OLD" yaml:"old"`
+	SetOp       string `arg:"--set-op,env:ES_SET_OP"`
+	SetId       string `arg:"--set-id,env:ES_SET_ID"`
+	SetSize     int    `arg:"--set-size,env:ES_SET_SIZE"`
+	Strict      bool   `arg:"env:ES_STRICT" yaml:"strict"`
+	Timeout     uint   `arg:"env:ES_TIMEOUT" yaml:"timeout"`
+	Trace       string `arg:"env:ES_TRACE" yaml:"trace"`
 	Update      bool
 	Version     bool `arg:"-v"`
 }
@@ -116,6 +117,7 @@ func Help() {
 		"  --set-size      User-defined set size for --update and --delete (must be > 0)\n"+
 		"  --strict        Error if query or --delete does not match entities\n"+
 		"  --timeout       API timeout, milliseconds (default: %d)\n"+
+		"  --trace         Comma-separated key=val pairs for server metrics\n"+
 		"  --update        Apply patches to one entity by id\n"+
 		"  --version       Print version\n\n",
 		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_TIMEOUT)
@@ -196,4 +198,36 @@ func ParseArgs(args []string) (string, []string, string) {
 	}
 
 	return entityType, returnLabels, query
+}
+
+func DefaultTrace() string {
+	trace := []string{}
+
+	// Prefer SUDO_USER, USER, or whatever Go can determine,
+	// in that order
+	username := os.Getenv("SUDO_USER")
+	if username == "" {
+		username = os.Getenv("USER")
+		if username == "" {
+			usr, _ := user.Current()
+			username = usr.Username
+		}
+	}
+	if username != "" {
+		trace = append(trace, "user="+username)
+	}
+
+	host := os.Getenv("HOSTNAME")
+	if host == "" {
+		host, _ = os.Hostname()
+	}
+	if host != "" {
+		trace = append(trace, "host="+host)
+	}
+
+	if app := os.Getenv("APP"); app != "" {
+		trace = append(trace, "app="+app)
+	}
+
+	return strings.Join(trace, ",")
 }

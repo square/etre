@@ -1,23 +1,110 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package config
 
-///////////////////////////////////////////////////////////////////////////////
-// High-Level Config Structs
-///////////////////////////////////////////////////////////////////////////////
+import (
+	"fmt"
+	"io/ioutil"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+const (
+	DEFAULT_ADDR                  = "127.0.0.1:8050"
+	DEFAULT_DATASOURCE_URL        = "mongodb://localhost:27017"
+	DEFAULT_DB                    = "etre_dev"
+	DEFAULT_DB_TIMEOUT            = 5000
+	DEFAULT_CDC_COLLECTION        = "" // disabled
+	DEFAULT_CDC_DELAY_COLLECTION  = "cdc_delay"
+	DEFAULT_CDC_WRITE_RETRY_COUNT = 3
+	DEFAULT_CDC_WRITE_RETRY_WAIT  = 50
+	DEFAULT_CDC_FALLBACK_FILE     = "/tmp/etre-cdc.json"
+	DEFAULT_CDC_STATIC_DELAY      = -1 // if negative, system will use a dynamic delayer
+	DEFAULT_FEED_BUFFER_SIZE      = 100
+	DEFAULT_FEED_POLL_INTERVAL    = 2000
+	DEFAULT_ENTITY_TYPE           = "host"
+	DEFAULT_QUERY_LATENCY_SLA     = "1s"
+)
+
+var reservedNames = []string{"entity", "entities"}
+
+func Default() Config {
+	return Config{
+		Entity: EntityConfig{
+			Types: []string{DEFAULT_ENTITY_TYPE},
+		},
+		Server: ServerConfig{
+			Addr: DEFAULT_ADDR,
+		},
+		Datasource: DatasourceConfig{
+			URL:      DEFAULT_DATASOURCE_URL,
+			Database: DEFAULT_DB,
+			Timeout:  DEFAULT_DB_TIMEOUT,
+		},
+		CDC: CDCConfig{
+			Collection:      DEFAULT_CDC_COLLECTION,
+			FallbackFile:    DEFAULT_CDC_FALLBACK_FILE,
+			WriteRetryCount: DEFAULT_CDC_WRITE_RETRY_COUNT,
+			WriteRetryWait:  DEFAULT_CDC_WRITE_RETRY_WAIT,
+			DelayCollection: DEFAULT_CDC_DELAY_COLLECTION,
+			StaticDelay:     DEFAULT_CDC_STATIC_DELAY,
+		},
+		Feed: FeedConfig{
+			StreamerBufferSize: DEFAULT_FEED_BUFFER_SIZE,
+			PollInterval:       DEFAULT_FEED_POLL_INTERVAL,
+		},
+		ACL: ACLConfig{},
+		Metrics: MetricsConfig{
+			QueryLatencySLA: DEFAULT_QUERY_LATENCY_SLA,
+		},
+	}
+}
+
+func Load(file string) (Config, error) {
+	file, err := filepath.Abs(file)
+	if err != nil {
+		return Config{}, err
+	}
+
+	bytes, err := ioutil.ReadFile(file)
+	if err != nil {
+		// err includes file name, e.g. "read config file: open <file>: no such file or directory"
+		return Config{}, fmt.Errorf("cannot read config file: %s", err)
+	}
+
+	config := Default()
+	if err := yaml.Unmarshal(bytes, &config); err != nil {
+		return Config{}, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
+	}
+
+	if len(config.Entity.Types) == 0 {
+		return Config{}, fmt.Errorf("invalid config: no entity types specified in %s", file)
+	}
+
+	// Ensure no entityType name is a reserved word
+	for _, t := range config.Entity.Types {
+		for _, r := range reservedNames {
+			if t != r {
+				continue
+			}
+			return Config{}, fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
+		}
+	}
+
+	return config, nil
+}
 
 type Config struct {
 	Server     ServerConfig     `yaml:"server"`
 	Datasource DatasourceConfig `yaml:"datasource"`
 	Entity     EntityConfig     `yaml:"entity"`
 	CDC        CDCConfig        `yaml:"cdc"`
-	Delay      DelayConfig      `yaml:"delay"`
 	Feed       FeedConfig       `yaml:"feed"`
+	ACL        ACLConfig        `yaml:"acl"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Config Components
-///////////////////////////////////////////////////////////////////////////////
 
 type DatasourceConfig struct {
 	URL      string `yaml:"url"`
@@ -25,9 +112,9 @@ type DatasourceConfig struct {
 	Timeout  int    `yaml:"timeout"`
 
 	// Certs
-	TLSCert string `yaml:"tls-cert"`
-	TLSKey  string `yaml:"tls-key"`
-	TLSCA   string `yaml:"tls-ca"`
+	TLSCert string `yaml:"tls_cert"`
+	TLSKey  string `yaml:"tls_key"`
+	TLSCA   string `yaml:"tls_ca"`
 
 	// Credentials
 	Username  string `yaml:"username"`
@@ -49,11 +136,8 @@ type CDCConfig struct {
 	WriteRetryCount int `yaml:"write_retry_count"`
 	// Wait time in milliseconds between write retry events.
 	WriteRetryWait int `yaml:"write_retry_wait"` // milliseconds
-}
-
-type DelayConfig struct {
 	// The collection that delays are stored in.
-	Collection string `yaml:"collection"`
+	DelayCollection string `yaml:"delay_collection"`
 	// If this value is positive, the delayer will always return a max timestamp
 	// that is time.Now() minus this config value. If this value is negative,
 	// the delayer will return a max timestamp that dynamically changes
@@ -71,17 +155,27 @@ type FeedConfig struct {
 }
 
 type ServerConfig struct {
-	Addr string `yaml:"addr"`
-
-	// Certs
-	TLSCert string `yaml:"tls-cert"`
-	TLSKey  string `yaml:"tls-key"`
-	TLSCA   string `yaml:"tls-ca"`
-
-	// Etre will look at this HTTP header to get the username of the requestor of
-	// all API calls.
-	UsernameHeader string `yaml:"username_header"`
+	Addr    string `yaml:"addr"`
+	TLSCert string `yaml:"tls_cert"`
+	TLSKey  string `yaml:"tls_key"`
+	TLSCA   string `yaml:"tls_ca"`
 
 	// If client does not set X-Etre-Version, default to this version.
 	DefaultClientVersion string `yaml:"default_client_version"`
+}
+
+type ACLConfig struct {
+	Roles []ACL `yaml:"roles"`
+}
+
+type ACL struct {
+	Name              string   `yaml:"name"`
+	Admin             bool     `yaml:"admin"`
+	Read              []string `yaml:"read"`
+	Write             []string `yaml:"write"`
+	TraceKeysRequired []string `yaml:"trace_keys_required"`
+}
+
+type MetricsConfig struct {
+	QueryLatencySLA string `yaml:"query_latency_sla"` // duration string
 }

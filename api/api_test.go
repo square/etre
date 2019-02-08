@@ -1,4 +1,4 @@
-// Copyright 2017-2018, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package api_test
 
@@ -14,8 +14,11 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/app"
+	"github.com/square/etre/auth"
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
+	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
 	"github.com/square/etre/test"
 	"github.com/square/etre/test/mock"
@@ -43,14 +46,16 @@ var (
 	gotLabel string
 )
 
-var addr = "http://localhost"
-var entityType = "nodes"
-var validate = entity.NewValidator([]string{entityType})
-var cfg config.Config
-
-var es *mock.EntityStore
-var defaultServer *httptest.Server
-var mu = &sync.Mutex{}
+var (
+	addr          = "http://localhost"
+	entityType    = "nodes"
+	validate      = entity.NewValidator([]string{entityType})
+	cfg           config.Config
+	es            *mock.EntityStore
+	defaultServer *httptest.Server
+	mu            = &sync.Mutex{}
+	metricsrec    = mock.NewMetricsRecorder()
+)
 
 func setup(t *testing.T) {
 	if defaultServer == nil {
@@ -78,10 +83,22 @@ func setup(t *testing.T) {
 				Addr: addr,
 			},
 		}
-		defaultAPI := api.NewAPI(cfg, validate, es, &mock.FeedFactory{})
+		appCtx := app.Context{
+			Config:          cfg,
+			EntityStore:     es,
+			EntityValidator: validate,
+			CDCStore:        nil,
+			FeedFactory:     &mock.FeedFactory{},
+			Auth:            auth.NewManager(nil, auth.NewAllowAll()),
+			MetricsStore:    nil, // only needed for GET /metrics
+			MetricsFactory:  mock.MetricsFactory{MetricRecorder: metricsrec},
+		}
+		defaultAPI := api.NewAPI(appCtx)
 		defaultServer = httptest.NewServer(defaultAPI)
 		t.Logf("started test HTTP server: %s\n", defaultServer.URL)
 	}
+
+	metricsrec.Reset()
 
 	createIds = nil
 	updateEntities = nil
@@ -154,6 +171,24 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
 		t.Logf("%+v", actual.Error)
+		t.Error(diffs)
+	}
+
+	// Verify proper metrics are incremented: first, API always sets entity type.
+	// Then it increments Query for every query. Since this is a write, +1 to Write.
+	// It's an insert type write, so +1 to CreateOne. And it's successful so +1 to
+	// Created. And finally, every query's reponse time (latency) is recorded.
+	expectMetrics := []mock.MetricMethodArgs{
+		{Method: "EntityType", StringVal: entityType},
+		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
+		{Method: "Inc", Metric: metrics.Write, IntVal: 1},
+		{Method: "Inc", Metric: metrics.CreateOne, IntVal: 1},
+		{Method: "Inc", Metric: metrics.Created, IntVal: 1},
+		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
+	}
+	if diffs := deep.Equal(metricsrec.Called, expectMetrics); diffs != nil {
+		t.Logf("   got: %+v", metricsrec.Called)
+		t.Logf("expect: %+v", expectMetrics)
 		t.Error(diffs)
 	}
 }
@@ -931,7 +966,7 @@ func TestDeleteLabelHandler(t *testing.T) {
 		t.Errorf("got label %s, expected baz", gotLabel)
 	}
 	expectWO := entity.WriteOp{
-		User:       "?",
+		User:       "etre",
 		EntityType: entityType,
 		EntityId:   seedId0,
 	}

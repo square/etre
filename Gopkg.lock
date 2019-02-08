@@ -11,11 +11,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:300c0d22047b2fa7c4a9cd4c9cc2ca5a6e941fdcd320c54a54626dbfb86d2a5f"
+  digest = "1:150814dda7b5be924856c46c59bf801bc9d20f7c2a8070500aae64afbd6192e3"
   name = "github.com/alexflint/go-arg"
   packages = ["."]
   pruneopts = "UT"
-  revision = "f7c0423bd11ee80ab81d25c6d46f492998af8547"
+  revision = "57836b82be062adc498c947cc923538cf7698b77"
 
 [[projects]]
   branch = "master"
@@ -24,6 +24,14 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "e80c3b7ed292b052c7083b6fd7154a8422c33f65"
+
+[[projects]]
+  digest = "1:478107d9a49d18409c05165b66408cd93fbcda9510d2146d4b36725470dabebd"
+  name = "github.com/daniel-nichter/go-metrics"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "474303e9c337b3559d62ca46a518dc3867769ae1"
+  version = "v1.0.0"
 
 [[projects]]
   digest = "1:76dc72490af7174349349838f2fe118996381b31ea83243812a97e5a0fd5ed55"
@@ -72,15 +80,15 @@
   version = "v1.2.0"
 
 [[projects]]
-  digest = "1:87f801436ec4799e0e043ab348ff9f3e95b1b3761138158f0950ac67695cc272"
+  digest = "1:73c5062c19c602b4d279b581b0ee3ffe43f61bfc37e91885b89190154bb5e909"
   name = "github.com/labstack/echo"
   packages = [
     ".",
     "middleware",
   ]
   pruneopts = "UT"
-  revision = "6d227dfea4d2e52cb76856120b3c17f758139b4e"
-  version = "3.3.5"
+  revision = "c7eb8da9ec73e78c4f38413f3f835e0cd52c7d72"
+  version = "v3.3.8"
 
 [[projects]]
   digest = "1:568171fc14a3d819b112c3e219d351ea7b05e8dad7935c4168c6b3373244a686"
@@ -112,20 +120,20 @@
   version = "v0.0.3"
 
 [[projects]]
-  digest = "1:757b110984b77e820e01c60d3ac03a376a0fdb05c990dd9d6bd4f9ba0d606261"
+  digest = "1:2e76a73cb51f42d63a2a1a85b3dc5731fd4faf6821b434bd0ef2c099186031d6"
   name = "github.com/rs/xid"
   packages = ["."]
   pruneopts = "UT"
-  revision = "2c7e97ce663ff82c49656bca3048df0fdd83c5f9"
-  version = "v1.2.0"
+  revision = "15d26544def341f036c5f8dca987a4cbe575032c"
+  version = "v1.2.1"
 
 [[projects]]
-  branch = "master"
   digest = "1:c468422f334a6b46a19448ad59aaffdfc0a36b08fdcc1c749a0b29b6453d7e59"
   name = "github.com/valyala/bytebufferpool"
   packages = ["."]
   pruneopts = "UT"
   revision = "e746df99fe4a3986f4d4f79e13c1e0117ce9c2f7"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
@@ -172,6 +180,7 @@
   input-imports = [
     "github.com/Sirupsen/logrus",
     "github.com/alexflint/go-arg",
+    "github.com/daniel-nichter/go-metrics",
     "github.com/globalsign/mgo",
     "github.com/globalsign/mgo/bson",
     "github.com/go-test/deep",

@@ -1,10 +1,9 @@
-// Copyright 2017-2018, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package entity_test
 
 import (
 	"encoding/hex"
-	"strings"
 	"testing"
 
 	"github.com/square/etre"
@@ -41,7 +40,7 @@ func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 		t.Fatal(err)
 	}
 
-	es, err := entity.NewStore(conn, database, entityTypes, cdcm, d)
+	es := entity.NewStore(conn, database, entityTypes, cdcm, d)
 
 	// Create test data. c.CreateEntities() modfies seedEntities: it sets
 	// _id, _type, and _rev. So reset the slice for every test.
@@ -77,15 +76,6 @@ func teardown(t *testing.T, es entity.Store) {
 
 	// Close db connection.
 	conn.Close()
-}
-
-func TestCreateNewStoreError(t *testing.T) {
-	// This is invalid because it's a reserved name
-	invalidEntityType := "entities"
-	_, err := entity.NewStore(&mock.Connector{}, database, []string{invalidEntityType}, &mock.CDCStore{}, &mock.Delayer{})
-	if !strings.Contains(err.Error(), "reserved word") {
-		t.Errorf("err = %s, expected to contain 'reserved word'", err)
-	}
 }
 
 func TestCreateEntitiesMultiple(t *testing.T) {

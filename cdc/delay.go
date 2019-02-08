@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package cdc
 
@@ -316,4 +316,18 @@ func (a *activeChanges) isHead(changeId string) bool {
 // size returns the number of active changes
 func (a *activeChanges) size() int {
 	return len(a.all)
+}
+
+type NoopDelayer struct{}
+
+func (d NoopDelayer) MaxTimestamp() (int64, error) {
+	return 0, nil
+}
+
+func (d NoopDelayer) BeginChange(changeId string) error {
+	return nil
+}
+
+func (d NoopDelayer) EndChange(changeId string) error {
+	return nil
 }
