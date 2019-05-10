@@ -116,7 +116,7 @@ func NewAPI(appCtx app.Context) *API {
 			// -----------------------------------------------------------------------
 			caller, err := api.auth.Authenticate(c.Request())
 			if err != nil {
-				log.Printf("Authenticate error: %s", err)
+				log.Printf("AUTH: failed to authenticate: %s (caller: %+v request: %+v)", err, caller, c.Request())
 				api.systemMetrics.Inc(metrics.AuthenticationFailed, 1)
 				c.Set("t0", time.Time{}) // don't skew latency samples toward zero
 				authErr := auth.Error{
@@ -183,6 +183,7 @@ func NewAPI(appCtx app.Context) *API {
 				}
 
 				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_WRITE}); err != nil {
+					log.Printf("AUTH: not authorized: %s (caller: %+v request: %+v)", err, caller, c.Request())
 					gm.Inc(metrics.AuthorizationFailed, 1)
 					authErr := auth.Error{
 						Err:        err,
@@ -195,6 +196,7 @@ func NewAPI(appCtx app.Context) *API {
 			} else {
 				gm.Inc(metrics.Read, 1)
 				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
+					log.Printf("AUTH: not authorized: %s (caller: %+v request: %+v)", err, caller, c.Request())
 					gm.Inc(metrics.AuthorizationFailed, 1)
 					authErr := auth.Error{
 						Err:        err,
