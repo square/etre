@@ -85,7 +85,7 @@ func NewAPI(appCtx app.Context) *API {
 			api.systemMetrics.Inc(metrics.Query, 1)
 
 			method := c.Request().Method
-			write := method == "PUT" || method == "POST" || method == "DELETE"
+			write := method == "PUT" || (method == "POST" && c.Path() != longQueryPath) || method == "DELETE"
 
 			// -----------------------------------------------------------------------
 			// Client version
