@@ -7,6 +7,11 @@ import (
 	"net/http"
 )
 
+const (
+	DEFAULT_CALLER_NAME  = "etre"
+	DEFAULT_METRIC_GROUP = "etre"
+)
+
 type ACL struct {
 	// User-defined role. This must exactly match a Caller role for the ACL
 	// to match.
@@ -70,8 +75,8 @@ func (a AllowAll) Authenticate(*http.Request) (Caller, error) {
 	// Return a new caller each time because the auth manager might set
 	// Trace if the client passed trace values via X-Etre-Trace header
 	caller := Caller{
-		Name:         "etre",
-		MetricGroups: []string{"etre"},
+		Name:         DEFAULT_CALLER_NAME,
+		MetricGroups: []string{DEFAULT_METRIC_GROUP},
 	}
 	return caller, nil
 }

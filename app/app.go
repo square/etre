@@ -27,6 +27,7 @@ type Context struct {
 	FeedFactory     cdc.FeedFactory
 	MetricsStore    metrics.Store
 	MetricsFactory  metrics.Factory
+	SystemMetrics   metrics.Metrics
 	Auth            auth.Manager
 
 	// 3rd-party extensions, all optional

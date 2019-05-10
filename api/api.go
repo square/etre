@@ -39,6 +39,7 @@ type API struct {
 	auth                 auth.Plugin
 	metricsStore         metrics.Store
 	metricsFactory       metrics.Factory
+	systemMetrics        metrics.Metrics
 	defaultClientVersion string
 	queryLatencySLA      time.Duration
 	// --
@@ -62,6 +63,7 @@ func NewAPI(appCtx app.Context) *API {
 		auth:                 appCtx.Auth,
 		metricsFactory:       appCtx.MetricsFactory,
 		metricsStore:         appCtx.MetricsStore,
+		systemMetrics:        appCtx.SystemMetrics,
 		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,
 		queryLatencySLA:      queryLatencySLA,
 		// --
@@ -79,6 +81,8 @@ func NewAPI(appCtx app.Context) *API {
 			if entityType != "" {
 				c.Set("t0", time.Now()) // query start time
 			}
+
+			api.systemMetrics.Inc(metrics.Query, 1)
 
 			// -----------------------------------------------------------------------
 			// Client version
@@ -108,62 +112,79 @@ func NewAPI(appCtx app.Context) *API {
 			// -----------------------------------------------------------------------
 			caller, err := api.auth.Authenticate(c.Request())
 			if err != nil {
-				//gm.IncError(metrics.Unauthorized)
 				log.Printf("Authenticate error: %s", err)
-				return echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("access denied: %s", err.Error()))
+				api.systemMetrics.Inc(metrics.AuthenticationFailed, 1)
+				etreError := etre.Error{
+					Message:    fmt.Sprintf("access denied: %s", err.Error()),
+					Type:       "access-denied",
+					HTTPStatus: http.StatusUnauthorized,
+				}
+				return c.JSON(http.StatusUnauthorized, etreError)
 			}
 			c.Set("caller", caller)
 
 			// -----------------------------------------------------------------------
 			// Metrics
 			// -----------------------------------------------------------------------
-			gm := api.metricsFactory.Make(caller.MetricGroups) // metrics
+			if entityType == "" {
+				return next(c)
+			}
+
+			// This makes a metrics.Group which is a 1-to-many proxy for every
+			// metric group in caller.MetricGroups. E.g. if the groups are "ods"
+			// and "finch", then every metric is recorded in both groups.
+			gm := api.metricsFactory.Make(caller.MetricGroups)
 			c.Set("gm", gm)
+
+			// If entity type is invalid, unset t0 so the LatencyMs metric isn't
+			// skewed with artificially fast queries
+			if err := api.validate.EntityType(entityType); err != nil {
+				log.Printf("Invalid entity type: '%s': caller=%+v request=%+v", entityType, caller, c.Request())
+				gm.Inc(metrics.InvalidEntityType, 1)
+				c.Set("t0", time.Time{})
+				return readError(err)
+			}
+
+			// Bind group metrics to entity type
+			gm.EntityType(entityType)
+			gm.Inc(metrics.Query, 1)
+
+			// auth.Manager extracts trace values from X-Etre-Trace header
+			if caller.Trace != nil {
+				gm.Trace(caller.Trace)
+			}
 
 			// Routes with an :entity param query the db, so increment query.Metrics
 			// and query.Read or .Write depending on the route. Specific Read/Write
 			// metrics are set in the controller.
-			if entityType != "" {
-				method := c.Request().Method
-				gm.EntityType(entityType) // bind to entity type
-
-				// auth.Manager extracts trace values from X-Etre-Trace header
-				if caller.Trace != nil {
-					gm.Trace(caller.Trace)
+			method := c.Request().Method
+			if method == "GET" || c.Path() == longQueryPath {
+				// Read
+				gm.Inc(metrics.Read, 1)
+				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
+					// @todo gm.IncError(metrics.Forbidden)
+					return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
+				}
+			} else if method == "PUT" || method == "POST" || method == "DELETE" {
+				// Write
+				gm.Inc(metrics.Write, 1)
+				if err := api.validate.EntityType(entityType); err != nil {
+					return c.JSON(api.WriteResult(c, nil, err))
 				}
 
-				gm.Inc(metrics.Query, 1) // all queries
-				if method == "GET" || c.Path() == longQueryPath {
-					// Read
-					gm.Inc(metrics.Read, 1)
-					if err := api.validate.EntityType(entityType); err != nil {
-						return readError(err)
-					}
-					if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
-						// @todo gm.IncError(metrics.Forbidden)
-						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
-					}
-				} else if method == "PUT" || method == "POST" || method == "DELETE" {
-					// Write
-					gm.Inc(metrics.Write, 1)
-					if err := api.validate.EntityType(entityType); err != nil {
-						return c.JSON(api.WriteResult(c, nil, err))
-					}
+				// All writes require a write op
+				wo := writeOp(c, caller)
+				if err := api.validate.WriteOp(wo); err != nil {
+					return c.JSON(api.WriteResult(c, nil, err))
+				}
+				c.Set("wo", wo)
+				if wo.SetOp != "" {
+					gm.Inc(metrics.SetOp, 1)
+				}
 
-					// All writes require a write op
-					wo := writeOp(c, caller)
-					if err := api.validate.WriteOp(wo); err != nil {
-						return c.JSON(api.WriteResult(c, nil, err))
-					}
-					c.Set("wo", wo)
-					if wo.SetOp != "" {
-						gm.Inc(metrics.SetOp, 1)
-					}
-
-					if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_WRITE}); err != nil {
-						// @todo gm.IncError(metrics.Forbidden)
-						return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
-					}
+				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_WRITE}); err != nil {
+					// @todo gm.IncError(metrics.Forbidden)
+					return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
 				}
 			}
 			return next(c)
@@ -212,8 +233,11 @@ func NewAPI(appCtx app.Context) *API {
 			}
 
 			// Caller is nil on authenticate error, which means no metrics
-			if c.Get("caller") == nil {
+			var caller auth.Caller
+			if v := c.Get("caller"); v == nil {
 				return nil
+			} else {
+				caller = v.(auth.Caller)
 			}
 
 			// Same as above: if the route has :entity param, it queried the db,
@@ -225,13 +249,16 @@ func NewAPI(appCtx app.Context) *API {
 
 			// Record query latency (response time) in milliseconds
 			t0 := c.Get("t0").(time.Time) // query start time
-			queryLatency := time.Now().Sub(t0)
-			gm := c.Get("gm").(metrics.Metrics)
-			gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
+			if !t0.IsZero() {
+				queryLatency := time.Now().Sub(t0)
+				gm := c.Get("gm").(metrics.Metrics)
+				gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
 
-			// Did the query take too long (miss SLA)?
-			if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
-				gm.Inc(metrics.MissSLA, 1)
+				// Did the query take too long (miss SLA)?
+				if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
+					log.Printf("Missed SLA: '%s': caller=%+v request=%+v", entityType, caller, c.Request())
+					gm.Inc(metrics.MissSLA, 1)
+				}
 			}
 			return nil
 		}
@@ -604,16 +631,34 @@ func (api *API) metricsHandler(c echo.Context) error {
 	case "yes", "true":
 		reset = true
 	}
-	groupNames := api.metricsStore.Names()
-	all := etre.Metrics{
-		Groups: make([]etre.MetricsReport, len(groupNames)),
+
+	// Get system metrics which returns an etre.Metrics with System set
+	// and Groups nil, which we set next
+	all := api.systemMetrics.Report(reset)
+
+	// Get list of metric group names. If no user-defined auth plugin, there
+	// will be the default metric group: "etre". Else, the user-defined auth
+	// plugin can specify zero or more groups.
+	groups := api.metricsStore.Names()
+	if len(groups) == 0 { // no user-defined metric groups
+		return c.JSON(http.StatusOK, all)
 	}
-	for i, name := range groupNames {
-		m := api.metricsStore.Get(name)
-		r := m.Report(reset)
-		r.Group = name
-		all.Groups[i] = r
+
+	all.Groups = make([]etre.MetricsGroupReport, len(groups))
+
+	// Get metrics for each group, which also returns an etre.Metrics with
+	// System nil and Groups[0] = the group metrics
+	for i, name := range groups {
+		gm := api.metricsStore.Get(name)
+		if gm == nil {
+			log.Printf("No metrics for %s", name)
+			continue
+		}
+		r := gm.Report(reset)
+		r.Groups[0].Group = name
+		all.Groups[i] = r.Groups[0]
 	}
+
 	return c.JSON(http.StatusOK, all)
 }
 
@@ -722,11 +767,11 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 		gm := c.Get("gm").(metrics.Metrics)
 		switch err {
 		case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam:
-			gm.IncError(metrics.ClientError)
+			gm.Inc(metrics.ClientError, 1)
 		case ErrDb:
-			gm.IncError(metrics.DbError)
+			gm.Inc(metrics.DbError, 1)
 		default:
-			gm.IncError(metrics.APIError)
+			gm.Inc(metrics.APIError, 1)
 		}
 	} else {
 		httpStatus = http.StatusOK
