@@ -47,6 +47,10 @@ type MetricsRequestReport struct {
 	APIError    int64 `json:"api-error"`
 	ClientError int64 `json:"client-error"`
 
+	// AuthorizationFailed counter is the number of authorization failures.
+	// The caller authenticated, but ACLs do not allow the request.
+	AuthorizationFailed int64 `json:"authorization-failed"`
+
 	// InvalidEntityType counter is the number of invalid entity types the caller
 	// tried to query. The API returns HTTP status 400 (bad request) and an etre.Error
 	// message.
@@ -75,6 +79,8 @@ type MetricsQueryReport struct {
 
 	// Read counter is the total number of read queries. All read queries
 	// increment Read by 1. Read = ReadQuery + ReadId + ReadLabels.
+	// Read is incremented after authentication and before authorization.
+	// All other read metrics are incremented after authorization.
 	Read int64 `json:"read"`
 
 	// ReadQuery counter is the number of reads by query. It is a subset of Read.
@@ -106,9 +112,10 @@ type MetricsQueryReport struct {
 	// increment Write by 1. Write = CreateOne + CreateMany + UpdateId +
 	// UpdateQuery + DeleteId + DeleteQuery + DeleteLabel.
 	//
-	// Write queries are incremented before validating and writing entities, so
-	// they do not measure entities successfully written. Successfully written
-	// entities are measured by counters Created, Updated, and Deleted.
+	// Write is incremented after authentication and before authorization, so it
+	// does not count successful writes. Successfully written entities are measured
+	// by counters Created, Updated, and Deleted. All other write metrics are
+	// incremented after authorization.
 	Write int64 `json:"write"`
 
 	// CreateOne and CreateMany counters are the number of create queries.

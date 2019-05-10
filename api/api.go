@@ -84,6 +84,9 @@ func NewAPI(appCtx app.Context) *API {
 
 			api.systemMetrics.Inc(metrics.Query, 1)
 
+			method := c.Request().Method
+			write := method == "PUT" || method == "POST" || method == "DELETE"
+
 			// -----------------------------------------------------------------------
 			// Client version
 			// -----------------------------------------------------------------------
@@ -103,6 +106,7 @@ func NewAPI(appCtx app.Context) *API {
 			if len(m) != 1 {
 				errMsg := fmt.Sprintf("invalid client (es) version from %s: '%s', does not match %s (%v)", vf, clientVersion, reVersion, m)
 				log.Println(errMsg)
+				c.Set("t0", time.Time{}) // don't skew latency samples toward zero
 				return echo.NewHTTPError(http.StatusBadRequest, errMsg)
 			}
 			c.Set("clientVersion", m[0][1]) // 0.9
@@ -114,12 +118,16 @@ func NewAPI(appCtx app.Context) *API {
 			if err != nil {
 				log.Printf("Authenticate error: %s", err)
 				api.systemMetrics.Inc(metrics.AuthenticationFailed, 1)
-				etreError := etre.Error{
-					Message:    fmt.Sprintf("access denied: %s", err.Error()),
+				c.Set("t0", time.Time{}) // don't skew latency samples toward zero
+				authErr := auth.Error{
+					Err:        err,
 					Type:       "access-denied",
 					HTTPStatus: http.StatusUnauthorized,
 				}
-				return c.JSON(http.StatusUnauthorized, etreError)
+				if write {
+					return c.JSON(api.WriteResult(c, nil, authErr))
+				}
+				return readError(authErr)
 			}
 			c.Set("caller", caller)
 
@@ -141,7 +149,10 @@ func NewAPI(appCtx app.Context) *API {
 			if err := api.validate.EntityType(entityType); err != nil {
 				log.Printf("Invalid entity type: '%s': caller=%+v request=%+v", entityType, caller, c.Request())
 				gm.Inc(metrics.InvalidEntityType, 1)
-				c.Set("t0", time.Time{})
+				c.Set("t0", time.Time{}) // don't skew latency samples toward zero
+				if write {
+					return c.JSON(api.WriteResult(c, nil, err))
+				}
 				return readError(err)
 			}
 
@@ -157,24 +168,13 @@ func NewAPI(appCtx app.Context) *API {
 			// Routes with an :entity param query the db, so increment query.Metrics
 			// and query.Read or .Write depending on the route. Specific Read/Write
 			// metrics are set in the controller.
-			method := c.Request().Method
-			if method == "GET" || c.Path() == longQueryPath {
-				// Read
-				gm.Inc(metrics.Read, 1)
-				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
-					// @todo gm.IncError(metrics.Forbidden)
-					return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
-				}
-			} else if method == "PUT" || method == "POST" || method == "DELETE" {
-				// Write
+			if write {
 				gm.Inc(metrics.Write, 1)
-				if err := api.validate.EntityType(entityType); err != nil {
-					return c.JSON(api.WriteResult(c, nil, err))
-				}
 
 				// All writes require a write op
 				wo := writeOp(c, caller)
 				if err := api.validate.WriteOp(wo); err != nil {
+					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
 					return c.JSON(api.WriteResult(c, nil, err))
 				}
 				c.Set("wo", wo)
@@ -183,8 +183,26 @@ func NewAPI(appCtx app.Context) *API {
 				}
 
 				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_WRITE}); err != nil {
-					// @todo gm.IncError(metrics.Forbidden)
-					return echo.NewHTTPError(http.StatusForbidden, fmt.Errorf("access denied: %s", err.Error()))
+					gm.Inc(metrics.AuthorizationFailed, 1)
+					authErr := auth.Error{
+						Err:        err,
+						Type:       "not-authorized",
+						HTTPStatus: http.StatusForbidden,
+					}
+					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
+					return c.JSON(api.WriteResult(c, nil, authErr))
+				}
+			} else {
+				gm.Inc(metrics.Read, 1)
+				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
+					gm.Inc(metrics.AuthorizationFailed, 1)
+					authErr := auth.Error{
+						Err:        err,
+						Type:       "not-authorized",
+						HTTPStatus: http.StatusForbidden,
+					}
+					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
+					return readError(authErr)
 				}
 			}
 			return next(c)
@@ -715,6 +733,13 @@ func readError(err error) *echo.HTTPError {
 			HTTPStatus: http.StatusBadRequest,
 		}
 		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
+	case auth.Error:
+		etreError := etre.Error{
+			Message:    v.Err.Error(),
+			Type:       v.Type,
+			HTTPStatus: v.HTTPStatus,
+		}
+		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -753,6 +778,12 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 					HTTPStatus: http.StatusInternalServerError,
 					EntityId:   v.EntityId,
 				}
+			}
+		case auth.Error:
+			wr.Error = &etre.Error{
+				Message:    v.Err.Error(),
+				Type:       v.Type,
+				HTTPStatus: v.HTTPStatus,
 			}
 		default:
 			wr.Error = &etre.Error{

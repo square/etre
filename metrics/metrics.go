@@ -53,7 +53,8 @@ const (
 	Updated                          // counter
 	Deleted                          // counter
 	AuthenticationFailed             // counter (system)
-	InvalidEntityType                // counter (system)
+	AuthorizationFailed              // counter
+	InvalidEntityType                // counter
 )
 
 // Metrics abstracts how metrics are stored and sampled.

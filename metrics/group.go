@@ -95,10 +95,11 @@ type groupMetrics struct {
 var _ Metrics = &groupMetrics{} // ensure groupMetrics implements Metrics
 
 type globalMetrics struct {
-	InvalidEntityType *gm.Counter
-	DbError           *gm.Counter
-	APIError          *gm.Counter
-	ClientError       *gm.Counter
+	AuthorizationFailed *gm.Counter
+	InvalidEntityType   *gm.Counter
+	DbError             *gm.Counter
+	APIError            *gm.Counter
+	ClientError         *gm.Counter
 }
 
 type entityMetrics struct {
@@ -147,10 +148,11 @@ type cdcMetrics struct {
 func NewGroupMetrics() *groupMetrics {
 	return &groupMetrics{
 		request: &globalMetrics{
-			InvalidEntityType: gm.NewCounter(),
-			DbError:           gm.NewCounter(),
-			APIError:          gm.NewCounter(),
-			ClientError:       gm.NewCounter(),
+			AuthorizationFailed: gm.NewCounter(),
+			InvalidEntityType:   gm.NewCounter(),
+			DbError:             gm.NewCounter(),
+			APIError:            gm.NewCounter(),
+			ClientError:         gm.NewCounter(),
 		},
 		cdc: &cdcMetrics{
 			Clients: gm.NewCounter(),
@@ -191,6 +193,7 @@ func (m *groupMetrics) Report(reset bool) etre.Metrics {
 
 	m.report.Ts = time.Now().Unix()
 
+	m.report.Request.AuthorizationFailed = m.request.AuthorizationFailed.Count()
 	m.report.Request.InvalidEntityType = m.request.InvalidEntityType.Count()
 	m.report.Request.DbError = m.request.DbError.Count()
 	m.report.Request.APIError = m.request.APIError.Count()
@@ -393,6 +396,8 @@ func (m *groupEntityMetrics) Inc(mn byte, n int64) {
 	case CDCClients:
 		m.cdc.Clients.Add(n)
 	// Request
+	case AuthorizationFailed:
+		m.request.AuthorizationFailed.Add(n)
 	case InvalidEntityType:
 		m.request.InvalidEntityType.Add(n)
 	case DbError:

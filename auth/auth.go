@@ -84,3 +84,13 @@ func (a AllowAll) Authenticate(*http.Request) (Caller, error) {
 func (a AllowAll) Authorize(Caller, Action) error {
 	return nil
 }
+
+type Error struct {
+	Err        error
+	Type       string
+	HTTPStatus int // 401 (authenticate) or 403 (authorize)
+}
+
+func (e Error) Error() string {
+	return e.Err.Error()
+}
