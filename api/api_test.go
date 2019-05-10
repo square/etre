@@ -1034,6 +1034,23 @@ func TestV08PostEntityHandlerSuccessful(t *testing.T) {
 // Metrics
 // //////////////////////////////////////////////////////////////////////////
 
+func TestMetricsGet(t *testing.T) {
+	// GET /metrics should return 200, i.e. not panic or any other number of
+	// failures because metrics reporting requires several moving parts
+	// the list of entity types in the metrics
+	setup(t)
+	defer teardown(t)
+
+	url := defaultServer.URL + etre.API_ROOT + "/metrics"
+	statusCode, err := test.MakeHTTPRequest("GET", url, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusOK {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
+	}
+}
+
 func TestMetricsInvalidEntityType(t *testing.T) {
 	// Invalid entity types should not generate metrics, i.e. don't pollute
 	// the list of entity types in the metrics
@@ -1069,15 +1086,4 @@ func TestMetricsInvalidEntityType(t *testing.T) {
 		t.Logf("expect (sys): %+v", expectMetrics)
 		t.Error(diffs)
 	}
-
-	/*
-		url = defaultServer.URL + etre.API_ROOT + "/metrics"
-		statusCode, err := test.MakeHTTPRequest("GET", url, nil, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if statusCode != http.StatusOK {
-			t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-		}
-	*/
 }

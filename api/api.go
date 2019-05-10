@@ -639,7 +639,7 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 }
 
 // --------------------------------------------------------------------------
-// Stats
+// Metrics and status
 // --------------------------------------------------------------------------
 
 func (api *API) metricsHandler(c echo.Context) error {
