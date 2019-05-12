@@ -2,24 +2,63 @@
 
 package etre
 
+// Metrics represents all metrics. It is the message returned by the /metrics endpoint.
+// Metrics do not reset when reported (i.e. on GET /metrics). To reset samples
+// (for non-counter metrics), specify URL query parameter "reset=true" (GET /metrics?reset=true).
 type Metrics struct {
-	Groups []MetricsReport `json:"groups"`
+	// System metrics are measurements related to the API, not an entity type.
+	// For example, authentication failures are a system metric.
+	System *MetricsSystemReport `json:"system"`
+
+	// Groups metrics are measurements related to user-defined groups and entity types.
+	// The auth plugin sets groups for each caller (HTTP request). Metrics for the caller
+	// are added to each group in the list, so a single call can count toward one or more
+	// metric groups. If no groups are specified, no group metrics are recorded.
+	Groups []MetricsGroupReport `json:"groups"`
 }
 
-type MetricsReport struct {
-	Ts     int64                           `json:"ts"`
-	Group  string                          `json:"group"`
-	Global *MetricsGlobalReport            `json:"global"`
-	Entity map[string]*MetricsEntityReport `json:"entity"`
-	CDC    *MetricsCDCReport               `json:"cdc"`
+// MetricsSystemReport is the report of system metrics.
+type MetricsSystemReport struct {
+	// Query counter is the grand total number of queries. This counts every API query
+	// at the start of the HTTP request before authentication, validation, etc.
+	Query int64 `json:"query"`
+
+	// AuthenticationFailed counter is the number of authentication failures.
+	// The API returns HTTP status 401 (unauthorized). If the caller fails to
+	// authenticate, only Query and AuthenticationFailed are incremented.
+	AuthenticationFailed int64 `json:"authentication-failed"`
 }
 
-type MetricsGlobalReport struct {
+// MetricsGroupReport is the top-level metric reporting structure for each metric group.
+// It contains metadata (Ts and Group) and three sub-reports: Request, Entity, CDC.
+type MetricsGroupReport struct {
+	Ts      int64                           `json:"ts"`
+	Group   string                          `json:"group"`
+	Request *MetricsRequestReport           `json:"request"`
+	Entity  map[string]*MetricsEntityReport `json:"entity"`
+	CDC     *MetricsCDCReport               `json:"cdc"`
+}
+
+// MetricsRequestReport are measurements related to the request, not an entity type.
+// For example, if the caller requests an invalid entity type, the InvalidEntityType
+// counter is incremented and the API returns HTTP status 400 (bad request).
+type MetricsRequestReport struct {
 	DbError     int64 `json:"db-error"`
 	APIError    int64 `json:"api-error"`
 	ClientError int64 `json:"client-error"`
+
+	// AuthorizationFailed counter is the number of authorization failures.
+	// The caller authenticated, but ACLs do not allow the request.
+	AuthorizationFailed int64 `json:"authorization-failed"`
+
+	// InvalidEntityType counter is the number of invalid entity types the caller
+	// tried to query. The API returns HTTP status 400 (bad request) and an etre.Error
+	// message.
+	InvalidEntityType int64 `json:"invalid-entity-type"`
 }
 
+// MetricsEntityReport are measurements related to an entity type. It contains
+// three sub-reports: Query, Label, Trace.
 type MetricsEntityReport struct {
 	EntityType string                         `json:"entity-type"`
 	Query      *MetricsQueryReport            `json:"query"`
@@ -27,6 +66,12 @@ type MetricsEntityReport struct {
 	Trace      map[string]map[string]int64    `json:"trace,omitempty"`
 }
 
+// MetricsQueryReport are measurements related to querying an entity type.
+// These are the most commonly used metrics: QPS, read size, insert/update/delete
+// rates, etc.
+//
+// Non-counter metrics are sampled and aggregated on report. The aggregate
+// function name is added as a suffix like "_min" and "_max".
 type MetricsQueryReport struct {
 	// Query counter is the grand total number of queries. Every authenticated
 	// query increments Query by 1. Query = Read + Write.
@@ -34,6 +79,8 @@ type MetricsQueryReport struct {
 
 	// Read counter is the total number of read queries. All read queries
 	// increment Read by 1. Read = ReadQuery + ReadId + ReadLabels.
+	// Read is incremented after authentication and before authorization.
+	// All other read metrics are incremented after authorization.
 	Read int64 `json:"read"`
 
 	// ReadQuery counter is the number of reads by query. It is a subset of Read.
@@ -65,9 +112,10 @@ type MetricsQueryReport struct {
 	// increment Write by 1. Write = CreateOne + CreateMany + UpdateId +
 	// UpdateQuery + DeleteId + DeleteQuery + DeleteLabel.
 	//
-	// Write queries are incremented before validating and writing entities, so
-	// they do not measure entities successfully written. Successfully written
-	// entities are measured by counters Created, Updated, and Deleted.
+	// Write is incremented after authentication and before authorization, so it
+	// does not count successful writes. Successfully written entities are measured
+	// by counters Created, Updated, and Deleted. All other write metrics are
+	// incremented after authorization.
 	Write int64 `json:"write"`
 
 	// CreateOne and CreateMany counters are the number of create queries.

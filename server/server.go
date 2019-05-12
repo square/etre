@@ -181,12 +181,13 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	// Metrics
 	// //////////////////////////////////////////////////////////////////////
-	s.appCtx.MetricsStore = metrics.NewMemoryStore()
-	s.appCtx.MetricsFactory = metrics.GroupFactory{Store: s.appCtx.MetricsStore}
-
 	if _, err := time.ParseDuration(s.appCtx.Config.Metrics.QueryLatencySLA); err != nil {
 		return fmt.Errorf("invalid config.metrics.query_latency_sla: %s: %s", s.appCtx.Config.Metrics.QueryLatencySLA, err)
 	}
+
+	s.appCtx.MetricsStore = metrics.NewMemoryStore()
+	s.appCtx.MetricsFactory = metrics.GroupFactory{Store: s.appCtx.MetricsStore}
+	s.appCtx.SystemMetrics = metrics.NewSystemMetrics()
 
 	// //////////////////////////////////////////////////////////////////////
 	// API

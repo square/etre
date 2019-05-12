@@ -24,8 +24,8 @@ func TestEntityMetrics(t *testing.T) {
 	// to ensure that Inc(ReadId) increments ReadId and not another metric,
 	// which is verified by using a unique value (100, 101, 102, etc.) for
 	// each metric.
-	sm := metrics.NewMetrics()         // storable
-	em := metrics.NewEntityMetrics(sm) // entity type
+	gm := metrics.NewGroupMetrics()         // group
+	em := metrics.NewGroupEntityMetrics(gm) // entity type
 
 	em.EntityType("t1")
 
@@ -59,9 +59,10 @@ func TestEntityMetrics(t *testing.T) {
 	em.IncLabel(metrics.LabelDelete, "la")
 	em.IncLabel(metrics.LabelDelete, "la")
 
-	em.IncError(metrics.DbError)
-	em.IncError(metrics.APIError)
-	em.IncError(metrics.ClientError)
+	em.Inc(metrics.DbError, 200)
+	em.Inc(metrics.APIError, 201)
+	em.Inc(metrics.ClientError, 202)
+	em.Inc(metrics.InvalidEntityType, 203)
 
 	em.Val(metrics.ReadMatch, 30)
 	em.Val(metrics.CreateBulk, 40)
@@ -82,88 +83,93 @@ func TestEntityMetrics(t *testing.T) {
 		"user": "user2",
 	})
 
-	expectReport := etre.MetricsReport{
-		Ts:    time.Now().Unix(),
-		Group: "",
-		Global: &etre.MetricsGlobalReport{
-			DbError:     1,
-			APIError:    1,
-			ClientError: 1,
-		},
-		Entity: map[string]*etre.MetricsEntityReport{
-			"t1": &etre.MetricsEntityReport{
-				EntityType: "t1",
-				Query: &etre.MetricsQueryReport{
-					Query:          100,
-					SetOp:          101,
-					MissSLA:        102,
-					Read:           103,
-					ReadQuery:      104,
-					ReadId:         105,
-					ReadMatch_min:  30,
-					ReadMatch_max:  30,
-					ReadMatch_avg:  30,
-					ReadMatch_med:  30,
-					ReadLabels:     106,
-					Write:          107,
-					CreateOne:      108,
-					CreateMany:     115,
-					CreateBulk_min: 40,
-					CreateBulk_max: 40,
-					CreateBulk_avg: 40,
-					CreateBulk_med: 40,
-					UpdateId:       110,
-					UpdateQuery:    116,
-					UpdateBulk_min: 50,
-					UpdateBulk_max: 50,
-					UpdateBulk_avg: 50,
-					UpdateBulk_med: 50,
-					DeleteId:       112,
-					DeleteQuery:    117,
-					DeleteBulk_min: 60,
-					DeleteBulk_max: 60,
-					DeleteBulk_avg: 60,
-					DeleteBulk_med: 60,
-					DeleteLabel:    114,
-					Labels_min:     5,
-					Labels_max:     20,
-					Labels_avg:     11,
-					Labels_med:     10,
-					LatencyMs_max:  250,
-					LatencyMs_p99:  250,
-					LatencyMs_p999: 250,
-					Created:        118,
-					Updated:        119,
-					Deleted:        120,
+	expectReport := etre.Metrics{
+		Groups: []etre.MetricsGroupReport{
+			{
+				Ts:    time.Now().Unix(),
+				Group: "",
+				Request: &etre.MetricsRequestReport{
+					DbError:           200,
+					APIError:          201,
+					ClientError:       202,
+					InvalidEntityType: 203,
 				},
-				Label: map[string]*etre.MetricsLabelReport{
-					"lr": &etre.MetricsLabelReport{
-						Read: 1,
-					},
-					"lu": &etre.MetricsLabelReport{
-						Update: 1,
-					},
-					"ld": &etre.MetricsLabelReport{
-						Delete: 1,
-					},
-					"la": &etre.MetricsLabelReport{
-						Read:   2,
-						Update: 2,
-						Delete: 2,
+				Entity: map[string]*etre.MetricsEntityReport{
+					"t1": &etre.MetricsEntityReport{
+						EntityType: "t1",
+						Query: &etre.MetricsQueryReport{
+							Query:          100,
+							SetOp:          101,
+							MissSLA:        102,
+							Read:           103,
+							ReadQuery:      104,
+							ReadId:         105,
+							ReadMatch_min:  30,
+							ReadMatch_max:  30,
+							ReadMatch_avg:  30,
+							ReadMatch_med:  30,
+							ReadLabels:     106,
+							Write:          107,
+							CreateOne:      108,
+							CreateMany:     115,
+							CreateBulk_min: 40,
+							CreateBulk_max: 40,
+							CreateBulk_avg: 40,
+							CreateBulk_med: 40,
+							UpdateId:       110,
+							UpdateQuery:    116,
+							UpdateBulk_min: 50,
+							UpdateBulk_max: 50,
+							UpdateBulk_avg: 50,
+							UpdateBulk_med: 50,
+							DeleteId:       112,
+							DeleteQuery:    117,
+							DeleteBulk_min: 60,
+							DeleteBulk_max: 60,
+							DeleteBulk_avg: 60,
+							DeleteBulk_med: 60,
+							DeleteLabel:    114,
+							Labels_min:     5,
+							Labels_max:     20,
+							Labels_avg:     11,
+							Labels_med:     10,
+							LatencyMs_max:  250,
+							LatencyMs_p99:  250,
+							LatencyMs_p999: 250,
+							Created:        118,
+							Updated:        119,
+							Deleted:        120,
+						},
+						Label: map[string]*etre.MetricsLabelReport{
+							"lr": &etre.MetricsLabelReport{
+								Read: 1,
+							},
+							"lu": &etre.MetricsLabelReport{
+								Update: 1,
+							},
+							"ld": &etre.MetricsLabelReport{
+								Delete: 1,
+							},
+							"la": &etre.MetricsLabelReport{
+								Read:   2,
+								Update: 2,
+								Delete: 2,
+							},
+						},
+						Trace: map[string]map[string]int64{
+							"app": map[string]int64{
+								"app1": 2,
+							},
+							"user": map[string]int64{
+								"user1": 1,
+								"user2": 1,
+							},
+						},
 					},
 				},
-				Trace: map[string]map[string]int64{
-					"app": map[string]int64{
-						"app1": 2,
-					},
-					"user": map[string]int64{
-						"user1": 1,
-						"user2": 1,
-					},
-				},
+				CDC: &etre.MetricsCDCReport{},
 			},
 		},
-		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -173,12 +179,12 @@ func TestEntityMetrics(t *testing.T) {
 }
 
 func TestMultipleEntityMetrics(t *testing.T) {
-	// The same storable metrics should hold distrinct metrics for each
+	// The same group metrics should hold distrinct metrics for each
 	// entity type used. Save a metric for entity type t1, then switch to
 	// entity type t2, then switch back to t1--to ensure the pointer
 	// inside em points where it should.
-	sm := metrics.NewMetrics()         // storable
-	em := metrics.NewEntityMetrics(sm) // entity type
+	gm := metrics.NewGroupMetrics()         // group
+	em := metrics.NewGroupEntityMetrics(gm) // entity type
 
 	em.EntityType("t1")
 	em.Inc(metrics.Query, 1)
@@ -189,29 +195,33 @@ func TestMultipleEntityMetrics(t *testing.T) {
 	em.EntityType("t1")
 	em.Inc(metrics.Query, 1)
 
-	expectReport := etre.MetricsReport{
-		Ts:     time.Now().Unix(),
-		Group:  "",
-		Global: &etre.MetricsGlobalReport{},
-		Entity: map[string]*etre.MetricsEntityReport{
-			"t1": &etre.MetricsEntityReport{
-				EntityType: "t1",
-				Query: &etre.MetricsQueryReport{
-					Query: 2,
+	expectReport := etre.Metrics{
+		Groups: []etre.MetricsGroupReport{
+			{
+				Ts:      time.Now().Unix(),
+				Group:   "",
+				Request: &etre.MetricsRequestReport{},
+				Entity: map[string]*etre.MetricsEntityReport{
+					"t1": &etre.MetricsEntityReport{
+						EntityType: "t1",
+						Query: &etre.MetricsQueryReport{
+							Query: 2,
+						},
+						Label: map[string]*etre.MetricsLabelReport{},
+						Trace: map[string]map[string]int64{},
+					},
+					"t2": &etre.MetricsEntityReport{
+						EntityType: "t2",
+						Query: &etre.MetricsQueryReport{
+							Query: 3,
+						},
+						Label: map[string]*etre.MetricsLabelReport{},
+						Trace: map[string]map[string]int64{},
+					},
 				},
-				Label: map[string]*etre.MetricsLabelReport{},
-				Trace: map[string]map[string]int64{},
-			},
-			"t2": &etre.MetricsEntityReport{
-				EntityType: "t2",
-				Query: &etre.MetricsQueryReport{
-					Query: 3,
-				},
-				Label: map[string]*etre.MetricsLabelReport{},
-				Trace: map[string]map[string]int64{},
+				CDC: &etre.MetricsCDCReport{},
 			},
 		},
-		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -223,11 +233,11 @@ func TestMultipleEntityMetrics(t *testing.T) {
 func TestSharedEntityMetrics(t *testing.T) {
 	// Like TestMultipleEntityMetrics above but this time we have 2 em
 	// instances that concurrently read/write the same entity type (t1)
-	// in the same storable metrcis (sm). With go test -race we ensure
+	// in the same group metrcis (gm). With go test -race we ensure
 	// that em is preventing race conditions.
-	sm := metrics.NewMetrics()
-	em1 := metrics.NewEntityMetrics(sm)
-	em2 := metrics.NewEntityMetrics(sm)
+	gm := metrics.NewGroupMetrics()
+	em1 := metrics.NewGroupEntityMetrics(gm)
+	em2 := metrics.NewGroupEntityMetrics(gm)
 
 	em1.EntityType("t1")
 	em2.EntityType("t1")
@@ -253,22 +263,27 @@ func TestSharedEntityMetrics(t *testing.T) {
 
 	// Get report from both em1 and em2, and they should both report the
 	// same thing:
-	expectReport := etre.MetricsReport{
-		Ts:     time.Now().Unix(),
-		Group:  "",
-		Global: &etre.MetricsGlobalReport{},
-		Entity: map[string]*etre.MetricsEntityReport{
-			"t1": &etre.MetricsEntityReport{
-				EntityType: "t1",
-				Query: &etre.MetricsQueryReport{
-					Read:  5,
-					Write: 5,
+	expectReport := etre.Metrics{
+		Groups: []etre.MetricsGroupReport{
+			{
+
+				Ts:      time.Now().Unix(),
+				Group:   "",
+				Request: &etre.MetricsRequestReport{},
+				Entity: map[string]*etre.MetricsEntityReport{
+					"t1": &etre.MetricsEntityReport{
+						EntityType: "t1",
+						Query: &etre.MetricsQueryReport{
+							Read:  5,
+							Write: 5,
+						},
+						Label: map[string]*etre.MetricsLabelReport{},
+						Trace: map[string]map[string]int64{},
+					},
 				},
-				Label: map[string]*etre.MetricsLabelReport{},
-				Trace: map[string]map[string]int64{},
+				CDC: &etre.MetricsCDCReport{},
 			},
 		},
-		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em1.Report(false)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -283,28 +298,32 @@ func TestSharedEntityMetrics(t *testing.T) {
 }
 
 func TestMemoryStore(t *testing.T) {
-	sm := metrics.NewMetrics()         // storable
-	em := metrics.NewEntityMetrics(sm) // entity type
+	gm := metrics.NewGroupMetrics()         // group
+	em := metrics.NewGroupEntityMetrics(gm) // entity type
 	em.EntityType("t1")
 	em.Inc(metrics.Read, 1)
 	em.Inc(metrics.Write, 2)
 
-	expectReport := etre.MetricsReport{
-		Ts:     time.Now().Unix(),
-		Group:  "",
-		Global: &etre.MetricsGlobalReport{},
-		Entity: map[string]*etre.MetricsEntityReport{
-			"t1": &etre.MetricsEntityReport{
-				EntityType: "t1",
-				Query: &etre.MetricsQueryReport{
-					Read:  1,
-					Write: 2,
+	expectReport := etre.Metrics{
+		Groups: []etre.MetricsGroupReport{
+			{
+				Ts:      time.Now().Unix(),
+				Group:   "",
+				Request: &etre.MetricsRequestReport{},
+				Entity: map[string]*etre.MetricsEntityReport{
+					"t1": &etre.MetricsEntityReport{
+						EntityType: "t1",
+						Query: &etre.MetricsQueryReport{
+							Read:  1,
+							Write: 2,
+						},
+						Label: map[string]*etre.MetricsLabelReport{},
+						Trace: map[string]map[string]int64{},
+					},
 				},
-				Label: map[string]*etre.MetricsLabelReport{},
-				Trace: map[string]map[string]int64{},
+				CDC: &etre.MetricsCDCReport{},
 			},
 		},
-		CDC: &etre.MetricsCDCReport{},
 	}
 	gotReport := em.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
@@ -320,14 +339,14 @@ func TestMemoryStore(t *testing.T) {
 	}
 
 	// Store, re-fetch, and ensure it has same values by checking reprot
-	if err := s.Add(sm, "test"); err != nil {
+	if err := s.Add(gm, "test"); err != nil {
 		t.Error(err)
 	}
-	sm2 := s.Get("test")
-	if sm2 == nil {
+	gm2 := s.Get("test")
+	if gm2 == nil {
 		t.Fatal("Get(test) returned nil, expected Metrics")
 	}
-	gotReport = sm2.Report(true)
+	gotReport = gm2.Report(true)
 	if diff := deep.Equal(gotReport, expectReport); diff != nil {
 		dump(gotReport, t)
 		t.Error(diff)

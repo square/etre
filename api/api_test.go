@@ -55,6 +55,7 @@ var (
 	defaultServer *httptest.Server
 	mu            = &sync.Mutex{}
 	metricsrec    = mock.NewMetricsRecorder()
+	sysmetrics    = mock.NewMetricsRecorder()
 )
 
 func setup(t *testing.T) {
@@ -90,8 +91,9 @@ func setup(t *testing.T) {
 			CDCStore:        nil,
 			FeedFactory:     &mock.FeedFactory{},
 			Auth:            auth.NewManager(nil, auth.NewAllowAll()),
-			MetricsStore:    nil, // only needed for GET /metrics
+			MetricsStore:    mock.MetricsStore{},
 			MetricsFactory:  mock.MetricsFactory{MetricRecorder: metricsrec},
+			SystemMetrics:   sysmetrics,
 		}
 		defaultAPI := api.NewAPI(appCtx)
 		defaultServer = httptest.NewServer(defaultAPI)
@@ -99,6 +101,7 @@ func setup(t *testing.T) {
 	}
 
 	metricsrec.Reset()
+	sysmetrics.Reset()
 
 	createIds = nil
 	updateEntities = nil
@@ -1023,6 +1026,64 @@ func TestV08PostEntityHandlerSuccessful(t *testing.T) {
 	}
 	if diffs := deep.Equal(actual, expect); diffs != nil {
 		t.Logf("%+v", actual)
+		t.Error(diffs)
+	}
+}
+
+// //////////////////////////////////////////////////////////////////////////
+// Metrics
+// //////////////////////////////////////////////////////////////////////////
+
+func TestMetricsGet(t *testing.T) {
+	// GET /metrics should return 200, i.e. not panic or any other number of
+	// failures because metrics reporting requires several moving parts
+	// the list of entity types in the metrics
+	setup(t)
+	defer teardown(t)
+
+	url := defaultServer.URL + etre.API_ROOT + "/metrics"
+	statusCode, err := test.MakeHTTPRequest("GET", url, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusOK {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
+	}
+}
+
+func TestMetricsInvalidEntityType(t *testing.T) {
+	// Invalid entity types should not generate metrics, i.e. don't pollute
+	// the list of entity types in the metrics
+	setup(t)
+	defer teardown(t)
+
+	url := defaultServer.URL + etre.API_ROOT + "/entity/bad-type/" + seedId0
+	var actual etre.Entity
+	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+
+	// No group/entity metrics because the entity type was invalid
+	expectMetrics := []mock.MetricMethodArgs{
+		{Method: "Inc", Metric: metrics.InvalidEntityType, IntVal: 1},
+	}
+	if diffs := deep.Equal(metricsrec.Called, expectMetrics); diffs != nil {
+		t.Logf("   got (em): %+v", metricsrec.Called)
+		t.Logf("expect (em): %+v", expectMetrics)
+		t.Error(diffs)
+	}
+
+	// System metrics
+	expectMetrics = []mock.MetricMethodArgs{
+		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
+	}
+	if diffs := deep.Equal(sysmetrics.Called, expectMetrics); diffs != nil {
+		t.Logf("   got (sys): %+v", sysmetrics.Called)
+		t.Logf("expect (sys): %+v", expectMetrics)
 		t.Error(diffs)
 	}
 }

@@ -11,9 +11,13 @@ type MetricsFactory struct {
 	MetricRecorder *MetricRecorder
 }
 
+var _ metrics.Factory = MetricsFactory{}
+
 func (f MetricsFactory) Make(groupNames []string) metrics.Metrics {
 	return f.MetricRecorder
 }
+
+// --------------------------------------------------------------------------
 
 type MetricMethodArgs struct {
 	Method    string
@@ -21,6 +25,8 @@ type MetricMethodArgs struct {
 	IntVal    int64
 	StringVal string
 }
+
+var _ metrics.Metrics = &MetricRecorder{}
 
 // MetricRecorder records the called methods and values.
 type MetricRecorder struct {
@@ -60,13 +66,6 @@ func (m *MetricRecorder) IncLabel(mn byte, label string) {
 	})
 }
 
-func (m *MetricRecorder) IncError(mn byte) {
-	m.Called = append(m.Called, MetricMethodArgs{
-		Method: "IncError",
-		Metric: mn,
-	})
-}
-
 func (m *MetricRecorder) Val(mn byte, n int64) {
 	m.Called = append(m.Called, MetricMethodArgs{
 		Method: "Val",
@@ -78,6 +77,37 @@ func (m *MetricRecorder) Val(mn byte, n int64) {
 func (m *MetricRecorder) Trace(map[string]string) {
 }
 
-func (m *MetricRecorder) Report(reset bool) etre.MetricsReport {
-	return etre.MetricsReport{}
+func (m *MetricRecorder) Report(reset bool) etre.Metrics {
+	return etre.Metrics{}
+}
+
+// --------------------------------------------------------------------------
+
+type MetricsStore struct {
+	AddFunc   func(m metrics.Metrics, name string) error
+	GetFunc   func(name string) metrics.Metrics
+	NamesFunc func() []string
+}
+
+var _ metrics.Store = MetricsStore{}
+
+func (s MetricsStore) Add(m metrics.Metrics, name string) error {
+	if s.AddFunc != nil {
+		return s.AddFunc(m, name)
+	}
+	return nil
+}
+
+func (s MetricsStore) Get(name string) metrics.Metrics {
+	if s.GetFunc != nil {
+		return s.GetFunc(name)
+	}
+	return nil
+}
+
+func (s MetricsStore) Names() []string {
+	if s.NamesFunc != nil {
+		return s.NamesFunc()
+	}
+	return []string{"etre"} // auth.DEFAULT_METRIC_GROUP
 }
