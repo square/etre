@@ -361,10 +361,13 @@ func apiError(resp *http.Response, bytes []byte) error {
 	// Response data should be an etre.Error
 	var errResp Error
 	if err := json.Unmarshal(bytes, &errResp); err != nil {
-		return fmt.Errorf("json.Unmarshal: %s", err)
+		return fmt.Errorf("API error: HTTP status %d, cannot decode response (%s): %s", resp.StatusCode, err, string(bytes))
 	}
-	if errResp.Type == "" {
-		return fmt.Errorf("API error: HTTP status %d, response: %s", resp.StatusCode, string(bytes))
+	if errResp.Type == "" || errResp.Message == "" {
+		return fmt.Errorf("API error: HTTP status %d, unknown response: %s", resp.StatusCode, string(bytes))
+	}
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("API error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 	}
 	return fmt.Errorf("error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 }

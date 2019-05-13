@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +26,6 @@ import (
 	"github.com/globalsign/mgo/bson"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
 )
 
 // API provides controllers for endpoints it registers with a router.
@@ -72,7 +72,27 @@ func NewAPI(appCtx app.Context) *API {
 
 	router := api.echo.Group(etre.API_ROOT)
 
-	router.Use(middleware.Recover()) // catch all panics
+	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			defer func() {
+				if r := recover(); r != nil {
+					err, ok := r.(error)
+					if !ok {
+						err = fmt.Errorf("%v", r)
+					}
+					b := make([]byte, 4096)
+					n := runtime.Stack(b, false)
+					etreErr := etre.Error{
+						Message:    fmt.Sprintf("PANIC: %s\n%s", err, string(b[0:n])),
+						Type:       "panic",
+						HTTPStatus: http.StatusInternalServerError,
+					}
+					c.JSON(etreErr.HTTPStatus, etreErr)
+				}
+			}()
+			return next(c)
+		}
+	})
 
 	// Called before every route/controller
 	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -134,15 +154,16 @@ func NewAPI(appCtx app.Context) *API {
 			// -----------------------------------------------------------------------
 			// Metrics
 			// -----------------------------------------------------------------------
-			if entityType == "" {
-				return next(c)
-			}
 
 			// This makes a metrics.Group which is a 1-to-many proxy for every
 			// metric group in caller.MetricGroups. E.g. if the groups are "ods"
 			// and "finch", then every metric is recorded in both groups.
 			gm := api.metricsFactory.Make(caller.MetricGroups)
 			c.Set("gm", gm)
+
+			if entityType == "" {
+				return next(c)
+			}
 
 			// If entity type is invalid, unset t0 so the LatencyMs metric isn't
 			// skewed with artificially fast queries
