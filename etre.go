@@ -14,7 +14,7 @@ const (
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.9.2"
+	VERSION                  = "0.9.3"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
 	VERSION_HEADER           = "X-Etre-Version"
 	TRACE_HEADER             = "X-Etre-Trace"

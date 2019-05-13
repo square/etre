@@ -9,13 +9,16 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
 	"github.com/square/etre/app"
 	"github.com/square/etre/auth"
+	"github.com/square/etre/cdc"
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
@@ -25,6 +28,7 @@ import (
 
 	"github.com/globalsign/mgo/bson"
 	"github.com/go-test/deep"
+	"github.com/gorilla/websocket"
 )
 
 var (
@@ -88,7 +92,6 @@ func setup(t *testing.T) {
 			Config:          cfg,
 			EntityStore:     es,
 			EntityValidator: validate,
-			CDCStore:        nil,
 			FeedFactory:     &mock.FeedFactory{},
 			Auth:            auth.NewManager(nil, auth.NewAllowAll()),
 			MetricsStore:    mock.MetricsStore{},
@@ -138,7 +141,7 @@ func floatToInt(entities []etre.Entity) {
 }
 
 // //////////////////////////////////////////////////////////////////////////
-// Single Entity Management Handler Tests
+// Single entity
 // //////////////////////////////////////////////////////////////////////////
 
 func TestPostEntityHandlerSuccessful(t *testing.T) {
@@ -534,7 +537,7 @@ func TestDeleteEntityHandlerMissingIDError(t *testing.T) {
 }
 
 // //////////////////////////////////////////////////////////////////////////
-// Multiple Entity Management Handler Tests
+// Multiple entities
 // //////////////////////////////////////////////////////////////////////////
 
 func TestPostEntitiesHandlerSuccessful(t *testing.T) {
@@ -1086,4 +1089,54 @@ func TestMetricsInvalidEntityType(t *testing.T) {
 		t.Logf("expect (sys): %+v", expectMetrics)
 		t.Error(diffs)
 	}
+}
+
+// //////////////////////////////////////////////////////////////////////////
+// CDC
+// //////////////////////////////////////////////////////////////////////////
+
+func TestCDC(t *testing.T) {
+	es := &mock.EntityStore{}
+	cfg = config.Config{
+		Server: config.ServerConfig{
+			Addr: addr,
+		},
+	}
+
+	eventChan := make(chan etre.CDCEvent, 1)
+	poller := &mock.Poller{
+		RegisterFunc: func(uuid string) (<-chan etre.CDCEvent, int64, error) {
+			return eventChan, 0, nil
+		},
+	}
+	cdcStore := &mock.CDCStore{}
+
+	ff := &mock.FeedFactory{
+		MakeWebsocketFunc: func(wsConn *websocket.Conn) *cdc.WebsocketFeed {
+			return cdc.NewWebsocketFeed(wsConn, poller, cdcStore)
+		},
+	}
+
+	appCtx := app.Context{
+		Config:          cfg,
+		EntityStore:     es,
+		EntityValidator: validate,
+		FeedFactory:     ff,
+		Auth:            auth.NewManager(nil, auth.NewAllowAll()),
+		MetricsStore:    mock.MetricsStore{},
+		MetricsFactory:  mock.MetricsFactory{MetricRecorder: metricsrec},
+		SystemMetrics:   sysmetrics,
+	}
+	api := api.NewAPI(appCtx)
+	httpServer := httptest.NewServer(api)
+	t.Logf("started test HTTP server: %s\n", httpServer.URL)
+	defer httpServer.Close()
+
+	wsURL := strings.Replace(httpServer.URL, "http", "ws", 1)
+	client := etre.NewCDCClient(wsURL, nil, 10, true)
+	_, err := client.Start(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(250 * time.Millisecond)
 }
