@@ -70,11 +70,11 @@ func (s *Server) Boot(configFile string) error {
 		log.Println("TLS cert and key not given")
 	}
 
-	dbCredentials := make(map[string]string)
-	if cfg.Datasource.Username != "" && cfg.Datasource.Source != "" && cfg.Datasource.Mechanism != "" {
-		dbCredentials["username"] = cfg.Datasource.Username
-		dbCredentials["source"] = cfg.Datasource.Source
-		dbCredentials["mechanism"] = cfg.Datasource.Mechanism
+	dbCredentials := map[string]string{
+		"username":  cfg.Datasource.Username,
+		"password":  cfg.Datasource.Password,
+		"source":    cfg.Datasource.Source,
+		"mechanism": cfg.Datasource.Mechanism,
 	}
 
 	conn := db.NewConnector(cfg.Datasource.URL, cfg.Datasource.Timeout, tlsConfig, dbCredentials)

@@ -91,6 +91,7 @@ func (c *connectionPool) Connect() (*mgo.Session, error) {
 	if c.credentials["username"] != "" && c.credentials["source"] != "" && c.credentials["mechanism"] != "" {
 		cred := &mgo.Credential{
 			Username:  c.credentials["username"],
+			Password:  c.credentials["password"],
 			Source:    c.credentials["source"],
 			Mechanism: c.credentials["mechanism"],
 		}

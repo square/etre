@@ -118,6 +118,7 @@ type DatasourceConfig struct {
 
 	// Credentials
 	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
 	Source    string `yaml:"source"`
 	Mechanism string `yaml:"mechanism"`
 }
