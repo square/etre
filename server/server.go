@@ -61,7 +61,7 @@ func (s *Server) Boot(configFile string) error {
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
 			tlsConfig.RootCAs = caCertPool
-			log.Println("TLS root CA Loaded")
+			log.Println("TLS root CA loaded")
 		}
 
 		// Cert and key
@@ -72,7 +72,7 @@ func (s *Server) Boot(configFile string) error {
 			}
 			tlsConfig.Certificates = []tls.Certificate{cert}
 			tlsConfig.BuildNameToCertificate()
-			log.Println("TLS cert and key Loaded")
+			log.Println("TLS cert and key loaded")
 		}
 	} else {
 		log.Println("TLS cert and key not given")

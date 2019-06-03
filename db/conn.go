@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package db
 
@@ -51,14 +51,19 @@ func (c *connectionPool) Connect() (*mgo.Session, error) {
 		}
 	}
 
+	// @todo: changed to ms or duration
+	timeoutSec := time.Duration(c.timeout) * time.Second
+
 	// Make custom dialer that can do TLS
 	dialInfo, err := mgo.ParseURL(c.url)
 	if err != nil {
 		return nil, err
 	}
-
-	timeoutSec := time.Duration(c.timeout) * time.Second
-
+	dialInfo.Username = c.credentials["username"]
+	dialInfo.Password = c.credentials["password"]
+	dialInfo.Source = c.credentials["source"]
+	dialInfo.Mechanism = c.credentials["mechanism"]
+	dialInfo.Timeout = timeoutSec
 	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
 		if c.tlsConfig != nil {
 			dialer := &net.Dialer{
@@ -77,29 +82,13 @@ func (c *connectionPool) Connect() (*mgo.Session, error) {
 			return conn, nil
 		}
 	}
-	dialInfo.Timeout = timeoutSec
 
 	// Connect
 	s, err := mgo.DialWithInfo(dialInfo)
 	if err != nil {
 		return nil, err
 	}
-
 	c.session = s
-
-	// Login
-	if c.credentials["username"] != "" && c.credentials["source"] != "" && c.credentials["mechanism"] != "" {
-		cred := &mgo.Credential{
-			Username:  c.credentials["username"],
-			Password:  c.credentials["password"],
-			Source:    c.credentials["source"],
-			Mechanism: c.credentials["mechanism"],
-		}
-		err = s.Login(cred)
-		if err != nil {
-			return c.session, err
-		}
-	}
 
 	return c.session, nil
 }
