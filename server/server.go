@@ -49,32 +49,40 @@ func (s *Server) Boot(configFile string) error {
 	// Database
 	// //////////////////////////////////////////////////////////////////////
 	var tlsConfig *tls.Config
-	if cfg.Datasource.TLSCert != "" && cfg.Datasource.TLSKey != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.Datasource.TLSCert, cfg.Datasource.TLSKey)
-		if err != nil {
-			return err
+	if (cfg.Datasource.TLSCert != "" && cfg.Datasource.TLSKey != "") || cfg.Datasource.TLSCA != "" {
+		tlsConfig = &tls.Config{}
+
+		// Root CA
+		if cfg.Datasource.TLSCA != "" {
+			caCert, err := ioutil.ReadFile(cfg.Datasource.TLSCA)
+			if err != nil {
+				return err
+			}
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+			tlsConfig.RootCAs = caCertPool
+			log.Println("TLS root CA loaded")
 		}
-		caCert, err := ioutil.ReadFile(cfg.Datasource.TLSCA)
-		if err != nil {
-			return err
+
+		// Cert and key
+		if cfg.Datasource.TLSCert != "" && cfg.Datasource.TLSKey != "" {
+			cert, err := tls.LoadX509KeyPair(cfg.Datasource.TLSCert, cfg.Datasource.TLSKey)
+			if err != nil {
+				return err
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+			tlsConfig.BuildNameToCertificate()
+			log.Println("TLS cert and key loaded")
 		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-		tlsConfig = &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			RootCAs:      caCertPool,
-		}
-		tlsConfig.BuildNameToCertificate()
-		log.Println("TLS Loaded")
 	} else {
 		log.Println("TLS cert and key not given")
 	}
 
-	dbCredentials := make(map[string]string)
-	if cfg.Datasource.Username != "" && cfg.Datasource.Source != "" && cfg.Datasource.Mechanism != "" {
-		dbCredentials["username"] = cfg.Datasource.Username
-		dbCredentials["source"] = cfg.Datasource.Source
-		dbCredentials["mechanism"] = cfg.Datasource.Mechanism
+	dbCredentials := map[string]string{
+		"username":  cfg.Datasource.Username,
+		"password":  cfg.Datasource.Password,
+		"source":    cfg.Datasource.Source,
+		"mechanism": cfg.Datasource.Mechanism,
 	}
 
 	conn := db.NewConnector(cfg.Datasource.URL, cfg.Datasource.Timeout, tlsConfig, dbCredentials)
