@@ -89,7 +89,7 @@ func (s *Server) Boot(configFile string) error {
 
 	// Verify we can connect to the db.
 	// @todo: removing this causes mgo panic "Session already closed" after 1st query
-	if _, err = conn.Connect(); err != nil {
+	if err := conn.Init(); err != nil {
 		return fmt.Errorf("cannot connect to %s: %s", cfg.Datasource.URL, err)
 	}
 	log.Printf("Connected to %s", cfg.Datasource.URL)

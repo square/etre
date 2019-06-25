@@ -5,7 +5,6 @@ package db
 import (
 	"crypto/tls"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/globalsign/mgo"
@@ -16,6 +15,7 @@ import (
 // Connector does not need to know this logic. Implementations can also vary
 // wrt connection pooling.
 type Connector interface {
+	Init() error
 	Connect() (*mgo.Session, error)
 	Close()
 }
@@ -26,8 +26,7 @@ type connectionPool struct {
 	tlsConfig   *tls.Config
 	credentials map[string]string
 	// --
-	session     *mgo.Session
-	*sync.Mutex // guards methods
+	session *mgo.Session
 }
 
 func NewConnector(url string, timeout int, tlsConfig *tls.Config, credentials map[string]string) Connector {
@@ -36,28 +35,17 @@ func NewConnector(url string, timeout int, tlsConfig *tls.Config, credentials ma
 		timeout:     timeout,
 		tlsConfig:   tlsConfig,
 		credentials: credentials,
-		Mutex:       &sync.Mutex{},
 	}
 }
 
-func (c *connectionPool) Connect() (*mgo.Session, error) {
-	c.Lock()
-	defer c.Unlock()
-
-	// If a session already exists (and we can ping mongo), return a copy of it.
-	if c.session != nil {
-		if err := c.session.Ping(); err == nil {
-			return c.session.Copy(), nil
-		}
-	}
-
+func (c *connectionPool) Init() error {
 	// @todo: changed to ms or duration
 	timeoutSec := time.Duration(c.timeout) * time.Second
 
 	// Make custom dialer that can do TLS
 	dialInfo, err := mgo.ParseURL(c.url)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	dialInfo.Username = c.credentials["username"]
 	dialInfo.Password = c.credentials["password"]
@@ -86,17 +74,22 @@ func (c *connectionPool) Connect() (*mgo.Session, error) {
 	// Connect
 	s, err := mgo.DialWithInfo(dialInfo)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	c.session = s
+	if err := s.Ping(); err != nil {
+		s.Close()
+		return err
+	}
 
-	return c.session, nil
+	c.session = s
+	return nil
+}
+
+func (c *connectionPool) Connect() (*mgo.Session, error) {
+	return c.session.Copy(), nil
 }
 
 func (c *connectionPool) Close() {
-	c.Lock()
-	defer c.Unlock()
-
 	if c.session == nil {
 		return
 	}
