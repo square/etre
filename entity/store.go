@@ -284,6 +284,17 @@ func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilte
 	entities := []etre.Entity{}
 	if len(f.ReturnLabels) == 0 {
 		err = c.Find(mgoQuery).All(&entities)
+	} else if len(f.ReturnLabels) == 1 && f.Distinct {
+		// Optimizaiton: unique values for the one return label. Mongo returns
+		// a list which we turn into entities if there's no error.
+		var uniqueValues []interface{}
+		err = c.Find(mgoQuery).Distinct(f.ReturnLabels[0], &uniqueValues)
+		if err == nil { // no error
+			entities = make([]etre.Entity, len(uniqueValues))
+			for i, v := range uniqueValues {
+				entities[i] = etre.Entity{f.ReturnLabels[0]: v}
+			}
+		}
 	} else {
 		selectMap := map[string]int{}
 		selectMap["_id"] = 0 // Mongo requires _id to be explicitly excluded

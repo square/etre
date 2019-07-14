@@ -133,6 +133,9 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 			rl := strings.Join(filter.ReturnLabels, ",")
 			url += "&labels=" + rl
 		}
+		if filter.Distinct {
+			url += "&distinct"
+		}
 		resp, bytes, err = c.do("GET", url, nil)
 	} else {
 		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.

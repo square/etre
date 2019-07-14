@@ -328,8 +328,21 @@ func Run(ctx app.Context) {
 		}
 	}
 
+	// --unique only works with a single return label. The API enforces this, too,
+	// but we can avoid the HTTP 400 error and report a better error message.
+	if ctx.Options.Unique && len(ctx.ReturnLabels) != 1 {
+		if len(ctx.ReturnLabels) == 0 {
+			fmt.Fprintf(os.Stderr, "--unique requires a single return label but none specified. Example: es --unique host.zone env=production\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "--unique requires only 1 return label but %d specified: %s. Example: es --unique host.zone env=production\n",
+				len(ctx.ReturnLabels), strings.Join(ctx.ReturnLabels, ", "))
+		}
+		os.Exit(1)
+	}
+
 	f := etre.QueryFilter{
 		ReturnLabels: ctx.ReturnLabels,
+		Distinct:     ctx.Options.Unique,
 	}
 	entities, err := ec.Query(ctx.Query, f)
 	if o.Debug {

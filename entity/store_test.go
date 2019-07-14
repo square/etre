@@ -35,7 +35,7 @@ var wo = entity.WriteOp{
 
 func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 	conn = db.NewConnector(url, timeout, nil, nil)
-	_, err := conn.Connect()
+	err := conn.Init()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,6 +361,69 @@ func TestReadEntitiesNotFound(t *testing.T) {
 		} else {
 			t.Errorf("Uknown error when reading entities: %s", err)
 		}
+	}
+}
+
+func TestReadEntitiesFilterDistinct(t *testing.T) {
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
+
+	testData := []etre.Entity{
+		etre.Entity{"foo": "a"}, //
+		etre.Entity{"foo": "a"}, // dupe ^
+		etre.Entity{"foo": "a"}, // dupe ^
+		etre.Entity{"foo": "b"},
+		etre.Entity{"foo": "c"},
+	}
+	if _, err := es.CreateEntities(wo, testData); err != nil {
+		t.Fatal(err)
+	}
+
+	q, err := query.Translate("foo")
+	if err != nil {
+		t.Error(err)
+	}
+
+	f := etre.QueryFilter{
+		ReturnLabels: []string{"foo"}, // only works with 1 return label
+		Distinct:     true,
+	}
+	actual, err := es.ReadEntities(entityType, q, f)
+	if err != nil {
+		t.Error(err)
+	}
+	expect := []etre.Entity{
+		{"foo": "a"},
+		{"foo": "b"},
+		{"foo": "c"},
+	}
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestReadEntitiesFilterReturnLabels(t *testing.T) {
+	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	defer teardown(t, es)
+
+	// Test entity is {"x": 2, "y": "hello", "z": 26}, so we'll
+	// query by x but return only y.
+	// Note: x=2 doesn't work because it treats 2 as a string instead
+	// of an int.
+	q, err := query.Translate("x>1")
+	if err != nil {
+		t.Error(err)
+	}
+	expect := []etre.Entity{{"y": "hello"}}
+	f := etre.QueryFilter{
+		ReturnLabels: []string{"y"}, // testing this
+	}
+	actual, err := es.ReadEntities(entityType, q, f)
+	if err != nil {
+		t.Error(err)
+	}
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
 	}
 }
 

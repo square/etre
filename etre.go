@@ -14,7 +14,7 @@ const (
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.9.3"
+	VERSION                  = "0.9.6"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
 	VERSION_HEADER           = "X-Etre-Version"
 	TRACE_HEADER             = "X-Etre-Trace"
@@ -123,6 +123,10 @@ type QueryFilter struct {
 	// returns all labels, including meta-labels. Else, only labels in the slice
 	// are returned.
 	ReturnLabels []string
+
+	// Distinct returns unique entities if ReturnLabels contains a single value.
+	// Etre returns an error if enabled and ReturnLabels has more than one value.
+	Distinct bool
 }
 
 // WriteResult represents the result of a write operation (insert, update delete).

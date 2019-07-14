@@ -48,6 +48,7 @@ type Options struct {
 	Timeout     uint   `arg:"env:ES_TIMEOUT" yaml:"timeout"`
 	Trace       string `arg:"env:ES_TRACE" yaml:"trace"`
 	Update      bool
+	Unique      bool `arg:"-u"`
 	Version     bool `arg:"-v"`
 }
 
@@ -95,7 +96,7 @@ func Help() {
 		"  Delete: es [options] --delete entity id\n\n"+
 		"Args:\n"+
 		"  entity     Valid entity type (Etre API config.entity.types)\n"+
-		"  label      Comma-separated list of labels to return, like: host.zone,env\n"+
+		"  label      Comma-separated list of return labels, like: host.zone,env\n"+
 		"  query      Query string, like: env=production, zone in (east, west)\n"+
 		"  id         Internal ID (_id) of an entity, like: 507f1f77bcf86cd799439011\n"+
 		"  patches    New label=value pairs, like: zone=west status=online\n\n"+
@@ -119,6 +120,7 @@ func Help() {
 		"  --timeout       API timeout, milliseconds (default: %d)\n"+
 		"  --trace         Comma-separated key=val pairs for server metrics\n"+
 		"  --update        Apply patches to one entity by id\n"+
+		"  --unique (-u)   Return distinct values of a single return label\n"+
 		"  --version       Print version\n\n",
 		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_TIMEOUT)
 }
