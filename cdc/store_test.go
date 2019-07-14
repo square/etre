@@ -21,9 +21,13 @@ var cdcCollection = "cdc"
 func cdcSetup(t *testing.T) db.Connector {
 	// @todo: make this configurable
 	conn := db.NewConnector("localhost:27017", 5, nil, nil)
-	s, err := conn.Connect()
+	err := conn.Init()
 	if err != nil {
 		t.Errorf("error connecting to mongo: %s", err)
+	}
+	s, err := conn.Connect()
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	for _, event := range mock.CDCEvents {

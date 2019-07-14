@@ -17,7 +17,7 @@ func delaySetup(t *testing.T) db.Connector {
 	// @todo: make this configurable
 	conn := db.NewConnector("localhost:27017", 1, nil, nil)
 
-	_, err := conn.Connect()
+	err := conn.Init()
 	if err != nil {
 		t.Errorf("error connecting to mongo: %s", err)
 	}

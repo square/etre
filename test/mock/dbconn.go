@@ -17,6 +17,10 @@ type Connector struct {
 	CloseFunc   func()
 }
 
+func (c *Connector) Init() error {
+	return nil
+}
+
 func (c *Connector) Connect() (*mgo.Session, error) {
 	if c.ConnectFunc != nil {
 		return c.ConnectFunc()

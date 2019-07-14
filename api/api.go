@@ -370,9 +370,15 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 
 	// Query Filter
 	f := etre.QueryFilter{}
-	csv := c.QueryParam("labels")
-	if csv != "" {
-		f.ReturnLabels = strings.Split(csv, ",")
+	queryParam := c.QueryParams() // ?x=1&y=2&z -> https://godoc.org/net/url#Values
+	if csv, ok := queryParam["labels"]; ok {
+		f.ReturnLabels = strings.Split(csv[0], ",")
+	}
+	if _, ok := queryParam["distinct"]; ok {
+		f.Distinct = true
+	}
+	if f.Distinct && len(f.ReturnLabels) > 1 {
+		return readError(ErrInvalidQuery.New("distinct requires only 1 return label but %d specified: %v", len(f.ReturnLabels), f.ReturnLabels))
 	}
 
 	entityType := c.Param("type")
