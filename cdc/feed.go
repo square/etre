@@ -11,9 +11,9 @@ import (
 
 	"github.com/square/etre"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/websocket"
 	"github.com/rs/xid"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
