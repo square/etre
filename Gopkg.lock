@@ -2,14 +2,6 @@
 
 
 [[projects]]
-  digest = "1:d867dfa6751c8d7a435821ad3b736310c2ed68945d05b50fb9d23aee0540c8cc"
-  name = "github.com/Sirupsen/logrus"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "3e01752db0189b9157070a0e1668a620f9a85da2"
-  version = "v1.0.6"
-
-[[projects]]
   branch = "master"
   digest = "1:150814dda7b5be924856c46c59bf801bc9d20f7c2a8070500aae64afbd6192e3"
   name = "github.com/alexflint/go-arg"
@@ -115,6 +107,14 @@
   version = "v1.2.1"
 
 [[projects]]
+  digest = "1:d867dfa6751c8d7a435821ad3b736310c2ed68945d05b50fb9d23aee0540c8cc"
+  name = "github.com/sirupsen/logrus"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "3e01752db0189b9157070a0e1668a620f9a85da2"
+  version = "v1.0.6"
+
+[[projects]]
   digest = "1:c468422f334a6b46a19448ad59aaffdfc0a36b08fdcc1c749a0b29b6453d7e59"
   name = "github.com/valyala/bytebufferpool"
   packages = ["."]
@@ -165,7 +165,6 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/Sirupsen/logrus",
     "github.com/alexflint/go-arg",
     "github.com/daniel-nichter/go-metrics",
     "github.com/globalsign/mgo",
@@ -175,6 +174,7 @@
     "github.com/gorilla/websocket",
     "github.com/labstack/echo",
     "github.com/rs/xid",
+    "github.com/sirupsen/logrus",
     "gopkg.in/yaml.v2",
   ]
   solver-name = "gps-cdcl"
