@@ -21,6 +21,8 @@ const (
 	DEFAULT_CONFIG_FILES = "/etc/etre/es.yaml,~/.es.yaml"
 	DEFAULT_IFS          = ","
 	DEFAULT_TIMEOUT      = 5000 // 5s
+	DEFAULT_RETRY        = 0
+	DEFAULT_RETRY_WAIT   = "1s"
 )
 
 var (
@@ -39,8 +41,9 @@ type Options struct {
 	JSON        bool   `arg:"env:ES_JSON" yaml:"json"`
 	IFS         string `arg:"env" yaml:"ifs"`
 	Labels      bool   `arg:"env:ES_LABELS" yaml:"labels"`
-	Ping        bool
 	Old         bool   `arg:"env:ES_OLD" yaml:"old"`
+	Retry       uint   `arg:"env:ES_RETRY" yaml:"retry"`
+	RetryWait   string `arg:"--retry-wait,env:ES_RETRY_WAIT" yaml:"retry_wait"`
 	SetOp       string `arg:"--set-op,env:ES_SET_OP"`
 	SetId       string `arg:"--set-id,env:ES_SET_ID"`
 	SetSize     int    `arg:"--set-size,env:ES_SET_SIZE"`
@@ -111,8 +114,9 @@ func Help() {
 		"  --ifs           Character to print between label values (default: %s)\n"+
 		"  --json          Print entities as JSON\n"+
 		"  --labels        Print label: before value\n"+
-		"  --ping          Ping addr\n"+
 		"  --old           Print old values on --update\n"+
+		"  --retry         Retry count on network or API error (default: %d)\n"+
+		"  --retry-wait    Wait time between retries (default: %s)\n"+
 		"  --set-id        User-defined set ID for --update and --delete\n"+
 		"  --set-op        User-defined set op for --update and --delete\n"+
 		"  --set-size      User-defined set size for --update and --delete (must be > 0)\n"+
@@ -122,7 +126,7 @@ func Help() {
 		"  --update        Apply patches to one entity by id\n"+
 		"  --unique (-u)   Return distinct values of a single return label\n"+
 		"  --version       Print version\n\n",
-		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_TIMEOUT)
+		DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_RETRY, DEFAULT_RETRY_WAIT, DEFAULT_TIMEOUT)
 }
 
 func ParseConfigFiles(files string, debug bool) Options {

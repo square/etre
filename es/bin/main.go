@@ -1,8 +1,9 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -19,7 +20,19 @@ func (f ecFactory) Make(ctx app.Context) (etre.EntityClient, error) {
 	httpClient := &http.Client{
 		Timeout: time.Duration(ctx.Options.Timeout) * time.Millisecond,
 	}
-	ec := etre.NewEntityClient(ctx.EntityType, ctx.Options.Addr, httpClient)
+	retryWait, err := time.ParseDuration(ctx.Options.RetryWait)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --retry-wait %s: %s\n", ctx.Options.RetryWait, err)
+	}
+	c := etre.EntityClientConfig{
+		EntityType:   ctx.EntityType,
+		Addr:         ctx.Options.Addr,
+		HTTPClient:   httpClient,
+		Retry:        ctx.Options.Retry,
+		RetryWait:    retryWait,
+		RetryLogging: true,
+	}
+	ec := etre.NewEntityClientWithConfig(c)
 	return ec, nil
 }
 

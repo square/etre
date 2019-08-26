@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/square/etre"
 	"github.com/square/etre/es/app"
@@ -128,6 +129,13 @@ func Run(ctx app.Context) {
 		}
 	}
 
+	if cmdLine.Options.Retry > 0 {
+		if _, err := time.ParseDuration(cmdLine.Options.RetryWait); err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid --retry-wait %s: %s\n", cmdLine.Options.RetryWait, err)
+			os.Exit(1)
+		}
+	}
+
 	// Finalize options
 	var o config.Options = cmdLine.Options
 	if o.Debug {
@@ -204,16 +212,6 @@ func Run(ctx app.Context) {
 		app.Debug("trace: %s", trace)
 	}
 	ec = ec.WithTrace(trace)
-
-	// //////////////////////////////////////////////////////////////////////
-	// Ping
-	// //////////////////////////////////////////////////////////////////////
-
-	if o.Ping {
-		// @todo
-		fmt.Printf("-ping todo")
-		os.Exit(0)
-	}
 
 	// //////////////////////////////////////////////////////////////////////
 	// Update and exit, if --update
