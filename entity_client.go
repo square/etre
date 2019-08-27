@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // EntityClient represents a entity type-specific client. No interface method has
@@ -60,6 +62,17 @@ type EntityClient interface {
 	WithTrace(string) EntityClient
 }
 
+// EntityClientConfig represents required and optional configuration for an EntityClient.
+// This is used to make an EntityClient by calling NewEntityClientWithConfig.
+type EntityClientConfig struct {
+	EntityType   string        // entity type name
+	Addr         string        // Etre server address (e.g. https://localhost:3848)
+	HTTPClient   *http.Client  // configured http.Client
+	Retry        uint          // optional retry count on network or API error
+	RetryWait    time.Duration // optional wait time between retries
+	RetryLogging bool          // log error on retry to stderr
+}
+
 // EntityClients represents type-specific entity clients keyed on user-defined const
 // which define each entity type. For example:
 //
@@ -84,6 +97,9 @@ type entityClient struct {
 	httpClient       *http.Client
 	set              Set
 	traceHeaderValue string
+	retry            uint
+	retryWait        time.Duration
+	retryLogging     bool
 }
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
@@ -98,6 +114,17 @@ func NewEntityClient(entityType, addr string, httpClient *http.Client) EntityCli
 		httpClient: httpClient,
 	}
 	return c
+}
+
+func NewEntityClientWithConfig(c EntityClientConfig) EntityClient {
+	return entityClient{
+		entityType:   c.EntityType,
+		addr:         c.Addr,
+		httpClient:   c.HTTPClient,
+		retry:        c.Retry,
+		retryWait:    c.RetryWait,
+		retryLogging: c.RetryLogging,
+	}
 }
 
 func (c entityClient) WithSet(set Set) EntityClient {
@@ -118,45 +145,46 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 		return nil, ErrNoQuery
 	}
 
-	// Do the normal GET /entities?query unless query is ~2k because make URL
-	// length is about that. In that case, switch to alternate endpoint to
-	// POST the long query.
-	var (
-		resp  *http.Response
-		bytes []byte
-		err   error
-	)
-	if len(query) < 2000 {
-		query = url.QueryEscape(query) // always escape the query
-		url := "/entities/" + c.entityType + "?query=" + query
-		if len(filter.ReturnLabels) > 0 {
-			rl := strings.Join(filter.ReturnLabels, ",")
-			url += "&labels=" + rl
-		}
-		if filter.Distinct {
-			url += "&distinct"
-		}
-		resp, bytes, err = c.do("GET", url, nil)
-	} else {
-		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
-		// @todo: support QueryFilter
-		resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
-	}
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError(resp, bytes)
-	}
-
 	var entities []Entity
-	if len(bytes) > 0 {
-		if err := json.Unmarshal(bytes, &entities); err != nil {
-			return nil, err
+	err := c.apiRetry(func() error {
+		// Do the normal GET /entities?query unless query is ~2k because make URL
+		// length is about that. In that case, switch to alternate endpoint to
+		// POST the long query.
+		var (
+			resp  *http.Response
+			bytes []byte
+			err   error
+		)
+		if len(query) < 2000 {
+			query = url.QueryEscape(query) // always escape the query
+			url := "/entities/" + c.entityType + "?query=" + query
+			if len(filter.ReturnLabels) > 0 {
+				rl := strings.Join(filter.ReturnLabels, ",")
+				url += "&labels=" + rl
+			}
+			if filter.Distinct {
+				url += "&distinct"
+			}
+			resp, bytes, err = c.do("GET", url, nil)
+		} else {
+			// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
+			// @todo: support QueryFilter
+			resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
 		}
-	}
-
-	return entities, nil
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return apiError(resp, bytes)
+		}
+		if len(bytes) > 0 {
+			if err := json.Unmarshal(bytes, &entities); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return entities, err
 }
 
 func (c entityClient) Insert(entities []Entity) (WriteResult, error) {
@@ -218,20 +246,21 @@ func (c entityClient) Labels(id string) ([]string, error) {
 		return nil, ErrIdNotSet
 	}
 
-	resp, bytes, err := c.do("GET", "/entity/"+c.entityType+"/"+id+"/labels", nil)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError(resp, bytes)
-	}
-
 	var labels []string
-	if err := json.Unmarshal(bytes, &labels); err != nil {
-		return nil, err
-	}
-
-	return labels, nil
+	err := c.apiRetry(func() error {
+		resp, bytes, err := c.do("GET", "/entity/"+c.entityType+"/"+id+"/labels", nil)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return apiError(resp, bytes)
+		}
+		if err := json.Unmarshal(bytes, &labels); err != nil {
+			return err
+		}
+		return nil
+	})
+	return labels, err
 }
 
 func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) {
@@ -280,25 +309,28 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 		}
 	}
 
-	// Do low-level HTTP request. An erorr here is probably network not API error.
-	resp, bytes, err := c.do(method, endpoint, bytes)
-	if err != nil {
-		return wr, err
-	}
+	err = c.apiRetry(func() error {
+		// Do low-level HTTP request. An erorr here is probably network not API error.
+		resp, bytes, err := c.do(method, endpoint, bytes)
+		if err != nil {
+			return err
+		}
 
-	// On write, API should return an etre.WriteResult, but if API crashes
-	// there won't be response data
-	if len(bytes) == 0 {
-		return wr, fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
-	}
-	if err := json.Unmarshal(bytes, &wr); err != nil {
-		return wr, fmt.Errorf("json.Unmarshal: %s", err)
-	}
-	if wr.IsZero() && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return wr, fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
-	}
-
-	return wr, nil
+		// On write, API should return an etre.WriteResult, but if API crashes
+		// there won't be response data
+		if len(bytes) == 0 {
+			return fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
+		}
+		wr = WriteResult{} // outer scope, reset on retry
+		if err := json.Unmarshal(bytes, &wr); err != nil {
+			return fmt.Errorf("json.Unmarshal: %s", err)
+		}
+		if wr.IsZero() && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			return fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
+		}
+		return nil
+	})
+	return wr, err
 }
 
 func (c entityClient) do(method, endpoint string, payload []byte) (*http.Response, []byte, error) {
@@ -373,6 +405,24 @@ func apiError(resp *http.Response, bytes []byte) error {
 		return fmt.Errorf("API error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 	}
 	return fmt.Errorf("error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
+}
+
+func (c entityClient) apiRetry(f func() error) error {
+	tries := 1 + c.retry
+	var err error
+	for tryNo := uint(1); tryNo <= tries; tryNo++ {
+		err = f()
+		if err == nil {
+			return nil // success
+		}
+		if tryNo < tries { // don't log or sleep on last try
+			if c.retryLogging {
+				log.Printf("Error querying Etre: %s (try %d of %d, retry in %s)", err, tryNo, tries, c.retryWait)
+			}
+			time.Sleep(c.retryWait)
+		}
+	}
+	return err // last error
 }
 
 // //////////////////////////////////////////////////////////////////////////
