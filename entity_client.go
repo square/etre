@@ -145,32 +145,35 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 		return nil, ErrNoQuery
 	}
 
+	// Queries typically use "GET <path>?query=<query>", but sometimes URLs >2k
+	// don't work (dependent on http implementation). So if it's short enough,
+	// use GET, else use POST with the unescaped query.
+	var (
+		method string
+		path   string
+		data   []byte
+	)
+	if len(query) < 2000 {
+		method = "GET"
+		path = "/entities/" + c.entityType + "?query=" + url.QueryEscape(query) // always escape the query
+		if len(filter.ReturnLabels) > 0 {
+			rl := strings.Join(filter.ReturnLabels, ",")
+			path += "&labels=" + rl
+		}
+		if filter.Distinct {
+			path += "&distinct"
+		}
+	} else {
+		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
+		// @todo: support QueryFilter
+		method = "POST"
+		path = "/query/" + c.entityType
+		data = []byte(query)
+	}
+
 	var entities []Entity
 	err := c.apiRetry(func() error {
-		// Do the normal GET /entities?query unless query is ~2k because make URL
-		// length is about that. In that case, switch to alternate endpoint to
-		// POST the long query.
-		var (
-			resp  *http.Response
-			bytes []byte
-			err   error
-		)
-		if len(query) < 2000 {
-			query = url.QueryEscape(query) // always escape the query
-			url := "/entities/" + c.entityType + "?query=" + query
-			if len(filter.ReturnLabels) > 0 {
-				rl := strings.Join(filter.ReturnLabels, ",")
-				url += "&labels=" + rl
-			}
-			if filter.Distinct {
-				url += "&distinct"
-			}
-			resp, bytes, err = c.do("GET", url, nil)
-		} else {
-			// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
-			// @todo: support QueryFilter
-			resp, bytes, err = c.do("POST", "/query/"+c.entityType, []byte(query))
-		}
+		resp, bytes, err := c.do(method, path, data)
 		if err != nil {
 			return err
 		}
