@@ -45,6 +45,9 @@ func Run(ctx app.Context) {
 	if def.Timeout == 0 {
 		def.Timeout = config.DEFAULT_TIMEOUT
 	}
+	if def.RetryWait == "" {
+		def.RetryWait = config.DEFAULT_RETRY_WAIT
+	}
 
 	// Parse env vars and cmd line options, override default config
 	cmdLine = config.ParseCommandLine(def)
