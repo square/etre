@@ -109,7 +109,7 @@ func (s *store) Read(filter Filter) ([]etre.CDCEvent, error) {
 	var events []etre.CDCEvent
 	err = mgoQuery.All(&events)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("database error: %s", err)
 	}
 
 	return events, nil

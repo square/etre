@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
 	"time"
 
 	"github.com/square/etre"
@@ -23,13 +22,17 @@ import (
 )
 
 type Server struct {
-	appCtx app.Context
-	api    *api.API
+	appCtx   app.Context
+	api      *api.API
+	poller   cdc.Poller
+	stopChan chan struct{}
+	conn     db.Connector
 }
 
 func NewServer(appCtx app.Context) *Server {
 	return &Server{
-		appCtx: appCtx,
+		appCtx:   appCtx,
+		stopChan: make(chan struct{}),
 	}
 }
 
@@ -77,29 +80,19 @@ func (s *Server) Boot(configFile string) error {
 	} else {
 		log.Println("TLS cert and key not given")
 	}
-
 	dbCredentials := map[string]string{
 		"username":  cfg.Datasource.Username,
 		"password":  cfg.Datasource.Password,
 		"source":    cfg.Datasource.Source,
 		"mechanism": cfg.Datasource.Mechanism,
 	}
-
-	conn := db.NewConnector(cfg.Datasource.URL, cfg.Datasource.Timeout, tlsConfig, dbCredentials)
-
-	// Verify we can connect to the db.
-	// @todo: removing this causes mgo panic "Session already closed" after 1st query
-	if err := conn.Init(); err != nil {
-		return fmt.Errorf("cannot connect to %s: %s", cfg.Datasource.URL, err)
-	}
-	log.Printf("Connected to %s", cfg.Datasource.URL)
+	s.conn = db.NewConnector(s.appCtx.Config.Datasource.URL, cfg.Datasource.Timeout, tlsConfig, dbCredentials)
 
 	// //////////////////////////////////////////////////////////////////////
 	// CDC Store, Delayer, and Poller (if enabled)
 	// //////////////////////////////////////////////////////////////////////
 	var cdcStore cdc.Store
 	var dm cdc.Delayer
-	var poller cdc.Poller
 	if cfg.CDC.Collection != "" {
 		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, cfg.CDC.Collection)
 
@@ -109,7 +102,7 @@ func (s *Server) Boot(configFile string) error {
 			RetryWait:  cfg.CDC.WriteRetryWait,
 		}
 		cdcStore = cdc.NewStore(
-			conn,
+			s.conn,
 			cfg.Datasource.Database,
 			cfg.CDC.Collection,
 			cfg.CDC.FallbackFile,
@@ -122,28 +115,23 @@ func (s *Server) Boot(configFile string) error {
 			dm, err = cdc.NewStaticDelayer(cfg.CDC.StaticDelay)
 		} else {
 			dm, err = cdc.NewDynamicDelayer(
-				conn,
+				s.conn,
 				cfg.Datasource.Database,
 				cfg.CDC.DelayCollection,
 			)
 		}
 		if err != nil {
-			log.Println(err)
-			os.Exit(1)
+			return err
 		}
 
 		// Poller
-		poller = cdc.NewPoller(
+		log.Printf("CDC feed poll interval: %d ms", cfg.Feed.PollInterval)
+		s.poller = cdc.NewPoller(
 			cdcStore,
 			dm,
 			cfg.Feed.StreamerBufferSize,
 			time.NewTicker(time.Duration(cfg.Feed.PollInterval)*time.Millisecond),
 		)
-		go func() {
-			if err := poller.Run(); err != nil {
-				log.Fatalf("poller error: %s", err)
-			}
-		}()
 	} else {
 		log.Println("CDC disabled (cfg.cdc.collection not set)")
 
@@ -154,22 +142,22 @@ func (s *Server) Boot(configFile string) error {
 
 		// This results in a nil FeedFactory (below) which causes the /changes
 		// controller returns http code 501 (StatusNotImplemented).
-		poller = nil // cdc disabled
+		s.poller = nil // cdc disabled
 	}
 	s.appCtx.CDCStore = cdcStore
 
 	// //////////////////////////////////////////////////////////////////////
 	// Feed Factory
 	// //////////////////////////////////////////////////////////////////////
-	if poller != nil {
-		s.appCtx.FeedFactory = cdc.NewFeedFactory(poller, cdcStore)
+	if s.poller != nil {
+		s.appCtx.FeedFactory = cdc.NewFeedFactory(s.poller, cdcStore)
 	}
 
 	// //////////////////////////////////////////////////////////////////////
 	// Entity Store
 	// //////////////////////////////////////////////////////////////////////
 	s.appCtx.EntityStore = entity.NewStore(
-		conn,
+		s.conn,
 		cfg.Datasource.Database,
 		cfg.Entity.Types,
 		cdcStore,
@@ -202,10 +190,31 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	s.api = api.NewAPI(s.appCtx)
 
+	log.Printf("Config: %+v", s.appCtx.Config)
+
 	return nil
 }
 
 func (s *Server) Run() error {
+	// Verify we can connect to the db.
+	// @todo: removing this causes mgo panic "Session already closed" after 1st query
+	for {
+		if s.stopped() {
+			return nil
+		}
+		log.Printf("Verifying database connection to %s", s.appCtx.Config.Datasource.URL)
+		if err := s.conn.Init(); err != nil {
+			log.Printf("WARNING: cannot connect to %s: %s", s.appCtx.Config.Datasource.URL, err)
+			continue
+		}
+		log.Printf("Connected to %s", s.appCtx.Config.Datasource.URL)
+		break
+	}
+
+	if s.poller != nil {
+		go s.runPoller()
+	}
+
 	// Run the API - this will block until the API is stopped (or encounters
 	// some fatal error). If the RunAPI hook has been provided, call that instead
 	// of the default api.Run.
@@ -220,6 +229,7 @@ func (s *Server) Run() error {
 
 func (s *Server) Stop() error {
 	log.Println("Etre stopping...")
+	close(s.stopChan)
 
 	// Stop the API, using the StopAPI hook if provided and api.Stop otherwise.
 	var err error
@@ -237,6 +247,30 @@ func (s *Server) API() *api.API {
 
 func (s *Server) Context() app.Context {
 	return s.appCtx
+}
+
+func (s *Server) runPoller() {
+	if s.poller == nil {
+		return
+	}
+	for {
+		if s.stopped() {
+			return
+		}
+		if err := s.poller.Run(); err != nil {
+			log.Printf("poller error: %s (restarting in 1s)", err)
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+func (s *Server) stopped() bool {
+	select {
+	case <-s.stopChan:
+		return true
+	default:
+	}
+	return false
 }
 
 func MapConfigACLRoles(aclRoles []config.ACL) ([]auth.ACL, error) {

@@ -15,7 +15,7 @@ const (
 	DEFAULT_ADDR                  = "127.0.0.1:8050"
 	DEFAULT_DATASOURCE_URL        = "mongodb://localhost:27017"
 	DEFAULT_DB                    = "etre_dev"
-	DEFAULT_DB_TIMEOUT            = 5000
+	DEFAULT_DB_TIMEOUT            = 5
 	DEFAULT_CDC_COLLECTION        = "" // disabled
 	DEFAULT_CDC_DELAY_COLLECTION  = "cdc_delay"
 	DEFAULT_CDC_WRITE_RETRY_COUNT = 3
