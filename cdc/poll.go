@@ -1,9 +1,10 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2019, Square, Inc.
 
 package cdc
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -79,20 +80,24 @@ func NewPoller(cdcs Store, delayer Delayer, clientBufferSize int, pollInterval *
 }
 
 func (p *poller) Run() error {
-	p.Lock()
-	log.Info("running poller")
-
+	p.Lock() // -- LOCK
 	if p.running {
 		log.Info("poller already running")
-		p.Unlock()
+		p.Unlock() // -- UNLOCK
 		return ErrPollerAlreadyRunning
 	}
-
+	log.Info("running poller")
 	p.running = true
 	p.err = nil
+	p.Unlock() // -- UNLOCK
 
+	err := p.poll()
+	p.Lock()
+	p.err = err
+	p.running = false
 	p.Unlock()
-	return p.poll()
+
+	return err
 }
 
 func (p *poller) Register(id string) (<-chan etre.CDCEvent, int64, error) {
@@ -131,6 +136,8 @@ func (p *poller) Error() error {
 // ------------------------------------------------------------------------- //
 
 func (p *poller) poll() error {
+	defer p.deregisterAll()
+
 	logInterval := time.NewTicker(time.Duration(DEFAULT_LOG_INTERVAL) * time.Second)
 
 	// Start polling from time.Now().
@@ -139,12 +146,7 @@ func (p *poller) poll() error {
 		// Get the maximum upper-bound timestamp that is safe to query.
 		untilTs, err := p.delayer.MaxTimestamp()
 		if err != nil {
-			// If there was an error, deregister all clients and return.
-			p.Lock()
-			p.deregisterAll()
-			p.err = err
-			p.Unlock()
-			return err
+			return fmt.Errorf("delayer error: %s", err)
 		}
 
 		// Log current status every so often.
@@ -162,12 +164,7 @@ func (p *poller) poll() error {
 		}
 		events, err := p.cdcs.Read(filter)
 		if err != nil {
-			// If there was an error, deregister all clients and return.
-			p.Lock()
-			p.deregisterAll()
-			p.err = err
-			p.Unlock()
-			return err
+			return fmt.Errorf("cdc.Store error: %s", err)
 		}
 
 		p.Lock() // lock before sending events to clients
@@ -200,6 +197,7 @@ func (p *poller) poll() error {
 
 // Deregister a client. Caller must lock the poller before calling this method.
 func (p *poller) deregister(id string) {
+	// CALLER MUST LOCK
 	if v, ok := p.clients[id]; ok {
 		close(v)
 		delete(p.clients, id)
@@ -209,6 +207,8 @@ func (p *poller) deregister(id string) {
 // Deregister all clients. Caller must lock the poller before calling this method.
 func (p *poller) deregisterAll() {
 	log.Infof("deregistering all clients")
+	p.Lock()
+	defer p.Unlock()
 	for id, cchan := range p.clients {
 		close(cchan)
 		delete(p.clients, id)

@@ -25,13 +25,10 @@ entity:
     - dns
     - grant
 cdc:
-  #collection: cdc
-  fallbackFile:
+  collection: cdc
+  static_delay: -1
   write_retry_count: 2
   write_retry_wait: 300 # milliseconds
-# delay:
-#   collection: delay
-#   static_delay_ms: -1 # milliseconds
-# feed:
-#   streamer_buffer_size: 100
-#   poll_interval: 2000
+feed:
+  streamer_buffer_size: 100
+  poll_interval: 2000
