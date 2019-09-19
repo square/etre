@@ -1073,6 +1073,7 @@ func TestMetricsInvalidEntityType(t *testing.T) {
 	// No group/entity metrics because the entity type was invalid
 	expectMetrics := []mock.MetricMethodArgs{
 		{Method: "Inc", Metric: metrics.InvalidEntityType, IntVal: 1},
+		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 	}
 	if diffs := deep.Equal(metricsrec.Called, expectMetrics); diffs != nil {
 		t.Logf("   got (em): %+v", metricsrec.Called)
