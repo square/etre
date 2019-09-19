@@ -147,7 +147,7 @@ func NewAPI(appCtx app.Context) *API {
 				if write {
 					return c.JSON(api.WriteResult(c, nil, authErr))
 				}
-				return readError(authErr)
+				return readError(c, authErr)
 			}
 			c.Set("caller", caller)
 
@@ -174,7 +174,7 @@ func NewAPI(appCtx app.Context) *API {
 				if write {
 					return c.JSON(api.WriteResult(c, nil, err))
 				}
-				return readError(err)
+				return readError(c, err)
 			}
 
 			// Bind group metrics to entity type
@@ -225,7 +225,7 @@ func NewAPI(appCtx app.Context) *API {
 						HTTPStatus: http.StatusForbidden,
 					}
 					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
-					return readError(authErr)
+					return readError(c, authErr)
 				}
 			}
 			return next(c)
@@ -349,17 +349,17 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 
 	// Validate
 	if err := validateParams(c, false); err != nil {
-		return readError(err)
+		return readError(c, err)
 	}
 
 	// Translate query string to struct
 	requestLabelSelector := c.QueryParam("query")
 	if requestLabelSelector == "" {
-		return readError(ErrInvalidQuery.New("query string is empty"))
+		return readError(c, ErrInvalidQuery.New("query string is empty"))
 	}
 	q, err := query.Translate(requestLabelSelector)
 	if err != nil {
-		return readError(ErrInvalidQuery.New("invalid query: %s", err))
+		return readError(c, ErrInvalidQuery.New("invalid query: %s", err))
 	}
 
 	// Label metrics
@@ -378,13 +378,13 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 		f.Distinct = true
 	}
 	if f.Distinct && len(f.ReturnLabels) > 1 {
-		return readError(ErrInvalidQuery.New("distinct requires only 1 return label but %d specified: %v", len(f.ReturnLabels), f.ReturnLabels))
+		return readError(c, ErrInvalidQuery.New("distinct requires only 1 return label but %d specified: %v", len(f.ReturnLabels), f.ReturnLabels))
 	}
 
 	entityType := c.Param("type")
 	entities, err := api.es.ReadEntities(entityType, q, f)
 	if err != nil {
-		return readError(ErrDb.New(err.Error()))
+		return readError(c, ErrDb.New(err.Error()))
 	}
 	gm.Val(metrics.ReadMatch, int64(len(entities)))
 	return c.JSON(http.StatusOK, entities)
@@ -539,7 +539,7 @@ func (api *API) getEntityHandler(c echo.Context) error {
 
 	// Validate
 	if err := validateParams(c, true); err != nil {
-		return readError(err)
+		return readError(c, err)
 	}
 
 	// Query Filter
@@ -554,7 +554,7 @@ func (api *API) getEntityHandler(c echo.Context) error {
 	entityId := c.Param("id")
 	entities, err := api.es.ReadEntities(entityType, query.IdEqual(entityId), f)
 	if err != nil {
-		return readError(ErrDb.New(err.Error()))
+		return readError(c, ErrDb.New(err.Error()))
 	}
 	if len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
@@ -625,14 +625,14 @@ func (api *API) entityLabelsHandler(c echo.Context) error {
 
 	// Validate
 	if err := validateParams(c, true); err != nil {
-		return readError(err)
+		return readError(c, err)
 	}
 
 	entityType := c.Param("type")
 	entityId := c.Param("id")
 	entities, err := api.es.ReadEntities(entityType, query.IdEqual(entityId), etre.QueryFilter{})
 	if err != nil {
-		return readError(ErrDb.New(err.Error()))
+		return readError(c, ErrDb.New(err.Error()))
 	}
 	if len(entities) == 0 {
 		return c.JSON(http.StatusNotFound, nil)
@@ -728,7 +728,7 @@ var upgrader = websocket.Upgrader{
 
 func (api *API) changesHandler(c echo.Context) error {
 	if api.ff == nil {
-		return readError(ErrCDCDisabled)
+		return readError(c, ErrCDCDisabled)
 	}
 
 	gm := c.Get("gm").(metrics.Metrics)
@@ -738,24 +738,36 @@ func (api *API) changesHandler(c echo.Context) error {
 	// Upgrade to a WebSocket connection.
 	wsConn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
-		return readError(ErrInternal.New(err.Error()))
+		return readError(c, ErrInternal.New(err.Error()))
 	}
 
 	// Create and run a feed.
 	f := api.ff.MakeWebsocket(wsConn)
 	if err := f.Run(); err != nil {
-		return readError(ErrInternal.New(err.Error()))
+		return readError(c, ErrInternal.New(err.Error()))
 	}
 
 	return nil
 }
 
 // Return error on read. Writes always return an etre.WriteResult by calling WriteResult.
-func readError(err error) *echo.HTTPError {
+func readError(c echo.Context, err error) *echo.HTTPError {
+	gm := c.Get("gm").(metrics.Metrics)
+
 	switch v := err.(type) {
 	case etre.Error:
+		log.Printf("READ ERROR: %s: %s", v.Type, v.Message)
+		switch v.Type {
+		case ErrDb.Type:
+			gm.Inc(metrics.DbError, 1)
+		case ErrInvalidQuery.Type, ErrMissingParam.Type, ErrInvalidParam.Type:
+			gm.Inc(metrics.ClientError, 1)
+		default:
+			gm.Inc(metrics.APIError, 1)
+		}
 		return echo.NewHTTPError(v.HTTPStatus, err)
 	case entity.ValidationError:
+		gm.Inc(metrics.ClientError, 1)
 		etreError := etre.Error{
 			Message:    v.Err.Error(),
 			Type:       v.Type,
@@ -763,13 +775,25 @@ func readError(err error) *echo.HTTPError {
 		}
 		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
 	case auth.Error:
+		// Metric incremented by caller
 		etreError := etre.Error{
 			Message:    v.Err.Error(),
 			Type:       v.Type,
 			HTTPStatus: v.HTTPStatus,
 		}
 		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
+	case entity.DbError:
+		// This db error type should be wrapped by controller, but in case not...
+		gm.Inc(metrics.DbError, 1)
+		etreError := etre.Error{
+			Message:    v.Err.Error(),
+			Type:       v.Type,
+			HTTPStatus: http.StatusServiceUnavailable,
+			EntityId:   v.EntityId,
+		}
+		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
 	default:
+		gm.Inc(metrics.APIError, 1)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 }
@@ -784,16 +808,25 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 
 	// Map error to etre.Error
 	if err != nil {
+		gm := c.Get("gm").(metrics.Metrics)
 		switch v := err.(type) {
 		case etre.Error:
 			wr.Error = &v
+			switch err {
+			case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam:
+				gm.Inc(metrics.ClientError, 1)
+			default:
+				gm.Inc(metrics.APIError, 1)
+			}
 		case entity.ValidationError:
+			gm.Inc(metrics.ClientError, 1)
 			wr.Error = &etre.Error{
 				Message:    v.Err.Error(),
 				Type:       v.Type,
 				HTTPStatus: http.StatusBadRequest,
 			}
 		case entity.DbError:
+			gm.Inc(metrics.DbError, 1)
 			switch v.Type {
 			case "duplicate-entity":
 				dupeErr := ErrDuplicateEntity // copy
@@ -804,17 +837,19 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 				wr.Error = &etre.Error{
 					Message:    v.Err.Error(),
 					Type:       v.Type,
-					HTTPStatus: http.StatusInternalServerError,
+					HTTPStatus: http.StatusServiceUnavailable,
 					EntityId:   v.EntityId,
 				}
 			}
 		case auth.Error:
+			// Metric incremented by caller
 			wr.Error = &etre.Error{
 				Message:    v.Err.Error(),
 				Type:       v.Type,
 				HTTPStatus: v.HTTPStatus,
 			}
 		default:
+			gm.Inc(metrics.APIError, 1)
 			wr.Error = &etre.Error{
 				Message:    err.Error(),
 				Type:       "unhandled-error",
@@ -822,17 +857,6 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 			}
 		}
 		httpStatus = wr.Error.HTTPStatus
-
-		// Increment metrics for specific errors
-		gm := c.Get("gm").(metrics.Metrics)
-		switch err {
-		case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam:
-			gm.Inc(metrics.ClientError, 1)
-		case ErrDb:
-			gm.Inc(metrics.DbError, 1)
-		default:
-			gm.Inc(metrics.APIError, 1)
-		}
 	} else {
 		httpStatus = http.StatusOK
 	}

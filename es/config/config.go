@@ -20,7 +20,7 @@ import (
 const (
 	DEFAULT_CONFIG_FILES = "/etc/etre/es.yaml,~/.es.yaml"
 	DEFAULT_IFS          = ","
-	DEFAULT_TIMEOUT      = 5000 // 5s
+	DEFAULT_TIMEOUT      = 10000 // 10s
 	DEFAULT_RETRY        = 0
 	DEFAULT_RETRY_WAIT   = "1s"
 )

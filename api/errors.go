@@ -44,7 +44,7 @@ var ErrInvalidQuery = etre.Error{
 
 var ErrDb = etre.Error{
 	Type:       "db-error",
-	HTTPStatus: http.StatusInternalServerError,
+	HTTPStatus: http.StatusServiceUnavailable,
 	Message:    "unknown database error",
 }
 
