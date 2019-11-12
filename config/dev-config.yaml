@@ -35,3 +35,4 @@ feed:
 metrics:
   query_latency_sla: "10ms"
   query_profile_sample_rate: 1.0
+  query_profile_report_threshold: "0s"

@@ -35,19 +35,20 @@ func init() {
 
 // API provides controllers for endpoints it registers with a router.
 type API struct {
-	addr                 string
-	crt                  string
-	key                  string
-	es                   entity.Store
-	validate             entity.Validator
-	ff                   cdc.FeedFactory
-	auth                 auth.Plugin
-	metricsStore         metrics.Store
-	metricsFactory       metrics.Factory
-	systemMetrics        metrics.Metrics
-	defaultClientVersion string
-	queryLatencySLA      time.Duration
-	queryProfSampleRate  int
+	addr                     string
+	crt                      string
+	key                      string
+	es                       entity.Store
+	validate                 entity.Validator
+	ff                       cdc.FeedFactory
+	auth                     auth.Plugin
+	metricsStore             metrics.Store
+	metricsFactory           metrics.Factory
+	systemMetrics            metrics.Metrics
+	defaultClientVersion     string
+	queryLatencySLA          time.Duration
+	queryProfSampleRate      int
+	queryProfReportThreshold time.Duration
 	// --
 	echo *echo.Echo
 }
@@ -59,20 +60,22 @@ const longQueryPath = etre.API_ROOT + "/query/:type"
 // NewAPI makes a new API.
 func NewAPI(appCtx app.Context) *API {
 	queryLatencySLA, _ := time.ParseDuration(appCtx.Config.Metrics.QueryLatencySLA)
+	queryProfReportThreshold, _ := time.ParseDuration(appCtx.Config.Metrics.QueryProfileReportThreshold)
 	api := &API{
-		addr:                 appCtx.Config.Server.Addr,
-		crt:                  appCtx.Config.Server.TLSCert,
-		key:                  appCtx.Config.Server.TLSKey,
-		es:                   appCtx.EntityStore,
-		validate:             appCtx.EntityValidator,
-		ff:                   appCtx.FeedFactory,
-		auth:                 appCtx.Auth,
-		metricsFactory:       appCtx.MetricsFactory,
-		metricsStore:         appCtx.MetricsStore,
-		systemMetrics:        appCtx.SystemMetrics,
-		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,
-		queryLatencySLA:      queryLatencySLA,
-		queryProfSampleRate:  int(appCtx.Config.Metrics.QueryProfileSampleRate * 100),
+		addr:                     appCtx.Config.Server.Addr,
+		crt:                      appCtx.Config.Server.TLSCert,
+		key:                      appCtx.Config.Server.TLSKey,
+		es:                       appCtx.EntityStore,
+		validate:                 appCtx.EntityValidator,
+		ff:                       appCtx.FeedFactory,
+		auth:                     appCtx.Auth,
+		metricsFactory:           appCtx.MetricsFactory,
+		metricsStore:             appCtx.MetricsStore,
+		systemMetrics:            appCtx.SystemMetrics,
+		defaultClientVersion:     appCtx.Config.Server.DefaultClientVersion,
+		queryLatencySLA:          queryLatencySLA,
+		queryProfSampleRate:      int(appCtx.Config.Metrics.QueryProfileSampleRate * 100),
+		queryProfReportThreshold: queryProfReportThreshold,
 		// --
 		echo: echo.New(),
 	}
@@ -311,29 +314,31 @@ func NewAPI(appCtx app.Context) *API {
 				return nil
 			}
 
-			inst := c.Get("inst").(app.Instrument)
-
-			// Record query latency (response time) in milliseconds
 			t0 := c.Get("t0").(time.Time) // query start time
-			if !t0.IsZero() {
-				queryLatency := time.Now().Sub(t0)
-				gm := c.Get("gm").(metrics.Metrics)
-				gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
-
-				// Did the query take too long (miss SLA)?
-				if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
-					gm.Inc(metrics.MissSLA, 1)
-					req := c.Request()
-					profile := inst != app.NopInstrument
-					log.Printf("Missed SLA: %s %s %s (profile: %t caller=%+v request=%+v)", req.Method, req.URL.String(), queryLatency,
-						profile, caller, req)
-				}
+			if t0.IsZero() {
+				return nil
 			}
 
-			// Print query timing if not the nop instrument
-			if inst != app.NopInstrument {
+			// Record query latency (response time) in milliseconds
+			queryLatency := time.Now().Sub(t0)
+			gm := c.Get("gm").(metrics.Metrics)
+			gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
+
+			inst := c.Get("inst").(app.Instrument)
+
+			// Did the query take too long (miss SLA)?
+			if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
+				gm.Inc(metrics.MissSLA, 1)
 				req := c.Request()
-				log.Printf("Query profile: %s %s %+v (caller=%+v)", req.Method, req.URL.String(), inst.Report(), caller)
+				profile := inst != app.NopInstrument
+				log.Printf("Missed SLA: %s %s %s (profile: %t caller=%+v request=%+v)", req.Method, req.URL.String(), queryLatency,
+					profile, caller, req)
+			}
+
+			// Print query profile if it was timed and exceeds the report threshold
+			if inst != app.NopInstrument && queryLatency > api.queryProfReportThreshold {
+				req := c.Request()
+				log.Printf("Query profile: %s %s %s %+v (caller=%+v)", req.Method, req.URL.String(), queryLatency, inst.Report(), caller)
 			}
 
 			return nil
