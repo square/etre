@@ -32,3 +32,6 @@ cdc:
 feed:
   streamer_buffer_size: 100
   poll_interval: 2000
+metrics:
+  query_latency_sla: "10ms"
+  query_profile_sample_rate: 1.0
