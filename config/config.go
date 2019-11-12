@@ -12,20 +12,22 @@ import (
 )
 
 const (
-	DEFAULT_ADDR                  = "127.0.0.1:8050"
-	DEFAULT_DATASOURCE_URL        = "mongodb://localhost:27017"
-	DEFAULT_DB                    = "etre_dev"
-	DEFAULT_DB_TIMEOUT            = 5
-	DEFAULT_CDC_COLLECTION        = "" // disabled
-	DEFAULT_CDC_DELAY_COLLECTION  = "cdc_delay"
-	DEFAULT_CDC_WRITE_RETRY_COUNT = 3
-	DEFAULT_CDC_WRITE_RETRY_WAIT  = 50
-	DEFAULT_CDC_FALLBACK_FILE     = "/tmp/etre-cdc.json"
-	DEFAULT_CDC_STATIC_DELAY      = -1 // if negative, system will use a dynamic delayer
-	DEFAULT_FEED_BUFFER_SIZE      = 100
-	DEFAULT_FEED_POLL_INTERVAL    = 2000
-	DEFAULT_ENTITY_TYPE           = "host"
-	DEFAULT_QUERY_LATENCY_SLA     = "1s"
+	DEFAULT_ADDR                           = "127.0.0.1:8050"
+	DEFAULT_DATASOURCE_URL                 = "mongodb://localhost:27017"
+	DEFAULT_DB                             = "etre_dev"
+	DEFAULT_DB_TIMEOUT                     = 5
+	DEFAULT_CDC_COLLECTION                 = "" // disabled
+	DEFAULT_CDC_DELAY_COLLECTION           = "cdc_delay"
+	DEFAULT_CDC_WRITE_RETRY_COUNT          = 3
+	DEFAULT_CDC_WRITE_RETRY_WAIT           = 50
+	DEFAULT_CDC_FALLBACK_FILE              = "/tmp/etre-cdc.json"
+	DEFAULT_CDC_STATIC_DELAY               = -1 // if negative, system will use a dynamic delayer
+	DEFAULT_FEED_BUFFER_SIZE               = 100
+	DEFAULT_FEED_POLL_INTERVAL             = 2000
+	DEFAULT_ENTITY_TYPE                    = "host"
+	DEFAULT_QUERY_LATENCY_SLA              = "1s"
+	DEFAULT_QUERY_PROFILE_SAMPLE_RATE      = 0.2
+	DEFAULT_QUERY_PROFILE_REPORT_THRESHOLD = "500ms"
 )
 
 var reservedNames = []string{"entity", "entities"}
@@ -57,7 +59,9 @@ func Default() Config {
 		},
 		ACL: ACLConfig{},
 		Metrics: MetricsConfig{
-			QueryLatencySLA: DEFAULT_QUERY_LATENCY_SLA,
+			QueryLatencySLA:             DEFAULT_QUERY_LATENCY_SLA,
+			QueryProfileSampleRate:      DEFAULT_QUERY_PROFILE_SAMPLE_RATE,
+			QueryProfileReportThreshold: DEFAULT_QUERY_PROFILE_REPORT_THRESHOLD,
 		},
 	}
 }
@@ -178,5 +182,7 @@ type ACL struct {
 }
 
 type MetricsConfig struct {
-	QueryLatencySLA string `yaml:"query_latency_sla"` // duration string
+	QueryLatencySLA             string  `yaml:"query_latency_sla"` // duration string
+	QueryProfileSampleRate      float64 `yaml:"query_profile_sample_rate"`
+	QueryProfileReportThreshold string  `yaml:"query_profile_report_threshold"` // duration string
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -28,20 +29,26 @@ import (
 	"github.com/labstack/echo"
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // API provides controllers for endpoints it registers with a router.
 type API struct {
-	addr                 string
-	crt                  string
-	key                  string
-	es                   entity.Store
-	validate             entity.Validator
-	ff                   cdc.FeedFactory
-	auth                 auth.Plugin
-	metricsStore         metrics.Store
-	metricsFactory       metrics.Factory
-	systemMetrics        metrics.Metrics
-	defaultClientVersion string
-	queryLatencySLA      time.Duration
+	addr                     string
+	crt                      string
+	key                      string
+	es                       entity.Store
+	validate                 entity.Validator
+	ff                       cdc.FeedFactory
+	auth                     auth.Plugin
+	metricsStore             metrics.Store
+	metricsFactory           metrics.Factory
+	systemMetrics            metrics.Metrics
+	defaultClientVersion     string
+	queryLatencySLA          time.Duration
+	queryProfSampleRate      int
+	queryProfReportThreshold time.Duration
 	// --
 	echo *echo.Echo
 }
@@ -53,19 +60,22 @@ const longQueryPath = etre.API_ROOT + "/query/:type"
 // NewAPI makes a new API.
 func NewAPI(appCtx app.Context) *API {
 	queryLatencySLA, _ := time.ParseDuration(appCtx.Config.Metrics.QueryLatencySLA)
+	queryProfReportThreshold, _ := time.ParseDuration(appCtx.Config.Metrics.QueryProfileReportThreshold)
 	api := &API{
-		addr:                 appCtx.Config.Server.Addr,
-		crt:                  appCtx.Config.Server.TLSCert,
-		key:                  appCtx.Config.Server.TLSKey,
-		es:                   appCtx.EntityStore,
-		validate:             appCtx.EntityValidator,
-		ff:                   appCtx.FeedFactory,
-		auth:                 appCtx.Auth,
-		metricsFactory:       appCtx.MetricsFactory,
-		metricsStore:         appCtx.MetricsStore,
-		systemMetrics:        appCtx.SystemMetrics,
-		defaultClientVersion: appCtx.Config.Server.DefaultClientVersion,
-		queryLatencySLA:      queryLatencySLA,
+		addr:                     appCtx.Config.Server.Addr,
+		crt:                      appCtx.Config.Server.TLSCert,
+		key:                      appCtx.Config.Server.TLSKey,
+		es:                       appCtx.EntityStore,
+		validate:                 appCtx.EntityValidator,
+		ff:                       appCtx.FeedFactory,
+		auth:                     appCtx.Auth,
+		metricsFactory:           appCtx.MetricsFactory,
+		metricsStore:             appCtx.MetricsStore,
+		systemMetrics:            appCtx.SystemMetrics,
+		defaultClientVersion:     appCtx.Config.Server.DefaultClientVersion,
+		queryLatencySLA:          queryLatencySLA,
+		queryProfSampleRate:      int(appCtx.Config.Metrics.QueryProfileSampleRate * 100),
+		queryProfReportThreshold: queryProfReportThreshold,
 		// --
 		echo: echo.New(),
 	}
@@ -102,6 +112,15 @@ func NewAPI(appCtx app.Context) *API {
 				c.Set("t0", time.Now()) // query start time
 			}
 
+			// Instrument query_profile_sample_rate% of queries
+			var inst app.Instrument
+			if rand.Intn(100) < api.queryProfSampleRate {
+				inst = app.NewTimerInstrument()
+			} else {
+				inst = app.NopInstrument
+			}
+			c.Set("inst", inst)
+
 			api.systemMetrics.Inc(metrics.Query, 1)
 
 			method := c.Request().Method
@@ -110,6 +129,7 @@ func NewAPI(appCtx app.Context) *API {
 			// -----------------------------------------------------------------------
 			// Client version
 			// -----------------------------------------------------------------------
+			inst.Start("client_version")
 			// Get client version ("vX.Y") from X-Etre-Version header, if set
 			clientVersion := c.Request().Header.Get(etre.VERSION_HEADER) // explicit
 			vf := "X-Etre-Version header"
@@ -130,11 +150,14 @@ func NewAPI(appCtx app.Context) *API {
 				return echo.NewHTTPError(http.StatusBadRequest, errMsg)
 			}
 			c.Set("clientVersion", m[0][1]) // 0.9
+			inst.Stop("client_version")
 
 			// -----------------------------------------------------------------------
 			// Authenticate
 			// -----------------------------------------------------------------------
+			inst.Start("authenticate")
 			caller, err := api.auth.Authenticate(c.Request())
+			inst.Stop("authenticate")
 			if err != nil {
 				log.Printf("AUTH: failed to authenticate: %s (caller: %+v request: %+v)", err, caller, c.Request())
 				api.systemMetrics.Inc(metrics.AuthenticationFailed, 1)
@@ -189,6 +212,7 @@ func NewAPI(appCtx app.Context) *API {
 			// Routes with an :entity param query the db, so increment query.Metrics
 			// and query.Read or .Write depending on the route. Specific Read/Write
 			// metrics are set in the controller.
+			inst.Start("authorize")
 			if write {
 				gm.Inc(metrics.Write, 1)
 
@@ -228,6 +252,8 @@ func NewAPI(appCtx app.Context) *API {
 					return readError(c, authErr)
 				}
 			}
+			inst.Stop("authorize")
+
 			return next(c)
 		}
 	})
@@ -288,19 +314,33 @@ func NewAPI(appCtx app.Context) *API {
 				return nil
 			}
 
-			// Record query latency (response time) in milliseconds
 			t0 := c.Get("t0").(time.Time) // query start time
-			if !t0.IsZero() {
-				queryLatency := time.Now().Sub(t0)
-				gm := c.Get("gm").(metrics.Metrics)
-				gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
-
-				// Did the query take too long (miss SLA)?
-				if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
-					log.Printf("Missed SLA: '%s': caller=%+v request=%+v", entityType, caller, c.Request())
-					gm.Inc(metrics.MissSLA, 1)
-				}
+			if t0.IsZero() {
+				return nil
 			}
+
+			// Record query latency (response time) in milliseconds
+			queryLatency := time.Now().Sub(t0)
+			gm := c.Get("gm").(metrics.Metrics)
+			gm.Val(metrics.LatencyMs, int64(queryLatency/time.Millisecond))
+
+			inst := c.Get("inst").(app.Instrument)
+
+			// Did the query take too long (miss SLA)?
+			if api.queryLatencySLA > 0 && queryLatency > api.queryLatencySLA {
+				gm.Inc(metrics.MissSLA, 1)
+				req := c.Request()
+				profile := inst != app.NopInstrument
+				log.Printf("Missed SLA: %s %s %s (profile: %t caller=%+v request=%+v)", req.Method, req.URL.String(), queryLatency,
+					profile, caller, req)
+			}
+
+			// Print query profile if it was timed and exceeds the report threshold
+			if inst != app.NopInstrument && queryLatency > api.queryProfReportThreshold {
+				req := c.Request()
+				log.Printf("Query profile: %s %s %s %+v (caller=%+v)", req.Method, req.URL.String(), queryLatency, inst.Report(), caller)
+			}
+
 			return nil
 		}
 	}))
@@ -344,6 +384,10 @@ func (api *API) Stop() error {
 // -----------------------------------------------------------------------------
 
 func (api *API) getEntitiesHandler(c echo.Context) error {
+	inst := c.Get("inst").(app.Instrument)
+	inst.Start("handler")
+	defer inst.Stop("handler")
+
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.ReadQuery, 1)
 
@@ -381,8 +425,9 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 		return readError(c, ErrInvalidQuery.New("distinct requires only 1 return label but %d specified: %v", len(f.ReturnLabels), f.ReturnLabels))
 	}
 
-	entityType := c.Param("type")
-	entities, err := api.es.ReadEntities(entityType, q, f)
+	inst.Start("db")
+	entities, err := api.es.ReadEntities(c.Param("type"), q, f)
+	inst.Stop("db")
 	if err != nil {
 		return readError(c, ErrDb.New(err.Error()))
 	}
