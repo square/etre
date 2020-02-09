@@ -59,3 +59,9 @@ var ErrCDCDisabled = etre.Error{
 	HTTPStatus: http.StatusNotImplemented,
 	Message:    "CDC disabled",
 }
+
+var ErrNoContent = etre.Error{
+	Message:    "no entities provided (PUT or POST with zero-length HTTP payload; ContentLength = 0)",
+	Type:       "no-content",
+	HTTPStatus: http.StatusBadRequest,
+}

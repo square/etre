@@ -162,6 +162,7 @@ func TestPostEntityHandlerSuccessful(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("%+v", actual)
 
 	if statusCode != http.StatusCreated {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusCreated)
@@ -214,19 +215,11 @@ func TestPostEntityHandlerPayloadError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if statusCode != api.ErrInternal.HTTPStatus {
+	if statusCode != api.ErrNoContent.HTTPStatus {
 		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInternal.HTTPStatus)
 	}
-
-	if respErr.Error == nil {
-		t.Fatalf("WriteResult.Error is nil, expected it to be set")
-	}
-	if respErr.Error.Type != api.ErrInternal.Type {
-		t.Errorf("got Error.Type = %s, expected %s", respErr.Error.Type, api.ErrInternal.Type)
-	}
-	if respErr.Error.Message == "" {
-		t.Errorf("Error.Message is empty, expected a value")
+	if diff := deep.Equal(*respErr.Error, api.ErrNoContent); diff != nil {
+		t.Error(diff)
 	}
 }
 
@@ -425,19 +418,11 @@ func TestPutEntityHandlerPayloadError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if statusCode != http.StatusInternalServerError {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
+	if statusCode != api.ErrNoContent.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInternal.HTTPStatus)
 	}
-
-	if respErr.Error == nil {
-		t.Fatalf("WriteResult.Error is nil, expected it to be set")
-	}
-	if respErr.Error.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Error.Type)
-	}
-	if respErr.Error.Message == "" {
-		t.Errorf("Error.Message is empty, expected a value")
+	if diff := deep.Equal(*respErr.Error, api.ErrNoContent); diff != nil {
+		t.Error(diff)
 	}
 }
 
@@ -561,6 +546,7 @@ func TestPostEntitiesHandlerSuccessful(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("%+v", actual)
 
 	if statusCode != http.StatusCreated {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
@@ -596,19 +582,11 @@ func TestPostEntitiesHandlerPayloadError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if statusCode != http.StatusInternalServerError {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
+	if statusCode != api.ErrNoContent.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInternal.HTTPStatus)
 	}
-
-	if respErr.Error == nil {
-		t.Fatalf("WriteResult.Error is nil, expected it to be set")
-	}
-	if respErr.Error.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Error.Type)
-	}
-	if respErr.Error.Message == "" {
-		t.Errorf("Error.Message is empty, expected a value")
+	if diff := deep.Equal(*respErr.Error, api.ErrNoContent); diff != nil {
+		t.Error(diff)
 	}
 }
 
@@ -634,6 +612,7 @@ func TestPostEntitiesHandlerInvalidValueTypeError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("%+v", respErr)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
@@ -802,7 +781,12 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 
 	// Omit query param from URL
 	url := defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?"
-	statusCode, err := test.MakeHTTPRequest("PUT", url, nil, &respErr)
+	update := etre.Entity{"foo": "baz"}
+	payload, err := json.Marshal(update)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusCode, err := test.MakeHTTPRequest("PUT", url, payload, &respErr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -818,7 +802,7 @@ func TestPutEntitiesHandlerMissingQueryError(t *testing.T) {
 
 	// Empty query
 	url = defaultServer.URL + etre.API_ROOT + "/entities/" + entityType + "?query"
-	statusCode, err = test.MakeHTTPRequest("PUT", url, nil, &respErr)
+	statusCode, err = test.MakeHTTPRequest("PUT", url, payload, &respErr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,19 +833,11 @@ func TestPutEntitiesHandlerPayloadError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if statusCode != http.StatusInternalServerError {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusInternalServerError)
+	if statusCode != api.ErrNoContent.HTTPStatus {
+		t.Errorf("response status = %d, expected %d", statusCode, api.ErrInternal.HTTPStatus)
 	}
-
-	if respErr.Error == nil {
-		t.Fatalf("WriteResult.Error is nil, expected it to be set")
-	}
-	if respErr.Error.Type != "internal-error" {
-		t.Errorf("got Error.Type = %s, expected internal-error", respErr.Error.Type)
-	}
-	if respErr.Error.Message == "" {
-		t.Errorf("Error.Message is empty, expected a value")
+	if diff := deep.Equal(*respErr.Error, api.ErrNoContent); diff != nil {
+		t.Error(diff)
 	}
 }
 
