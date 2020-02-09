@@ -238,6 +238,11 @@ func NewAPI(appCtx app.Context) *API {
 					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
 					return c.JSON(api.WriteResult(c, nil, authErr))
 				}
+
+				// Don't allow empty PUT or POST, client must provide entities for these
+				if method != "DELETE" && c.Request().ContentLength == 0 {
+					return c.JSON(api.WriteResult(c, nil, ErrNoContent))
+				}
 			} else {
 				gm.Inc(metrics.Read, 1)
 				if err := api.auth.Authorize(caller, auth.Action{EntityType: entityType, Op: auth.OP_READ}); err != nil {
@@ -858,7 +863,7 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 		case etre.Error:
 			wr.Error = &v
 			switch err {
-			case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam:
+			case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam, ErrNoContent:
 				gm.Inc(metrics.ClientError, 1)
 			default:
 				gm.Inc(metrics.APIError, 1)
