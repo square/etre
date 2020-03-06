@@ -1,6 +1,6 @@
 # Etre
 
-[![GoDoc](https://pkg.go.dev/github.com/square/etre?tab=doc)
+[![GoDoc](https://godoc.org/github.com/square/etre?status.svg)](https://pkg.go.dev/github.com/square/etre?tab=doc)
 
 Etre is an entity API for managing primitive entities with labels.
 
