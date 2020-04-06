@@ -54,7 +54,7 @@ type RevOrder struct {
 }
 
 type events struct {
-	qR  uint       // previous rev (see algorithm below)
+	qR  int64      // previous rev (see algorithm below)
 	buf []CDCEvent // ordered set of revisions > qR
 }
 
@@ -114,7 +114,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	}
 
 	// We've seen this entity before. Compare previous rev (qR) to current (rR)
-	qR := v.(uint)
+	qR := v.(int64)
 	rR := e.Rev
 	debug("id %s qR %d rR %d", e.EntityId, qR, rR)
 
@@ -173,8 +173,8 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// the buff +1 by +1. So if prev rev = 2, eventually we'll receive 3, 4, and 5,
 	// so 2+1 = 3, 3+1 = 4, 4+1 = 5 == complete rev sequence.
 	for i, b := range re.buf {
-		if b.Rev != re.qR+1+uint(i) {
-			debug("reorder fails at %d: %d != %d", i, b.Rev, re.qR+1+uint(i))
+		if b.Rev != re.qR+1+int64(i) {
+			debug("reorder fails at %d: %d != %d", i, b.Rev, re.qR+1+int64(i))
 			return false, nil // don't sync
 		}
 	}

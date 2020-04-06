@@ -157,9 +157,6 @@ func (s *Server) Boot(configFile string) error {
 	// Entity Store
 	// //////////////////////////////////////////////////////////////////////
 	s.appCtx.EntityStore = entity.NewStore(
-		s.conn,
-		cfg.Datasource.Database,
-		cfg.Entity.Types,
 		cdcStore,
 		dm,
 	)

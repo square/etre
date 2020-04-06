@@ -183,7 +183,7 @@ type CDCEvent struct {
 	EventId    string  `json:"eventId" bson:"eventId"`
 	EntityId   string  `json:"entityId" bson:"entityId"`     // _id of entity
 	EntityType string  `json:"entityType" bson:"entityType"` // user-defined
-	Rev        uint    `json:"rev" bson:"rev"`               // entity revision as of this op, 0 on insert
+	Rev        int64   `json:"rev" bson:"rev"`               // entity revision as of this op, 0 on insert
 	Ts         int64   `json:"ts" bson:"ts"`                 // Unix nanoseconds
 	User       string  `json:"user" bson:"user"`
 	Op         string  `json:"op" bson:"op"`                       // i=insert, u=update, d=delete

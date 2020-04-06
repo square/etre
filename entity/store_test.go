@@ -1,10 +1,11 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 package entity_test
 
 import (
-	"encoding/hex"
+	"context"
 	"testing"
+	"time"
 
 	"github.com/square/etre"
 	"github.com/square/etre/db"
@@ -12,624 +13,704 @@ import (
 	"github.com/square/etre/query"
 	"github.com/square/etre/test/mock"
 
-	"github.com/globalsign/mgo"
-	"github.com/globalsign/mgo/bson"
 	"github.com/go-test/deep"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var seedEntities []etre.Entity
-var seedIds []string
+var testNodes []etre.Entity
 
-// @todo: make the host/port configurable
-var url = "localhost:27017"
-var database = "etre_test"
-var entityType = "nodes"
-var username = "kate"
-var entityTypes = []string{entityType}
-var timeout = 5
+var (
+	url         = "localhost:27017"
+	database    = "etre_test"
+	entityType  = "nodes"
+	username    = "test_user"
+	entityTypes = []string{entityType}
+	timeout     = 5
+)
+
 var conn db.Connector
 var wo = entity.WriteOp{
 	EntityType: entityType,
 	User:       username,
 }
 
+var client *mongo.Client
+var col map[string]*mongo.Collection
+
 func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
-	conn = db.NewConnector(url, timeout, nil, nil)
-	err := conn.Init()
+	if col == nil {
+		var err error
+		url := "mongodb://" + url
+		t.Logf("Connecting to %s", url)
+		client, err = mongo.NewClient(options.Client().ApplyURI(url))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := client.Connect(ctx); err != nil {
+			t.Fatal(err)
+		}
+		col = map[string]*mongo.Collection{
+			entityType: client.Database(database).Collection(entityType),
+		}
+
+	}
+
+	// Reset the collection: delete all entities and insert the standard test entities
+	db := client.Database(database)
+	coll := db.Collection(entityType)
+
+	_, err := coll.DeleteMany(context.TODO(), bson.D{{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	es := entity.NewStore(conn, database, entityTypes, cdcm, d)
-
-	// Create test data. c.CreateEntities() modfies seedEntities: it sets
-	// _id, _type, and _rev. So reset the slice for every test.
-	seedEntities = []etre.Entity{
-		etre.Entity{"x": 2, "y": "hello", "z": 26},
-	}
-	seedIds, err = es.CreateEntities(wo, seedEntities)
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Fatalf("Error creating entities: %s", err)
-		} else {
-			t.Fatalf("Uknown error when creating entities: %s", err)
+	// First time, create unique index on "x"
+	if col == nil {
+		iv := coll.Indexes()
+		if _, err := iv.DropAll(context.TODO()); err != nil {
+			t.Fatal(err)
+		}
+		idx := mongo.IndexModel{
+			Keys:    bson.D{{"x", 1}},
+			Options: options.Index().SetUnique(true),
+		}
+		if _, err := iv.CreateOne(context.TODO(), idx); err != nil {
+			t.Fatal(err)
 		}
 	}
 
-	return es
-}
-
-func teardown(t *testing.T, es entity.Store) {
-	// Delete all data in DB/Collection (empty query matches everything).
-	q, err := query.Translate("")
-	if err != nil {
-		t.Error(err)
+	testNodes = []etre.Entity{
+		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(2), "y": "a", "z": int64(9), "foo": ""},
+		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(4), "y": "b", "bar": ""},
+		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(6), "y": "b", "bar": ""},
 	}
-	_, err = es.DeleteEntities(wo, q)
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error deleting entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when deleting entities: %s", err)
-		}
-	}
-
-	// Close db connection.
-	conn.Close()
-}
-
-func TestCreateEntitiesMultiple(t *testing.T) {
-	var lastEvent etre.CDCEvent
-	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
-			lastEvent = e
-			return nil
-		},
-	}
-
-	es := setup(t, cdcm, &mock.Delayer{})
-	defer teardown(t, es)
-
-	testData := []etre.Entity{
-		etre.Entity{"x": 0},
-		etre.Entity{"y": 1},
-		etre.Entity{"z": 2, "_setId": "343", "_setOp": "something", "_setSize": 1},
-	}
-	// Note: teardown will delete this test data
-	ids, err := es.CreateEntities(wo, testData)
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error creating entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when creating entities: %s", err)
-		}
-	}
-
-	actual := len(ids)
-	expect := len(testData)
-
-	if actual != expect {
-		t.Errorf("Actual num entities inserted: %v, Expected num entities inserted: %v", actual, expect)
-	}
-
-	// Verify that the last CDC event we create is as expected.
-	expectedEvent := etre.CDCEvent{
-		EventId:    lastEvent.EventId, // can't get this anywhere else
-		EntityId:   ids[len(ids)-1],
-		EntityType: entityType,
-		Rev:        0,
-		Ts:         lastEvent.Ts, // can't get this anywhere else
-		User:       username,
-		Op:         "i",
-		Old:        nil,
-		New:        &etre.Entity{"_id": bson.ObjectIdHex(ids[len(ids)-1]), "_type": entityType, "_rev": 0, "z": 2, "_setId": "343", "_setOp": "something", "_setSize": 1},
-		SetId:      "343",
-		SetOp:      "something",
-		SetSize:    1,
-	}
-	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {
-		t.Logf("got: %#v", lastEvent)
-		t.Error(diff)
-	}
-}
-
-func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
-	t.Skip("need to create unique index on z on to make this fail again")
-
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	// Expect first two documents to be inserted and third to fail
-	testData := []etre.Entity{
-		etre.Entity{"_id": "foo", "x": 0},
-		etre.Entity{"_id": "bar", "y": 1},
-		etre.Entity{"_id": "bar", "z": 2},
-	}
-	// Note: teardown will delete this test data
-	actual, err := es.CreateEntities(wo, testData)
-
-	expect := []string{"foo", "bar"}
-
-	if diff := deep.Equal(actual, expect); diff != nil {
-		t.Error(diff)
-	}
-	if err == nil {
-		t.Errorf("Expected error but got no error")
-	} else {
-		if _, ok := err.(entity.DbError); !ok {
-			t.Errorf("got error type %#v, expected entity.DbError", err)
-		}
-	}
-}
-
-func TestDuplicateEntity(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	s, err := conn.Connect()
+	res, err := coll.InsertMany(context.TODO(), docs(testNodes))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := s.DB(database).C(entityType)
-	index := mgo.Index{
-		Key:        []string{"y"},
-		Unique:     true,
-		DropDups:   true,
-		Background: false,
-		Sparse:     true,
+	if len(res.InsertedIDs) != len(testNodes) {
+		t.Fatalf("mongo-driver returned %d doc ids, expected %d", len(res.InsertedIDs), len(testNodes))
 	}
-	if err := c.EnsureIndex(index); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := c.DropAllIndexes(); err != nil {
-			t.Error(err)
-		}
-	}()
-
-	// Insert
-	testData := []etre.Entity{
-		etre.Entity{"y": "hello"}, // dupe
-	}
-	wo := entity.WriteOp{
-		EntityType: entityType,
-		User:       username,
-	}
-	ids, err := es.CreateEntities(wo, testData)
-	if err == nil {
-		t.Error("no error on duplicate insert, expected err")
-	}
-	dbErr, ok := err.(entity.DbError)
-	if !ok {
-		t.Errorf("err is not type entity.DbError: %+v", err)
-	}
-	if dbErr.Type != "duplicate-entity" {
-		t.Errorf("Type = %s, expected duplicate-entity", dbErr.Type)
-	}
-	if len(ids) != 0 {
-		t.Errorf("returned ids, expected none: %v", ids)
+	for i, id := range res.InsertedIDs {
+		testNodes[i]["_id"] = id.(primitive.ObjectID)
 	}
 
-	// Update
-	entities := []etre.Entity{
-		etre.Entity{"y": "bye", "x": 3},
-	}
-	if _, err = es.CreateEntities(wo, entities); err != nil {
-		t.Fatal(err)
-	}
-	// Now we have {y:hello}, {y:bye}. Try to update y:bye -> y:hello
-	q, err := query.Translate("y=hello")
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := es.UpdateEntities(wo, q, etre.Entity{"y": "bye"})
-	if err == nil {
-		t.Error("no error on duplicate update, expected err")
-	}
-	_, ok = err.(entity.DbError)
-	if !ok {
-		t.Errorf("err is not type entity.DbError: %+v", err)
-	}
-	if len(p) != 0 {
-		t.Errorf("returned patched entities, expected none: %v", p)
-	}
+	return entity.NewStore(cdcm, d, col)
 }
+
+func docs(entities []etre.Entity) []interface{} {
+	docs := make([]interface{}, len(entities))
+	for i, e := range entities {
+		docs[i] = e
+	}
+	return docs
+}
+
+// --------------------------------------------------------------------------
+// Read
+// --------------------------------------------------------------------------
 
 func TestReadEntitiesWithAllOperators(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	// List of label selctors to build queries from
-	labelSelectors := []string{
-		"y in (hello, goodbye)",
-		"y notin (morning, night)",
-		"y = hello",
-		"y == hello",
-		"y != goodbye",
-		"y",
-		"!a",
-		"x > 1",
-		"x < 3",
+	// Test all operators: in, notin, =, ==, !=, (has) y, (does not have) !foo, <, >
+	// All values are set such that it only matches the first test node to make
+	// testing easier and ensure we don't match the other entities.
+	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	queries := []string{
+		"y in (a, z)",
+		"y notin (b, c)",
+		"y = a",
+		"y == a",
+		"y != b",
+		"foo",
+		"!bar",
+		"z > 1",
+		"z < 10",
 	}
-
-	// There's strategically only one Entity we expect to return to make testing easier
-	expect := seedEntities
-
-	for i, l := range labelSelectors {
-		q, err := query.Translate(l)
+	expect := []etre.Entity{testNodes[0]}
+	for _, qs := range queries {
+		q, err := query.Translate(qs)
 		if err != nil {
-			t.Fatalf("cannot translate '%s': %s", l, err)
+			t.Fatalf("cannot translate '%s': %s", qs, err)
 		}
-		actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
+		actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
 		if err != nil {
-			if _, ok := err.(entity.DbError); ok {
-				t.Errorf("%d Error reading entities: %s", i, err)
-			} else {
-				t.Errorf("%d: Unknown error when reading entities: %s", i, err)
-			}
+			t.Fatalf("store.ReadEntities error on '%s': %s", qs, err)
 		}
-
 		if diff := deep.Equal(actual, expect); diff != nil {
-			t.Errorf("%d: %+v", i, diff)
+			t.Errorf("query '%s' did not match:\ngot: %+v\nexpected: %+v\ndiff: %v", qs, actual, expect, diff)
 		}
 	}
 }
 
-func TestReadEntitiesWithComplexQuery(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	q, err := query.Translate("y, !a, x>1")
-	if err != nil {
-		t.Error(err)
-	}
-
-	expect := seedEntities
-
-	actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error reading entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when reading entities: %s", err)
-		}
-	}
-
-	if diff := deep.Equal(actual, expect); diff != nil {
-		t.Error(diff)
-	}
+type readTest struct {
+	query  string
+	expect []etre.Entity
 }
 
-func TestReadEntitiesMultipleFound(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	// Each Entity has "a" in it so we can query for documents with "a" and
-	// delete them
-	testData := []etre.Entity{
-		etre.Entity{"a": 1},
-		etre.Entity{"a": 1, "b": 2},
-		etre.Entity{"a": 1, "b": 2, "c": 3},
+func TestReadEntitiesMatching(t *testing.T) {
+	// Test various combinations of queries to ensure that we match and return
+	// the correct entities. This is the fundamental job of Etre, so it should
+	// be very thoroughly tested.
+	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	readTests := []readTest{
+		{
+			// A more complex query (multiple operators) matching only 1st test node
+			query:  "foo, !bar, z>1",
+			expect: testNodes[:1],
+		},
+		{
+			// All test nodes have label "y"
+			query:  "y",
+			expect: testNodes,
+		},
+		//{
+		// Matches first test node
+		// @todo: doesn't work because 2 is treated as a string
+		//	query:  "x=2",
+		// expect: testNodes[:1],
+		//},
+		{
+			// First test node has x=2, so this matches 2nd and 3rd test nodes
+			query:  "x>2",
+			expect: testNodes[1:],
+		},
+		{
+			// All test nodes have label y but none with y=y, so none match
+			query:  "y=y",
+			expect: []etre.Entity{},
+		},
 	}
-	// Note: teardown will delete this test data
-	_, err := es.CreateEntities(wo, testData)
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error creating entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when creating entities: %s", err)
+	for _, rt := range readTests {
+		q, err := query.Translate(rt.query)
+		if err != nil {
+			t.Error(err)
 		}
-	}
-
-	q, err := query.Translate("a > 0")
-	if err != nil {
-		t.Error(err)
-	}
-	entities, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error reading entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when reading entities: %s", err)
+		got, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
+		if err != nil {
+			t.Fatalf("store.ReadEntities error on query '%s': %s", rt.query, err)
 		}
-	}
-
-	actual := len(entities)
-	expect := len(testData)
-
-	if diff := deep.Equal(actual, expect); diff != nil {
-		t.Error(diff)
-	}
-}
-
-func TestReadEntitiesNotFound(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	q, err := query.Translate("a=b")
-	if err != nil {
-		t.Error(err)
-	}
-	actual, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
-
-	if len(actual) != 0 {
-		t.Errorf("An empty list was expected, actual: %v", actual)
-	}
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error reading entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when reading entities: %s", err)
+		if diff := deep.Equal(got, rt.expect); diff != nil {
+			t.Errorf("query '%s' did not match:\ngot: %+v\nexpected: %+v\ndiff: %v", rt.query, got, rt.expect, diff)
 		}
 	}
 }
 
 func TestReadEntitiesFilterDistinct(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	testData := []etre.Entity{
-		etre.Entity{"foo": "a"}, //
-		etre.Entity{"foo": "a"}, // dupe ^
-		etre.Entity{"foo": "a"}, // dupe ^
-		etre.Entity{"foo": "b"},
-		etre.Entity{"foo": "c"},
-	}
-	if _, err := es.CreateEntities(wo, testData); err != nil {
-		t.Fatal(err)
-	}
-
-	q, err := query.Translate("foo")
+	// Test that etre.QueryFilter{Distinct: true} returns a list of unique values
+	// for one label. The 1st test node has y=a and the 2nd and 3rd both have y=b,
+	// so the unique values are [a,b].
+	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	q, err := query.Translate("y") // all test nodes have label "y"
 	if err != nil {
 		t.Error(err)
 	}
-
 	f := etre.QueryFilter{
-		ReturnLabels: []string{"foo"}, // only works with 1 return label
+		ReturnLabels: []string{"y"}, // only works with 1 return label
 		Distinct:     true,
 	}
-	actual, err := es.ReadEntities(entityType, q, f)
+	got, err := store.ReadEntities(entityType, q, f)
 	if err != nil {
 		t.Error(err)
 	}
 	expect := []etre.Entity{
-		{"foo": "a"},
-		{"foo": "b"},
-		{"foo": "c"},
+		{"y": "a"}, // from 1st test node
+		{"y": "b"}, // from 2nd and 3rd test nodes
 	}
-	if diff := deep.Equal(actual, expect); diff != nil {
+	if diff := deep.Equal(got, expect); diff != nil {
 		t.Error(diff)
 	}
 }
 
 func TestReadEntitiesFilterReturnLabels(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
-
-	// Test entity is {"x": 2, "y": "hello", "z": 26}, so we'll
-	// query by x but return only y.
-	// Note: x=2 doesn't work because it treats 2 as a string instead
-	// of an int.
-	q, err := query.Translate("x>1")
+	// Test that etre.QueryFilter{ReturnLabels: []string{x}} returns only that
+	// label and not the others (y, z, bar, foo). We'll select/match by label y
+	// but return only label x.
+	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	q, err := query.Translate("y") // all test nodes have label "y"
 	if err != nil {
 		t.Error(err)
 	}
-	expect := []etre.Entity{{"y": "hello"}}
 	f := etre.QueryFilter{
-		ReturnLabels: []string{"y"}, // testing this
+		ReturnLabels: []string{"x"}, // testing this
 	}
-	actual, err := es.ReadEntities(entityType, q, f)
+	expect := []etre.Entity{
+		{"x": int64(2)},
+		{"x": int64(4)},
+		{"x": int64(6)},
+	}
+	got, err := store.ReadEntities(entityType, q, f)
 	if err != nil {
 		t.Error(err)
 	}
-	if diff := deep.Equal(actual, expect); diff != nil {
+	if diff := deep.Equal(got, expect); diff != nil {
 		t.Error(diff)
 	}
 }
+
+// --------------------------------------------------------------------------
+// Create
+// --------------------------------------------------------------------------
+
+func TestCreateEntitiesMultiple(t *testing.T) {
+	// Test basic insert of multiple new entities. Also test that CDCEvent is
+	// logged with the correct info about the new entities.
+	gotEvents := []etre.CDCEvent{}
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
+			gotEvents = append(gotEvents, e)
+			return nil
+		},
+	}
+	store := setup(t, cdcm, &mock.Delayer{})
+
+	testData := []etre.Entity{
+		etre.Entity{"x": 7},
+		etre.Entity{"x": 8},
+		etre.Entity{"x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1},
+	}
+	ids, err := store.CreateEntities(wo, testData)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(ids) != len(testData) {
+		t.Errorf("got %d ids, expected %d", len(ids), len(testData))
+	}
+
+	// Verify that the last CDC event we create is as expected.
+	id1, _ := primitive.ObjectIDFromHex(ids[0])
+	id2, _ := primitive.ObjectIDFromHex(ids[1])
+	id3, _ := primitive.ObjectIDFromHex(ids[2])
+	expectEvents := []etre.CDCEvent{
+		{
+			EventId:    gotEvents[0].EventId, // non-deterministic
+			EntityId:   id1.Hex(),
+			EntityType: entityType,
+			Rev:        int64(0),
+			Ts:         gotEvents[0].Ts, // non-deterministic
+			User:       username,
+			Op:         "i",
+			Old:        nil,
+			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 7},
+		},
+		{
+			EventId:    gotEvents[1].EventId, // non-deterministic
+			EntityId:   id2.Hex(),
+			EntityType: entityType,
+			Rev:        int64(0),
+			Ts:         gotEvents[1].Ts, // non-deterministic
+			User:       username,
+			Op:         "i",
+			Old:        nil,
+			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "x": 8},
+		},
+		{
+			EventId:    gotEvents[2].EventId, // non-deterministic
+			EntityId:   id3.Hex(),
+			EntityType: entityType,
+			Rev:        int64(0),
+			Ts:         gotEvents[2].Ts, // non-deterministic
+			User:       username,
+			Op:         "i",
+			Old:        nil,
+			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1},
+			SetId:      "343",
+			SetOp:      "something",
+			SetSize:    1,
+		},
+	}
+	if diff := deep.Equal(gotEvents, expectEvents); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
+	// Test that create handles dupes and returns partial success. The first
+	// entity here works, but the 2nd is a dupe of x=6 in the test nodes.
+	// The 3rd isn't created because the first error stops the insert process.
+	gotEvents := []etre.CDCEvent{}
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
+			gotEvents = append(gotEvents, e)
+			return nil
+		},
+	}
+	store := setup(t, cdcm, &mock.Delayer{})
+
+	// Expect first two documents to be inserted and third to fail
+	testData := []etre.Entity{
+		etre.Entity{"x": 5}, // ok
+		etre.Entity{"x": 6}, // dupe
+		etre.Entity{"x": 7}, // would be ok but blocked by dupe
+	}
+	ids, err := store.CreateEntities(wo, testData)
+	if err == nil {
+		t.Errorf("no error, expected dupe key error")
+	} else {
+		dberr, ok := err.(entity.DbError)
+		if !ok {
+			t.Errorf("got error type %#v, expected entity.DbError", err)
+		} else if dberr.Type != "duplicate-entity" {
+			t.Errorf("got DbErr.Type %s, expected duplicate-entity", dberr.Type)
+		}
+	}
+	if len(ids) != 1 {
+		t.Errorf("got %d ids, expected 1", len(ids))
+	}
+
+	// Only x=5 written/inserted, so only a CDC event for it
+	id1, _ := primitive.ObjectIDFromHex(ids[0])
+	expectEvents := []etre.CDCEvent{
+		{
+			EventId:    gotEvents[0].EventId, // non-deterministic
+			EntityId:   id1.Hex(),
+			EntityType: entityType,
+			Rev:        int64(0),
+			Ts:         gotEvents[0].Ts, // non-deterministic
+			User:       username,
+			Op:         "i",
+			Old:        nil,
+			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 5},
+		},
+	}
+	if diff := deep.Equal(gotEvents, expectEvents); diff != nil {
+		t.Error(diff)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Update
+// --------------------------------------------------------------------------
 
 func TestUpdateEntities(t *testing.T) {
-	var lastEvent etre.CDCEvent
+	// Test that basic update changes the correct label values. We'll change
+	// the test nodes, but setup() will restore them for other tests. Also
+	// test the CDC events correctly reflect the changes.
+	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
 		WriteFunc: func(e etre.CDCEvent) error {
-			lastEvent = e
+			gotEvents = append(gotEvents, e)
 			return nil
 		},
 	}
+	store := setup(t, cdcm, &mock.Delayer{})
 
-	es := setup(t, cdcm, &mock.Delayer{})
-	defer teardown(t, es)
-
-	// Create another entity to test we can update multiple documents
-	// Note: teardown will delete this data
-	testData := []etre.Entity{
-		etre.Entity{"x": 3, "y": "hello"},
-	}
-	_, err := es.CreateEntities(wo, testData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	q, err := query.Translate("y=hello")
+	// ----------------------------------------------------------------------
+	// This matches first test node
+	q, err := query.Translate("y=a")
 	if err != nil {
 		t.Error(err)
 	}
-	u := etre.Entity{"y": "goodbye"}
-
-	wo := entity.WriteOp{
+	patch := etre.Entity{"y": "y"} // y=a -> y=y
+	wo1 := entity.WriteOp{
 		EntityType: entityType,
 		User:       username,
-		SetOp:      "something",
-		SetId:      "343",
+		SetOp:      "update-y1",
+		SetId:      "111",
 		SetSize:    1,
 	}
-
-	diff, err := es.UpdateEntities(wo, q, u)
+	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Test number of entities updated
-	actualNumUpdated := len(diff)
-	expectNumUpdated := 2
-	if actualNumUpdated != expectNumUpdated {
-		t.Errorf("Actual num updated: %v, Expect num updated: %v", actualNumUpdated, expectNumUpdated)
+	if len(gotDiffs) != 1 {
+		t.Errorf("got %d diffs, expected 1", len(gotDiffs))
+	}
+	expectDiffs := []etre.Entity{
+		{
+			"_id":   testNodes[0]["_id"],
+			"_type": entityType,
+			"_rev":  int64(0),
+			"y":     "a",
+		},
+	}
+	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
+		t.Logf("got: %+v", gotDiffs)
+		t.Error(diff)
 	}
 
-	// Test old values were returned
-	var actualOldValue string
-	expectOldValue := "hello"
-	for _, d := range diff {
-		actualOldValue = d["y"].(string)
-		if actualOldValue != expectOldValue {
-			t.Errorf("Actual old y value: %v, Expect old y value: %v", actualOldValue, expectOldValue)
-		}
-
+	// ----------------------------------------------------------------------
+	// And this matches 2nd and 3rd test nodes
+	q, err = query.Translate("y=b")
+	if err != nil {
+		t.Error(err)
 	}
-
-	// Verify that the last CDC event we create is as expected.
-	lastEntityId := diff[len(diff)-1]["_id"].(bson.ObjectId)
-	expectedEvent := etre.CDCEvent{
-		EventId:    lastEvent.EventId, // can't get this anywhere else
-		EntityId:   hex.EncodeToString([]byte(lastEntityId)),
+	patch = etre.Entity{"y": "c"} // y=b -> y=c
+	wo2 := entity.WriteOp{
 		EntityType: entityType,
-		Rev:        1,
-		Ts:         lastEvent.Ts, // can't get this anywhere else
 		User:       username,
-		Op:         "u",
-		Old:        &etre.Entity{"_id": lastEntityId, "_type": entityType, "_rev": 0, "y": "hello"},
-		New:        &etre.Entity{"_id": lastEntityId, "_type": entityType, "_rev": 1, "y": "goodbye"},
-		SetId:      "343",
-		SetOp:      "something",
+		SetOp:      "update-y2",
+		SetId:      "222",
 		SetSize:    1,
 	}
-	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {
+	gotDiffs, err = store.UpdateEntities(wo2, q, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotDiffs) != 2 {
+		t.Errorf("got %d diffs, expected 2", len(gotDiffs))
+	}
+	expectDiffs = []etre.Entity{
+		{
+			"_id":   testNodes[1]["_id"],
+			"_type": entityType,
+			"_rev":  int64(0),
+			"y":     "b",
+		},
+		{
+			"_id":   testNodes[2]["_id"],
+			"_type": entityType,
+			"_rev":  int64(0),
+			"y":     "b",
+		},
+	}
+	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
+		t.Logf("got: %+v", gotDiffs)
+		t.Error(diff)
+	}
+
+	// ----------------------------------------------------------------------
+	// 3 CDC events because 3 entities were updated
+	for i := range gotEvents {
+		gotEvents[i].EventId = ""
+		gotEvents[i].Ts = 0
+	}
+	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
+	id2, _ := testNodes[1]["_id"].(primitive.ObjectID)
+	id3, _ := testNodes[2]["_id"].(primitive.ObjectID)
+	expectEvent := []etre.CDCEvent{
+		{
+			EntityId:   id1.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "u",
+			Old:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "y": "a"},
+			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(1), "y": "y"},
+			SetId:      "111",
+			SetOp:      "update-y1",
+			SetSize:    1,
+		},
+		{
+			EntityId:   id2.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "u",
+			Old:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "y": "b"},
+			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(1), "y": "c"},
+			SetId:      "222",
+			SetOp:      "update-y2",
+			SetSize:    1,
+		},
+		{
+			EntityId:   id3.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "u",
+			Old:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "y": "b"},
+			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(1), "y": "c"},
+			SetId:      "222",
+			SetOp:      "update-y2",
+			SetSize:    1,
+		},
+	}
+	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
 		t.Error(diff)
 	}
 }
+
+func TestUpdateEntitiesDuplicate(t *testing.T) {
+	// Test that dupes are handled on update. There's a uniqe index on x.
+	gotEvents := []etre.CDCEvent{}
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
+			gotEvents = append(gotEvents, e)
+			return nil
+		},
+	}
+	store := setup(t, cdcm, &mock.Delayer{})
+
+	// This matches first test node
+	q, err := query.Translate("y=a")
+	if err != nil {
+		t.Error(err)
+	}
+	patch := etre.Entity{"x": 6} // x=2 -> x=6 conflicts with 3rd test node
+	wo1 := entity.WriteOp{
+		EntityType: entityType,
+		User:       username,
+	}
+	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
+	if err == nil {
+		t.Errorf("no error, expected dupe key error")
+	} else {
+		dberr, ok := err.(entity.DbError)
+		if !ok {
+			t.Errorf("got error type %#v, expected entity.DbError", err)
+		} else if dberr.Type != "duplicate-entity" {
+			t.Errorf("got DbErr.Type %s, expected duplicate-entity", dberr.Type)
+		}
+	}
+	if len(gotDiffs) != 0 {
+		t.Errorf("got %d diffs, expected 0", len(gotDiffs))
+	}
+	if len(gotEvents) != 0 {
+		t.Errorf("got %d cdc events, expected 0: %+v", len(gotEvents), gotEvents)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Delete
+// --------------------------------------------------------------------------
 
 func TestDeleteEntities(t *testing.T) {
-	var lastEvent etre.CDCEvent
+	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
 		WriteFunc: func(e etre.CDCEvent) error {
-			lastEvent = e
+			gotEvents = append(gotEvents, e)
 			return nil
 		},
 	}
+	store := setup(t, cdcm, &mock.Delayer{})
 
-	es := setup(t, cdcm, &mock.Delayer{})
-	defer teardown(t, es)
-
-	// Each entity has "a" in it so we can query for documents with "a" and
-	// delete them
-	testData := []etre.Entity{
-		etre.Entity{"a": 1},
-		etre.Entity{"a": 1, "b": 2},
-		etre.Entity{"a": 1, "b": 2, "c": 3},
-	}
-	ids, err := es.CreateEntities(wo, testData)
-	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error creating entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when creating entities: %s", err)
-		}
-	}
-
-	q, err := query.Translate("a > 0")
+	// Match one first test node
+	q, err := query.Translate("y == a")
 	if err != nil {
 		t.Error(err)
 	}
-	actualDeletedEntities, err := es.DeleteEntities(wo, q)
+	gotOld, err := store.DeleteEntities(wo, q)
 	if err != nil {
-		if _, ok := err.(entity.DbError); ok {
-			t.Errorf("Error deleting entities: %s", err)
-		} else {
-			t.Errorf("Uknown error when deleting entities: %s", err)
-		}
+		t.Error(err)
 	}
-
-	// Test correct number of entities were deleted
-	actualNumDeleted := len(actualDeletedEntities)
-	expectNumDeleted := len(testData)
-	if actualNumDeleted != expectNumDeleted {
-		t.Errorf("Actual num entities deleted: %v, Expected num entities deleted: %v", actualNumDeleted, expectNumDeleted)
-	}
-
-	// Test correct entities were deleted
-	expect := make([]etre.Entity, len(testData))
-	for i, id := range ids {
-		expect[i] = testData[i]
-		// These were set by Etre on insert:
-		expect[i]["_id"] = bson.ObjectIdHex(id)
-		expect[i]["_rev"] = 0
-		expect[i]["_type"] = entityType
-	}
-	if diff := deep.Equal(actualDeletedEntities, expect); diff != nil {
+	if diff := deep.Equal(gotOld, testNodes[:1]); diff != nil {
 		t.Error(diff)
 	}
 
-	// Verify that the last CDC event we create is as expected.
-	lastEntityId := actualDeletedEntities[len(actualDeletedEntities)-1]["_id"].(bson.ObjectId)
-	expectedEvent := etre.CDCEvent{
-		EventId:    lastEvent.EventId, // can't get this anywhere else
-		EntityId:   hex.EncodeToString([]byte(lastEntityId)),
-		EntityType: entityType,
-		Rev:        uint(1),
-		Ts:         lastEvent.Ts, // can't get this anywhere else
-		User:       username,
-		Op:         "d",
-		Old:        &etre.Entity{"_id": lastEntityId, "_type": entityType, "_rev": 0, "a": 1, "b": 2, "c": 3},
-		New:        nil,
+	// Match last two test nodes
+	q, err = query.Translate("y == b")
+	if err != nil {
+		t.Error(err)
 	}
-	if diff := deep.Equal(lastEvent, expectedEvent); diff != nil {
+	gotOld, err = store.DeleteEntities(wo, q)
+	if err != nil {
+		t.Error(err)
+	}
+	if diff := deep.Equal(gotOld, testNodes[1:]); diff != nil {
+		t.Error(diff)
+	}
+
+	for i := range gotEvents {
+		gotEvents[i].EventId = ""
+		gotEvents[i].Ts = 0
+	}
+	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
+	id2, _ := testNodes[1]["_id"].(primitive.ObjectID)
+	id3, _ := testNodes[2]["_id"].(primitive.ObjectID)
+	expectEvent := []etre.CDCEvent{
+		{
+			EntityId:   id1.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "d",
+			Old:        &testNodes[0],
+		},
+		{
+			EntityId:   id2.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "d",
+			Old:        &testNodes[1],
+		},
+		{
+			EntityId:   id3.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "d",
+			Old:        &testNodes[2],
+		},
+	}
+	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
 		t.Error(diff)
 	}
 }
 
+// --------------------------------------------------------------------------
+// Delete Label
+// --------------------------------------------------------------------------
+
 func TestDeleteLabel(t *testing.T) {
-	es := setup(t, &mock.CDCStore{}, &mock.Delayer{})
-	defer teardown(t, es)
+	gotEvents := []etre.CDCEvent{}
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(e etre.CDCEvent) error {
+			gotEvents = append(gotEvents, e)
+			return nil
+		},
+	}
+	store := setup(t, cdcm, &mock.Delayer{})
 
 	wo := entity.WriteOp{
 		EntityType: entityType,
-		EntityId:   seedIds[0],
+		EntityId:   testNodes[0]["_id"].(primitive.ObjectID).Hex(),
 		User:       username,
 	}
-	gotOld, err := es.DeleteLabel(wo, "z")
+	gotOld, err := store.DeleteLabel(wo, "foo")
 	if err != nil {
 		t.Error(err)
 	}
-	// Minus these meta-labels, the returned old entity should have only
-	// the deleted label: z
 	expectOld := etre.Entity{
-		"_id":   bson.ObjectIdHex(seedIds[0]),
-		"_type": entityType,
-		"_rev":  int(0),
-		"z":     seedEntities[0]["z"], // deleted
+		"_id":   testNodes[0]["_id"],
+		"_type": testNodes[0]["_type"],
+		"_rev":  testNodes[0]["_rev"],
+		"foo":   "",
 	}
 	if diff := deep.Equal(gotOld, expectOld); diff != nil {
-		t.Logf("%+v", gotOld)
 		t.Error(diff)
 	}
 
-	// The z label should no longer be set on the entity
-	q, _ := query.Translate("y=hello")
-	gotNew, err := es.ReadEntities(entityType, q, etre.QueryFilter{})
+	// The foo label should no longer be set on the entity
+	q, _ := query.Translate("y=a")
+	gotNew, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
 	if err != nil {
 		t.Error(err)
 	}
-	expectNew := []etre.Entity{
+	e := etre.Entity{}
+	for k, v := range testNodes[0] {
+		e[k] = v
+	}
+	delete(e, "foo")                  // because we deleted the label
+	e["_rev"] = e["_rev"].(int64) + 1 // because we deleted the label
+	expectNew := []etre.Entity{e}
+	if diff := deep.Equal(gotNew, expectNew); diff != nil {
+		t.Logf("got: %+v", gotNew)
+		t.Error(diff)
+	}
+
+	for i := range gotEvents {
+		gotEvents[i].EventId = ""
+		gotEvents[i].Ts = 0
+	}
+	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
+	expectEvent := []etre.CDCEvent{
 		{
-			"_id":   bson.ObjectIdHex(seedIds[0]),
-			"_type": entityType,
-			"_rev":  int(1),
-			"x":     2,
-			"y":     "hello",
-			// z is gone
+			EntityId:   id1.Hex(),
+			EntityType: entityType,
+			Rev:        int64(1),
+			User:       username,
+			Op:         "u",
+			Old:        &expectOld,
 		},
 	}
-	if diff := deep.Equal(gotNew, expectNew); diff != nil {
-		t.Logf("%+v", gotNew)
+	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
 		t.Error(diff)
 	}
 }
