@@ -10,6 +10,8 @@ import (
 type ChangeStreamServer struct {
 	WatchFunc func() (<-chan etre.CDCEvent, error)
 	CloseFunc func(<-chan etre.CDCEvent)
+	RunFunc   func() error
+	StopFunc  func()
 }
 
 func (s ChangeStreamServer) Watch() (<-chan etre.CDCEvent, error) {
@@ -22,6 +24,19 @@ func (s ChangeStreamServer) Watch() (<-chan etre.CDCEvent, error) {
 func (s ChangeStreamServer) Close(c <-chan etre.CDCEvent) {
 	if s.CloseFunc != nil {
 		s.CloseFunc(c)
+	}
+}
+
+func (s ChangeStreamServer) Run() error {
+	if s.RunFunc != nil {
+		return s.RunFunc()
+	}
+	return nil
+}
+
+func (s ChangeStreamServer) Stop() {
+	if s.StopFunc != nil {
+		s.StopFunc()
 	}
 }
 
