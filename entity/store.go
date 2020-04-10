@@ -8,15 +8,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/square/etre"
-	"github.com/square/etre/cdc"
-	"github.com/square/etre/query"
-
-	"github.com/rs/xid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/square/etre"
+	"github.com/square/etre/cdc"
+	"github.com/square/etre/query"
 )
 
 // Store interface has methods needed to do CRUD operations on entities.
@@ -33,17 +32,15 @@ type Store interface {
 }
 
 type store struct {
+	coll map[string]*mongo.Collection
 	cdcs cdc.Store
-	dm   cdc.Delayer
-	col  map[string]*mongo.Collection
 }
 
 // NewStore creates a Store.
-func NewStore(cdcs cdc.Store, dm cdc.Delayer, col map[string]*mongo.Collection) Store {
+func NewStore(coll map[string]*mongo.Collection, cdcs cdc.Store) Store {
 	return &store{
+		coll: coll,
 		cdcs: cdcs,
-		dm:   dm,
-		col:  col,
 	}
 }
 
@@ -51,7 +48,7 @@ func NewStore(cdcs cdc.Store, dm cdc.Delayer, col map[string]*mongo.Collection) 
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
 func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
-	c, ok := s.col[entityType]
+	c, ok := s.coll[entityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteLabel: " + entityType)
 	}
@@ -108,19 +105,10 @@ func (s *store) ReadEntities(entityType string, q query.Query, f etre.QueryFilte
 // inserting one by one), caller should only return subset of entities that
 // failed to be inserted.
 func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, error) {
-	c, ok := s.col[wo.EntityType]
+	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteLabel: " + wo.EntityType)
 	}
-
-	// Notify the delay manager that a change is starting, and then notify the
-	// delay manager again when the change is done.
-	changeId := xid.New().String()
-	err := s.dm.BeginChange(changeId)
-	if err != nil {
-		return nil, DbError{Err: err, Type: "cdc-begin"}
-	}
-	defer s.dm.EndChange(changeId) // @todo: don't ignore error, report an exception or something
 
 	// A slice of IDs we generate to insert along with entities into DB
 	newIds := make([]string, 0, len(entities))
@@ -172,19 +160,10 @@ func (s *store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, er
 //   diffs, err := c.UpdateEntities(q, update)
 //
 func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
-	c, ok := s.col[wo.EntityType]
+	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteLabel: " + wo.EntityType)
 	}
-
-	// Notify the delay manager that a change is starting, and then notify the
-	// delay manager again when the change is done.
-	changeId := xid.New().String()
-	err := s.dm.BeginChange(changeId)
-	if err != nil {
-		return nil, DbError{Err: err, Type: "cdc-begin"}
-	}
-	defer func() { s.dm.EndChange(changeId) }() // @todo: don't ignore error
 
 	// diffs is a slice made up of a diff for each doc updated
 	diffs := []etre.Entity{}
@@ -248,19 +227,10 @@ func (s *store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]
 // For example, if 4 entities were supposed to be deleted and 3 are ok and the
 // 4th fails, a slice with 3 deleted entities and an error will be returned.
 func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) {
-	c, ok := s.col[wo.EntityType]
+	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteLabel: " + wo.EntityType)
 	}
-
-	// Notify the delay manager that a change is starting, and then notify the
-	// delay manager again when the change is done.
-	changeId := xid.New().String()
-	err := s.dm.BeginChange(changeId)
-	if err != nil {
-		return nil, DbError{Err: err, Type: "cdc-begin"}
-	}
-	defer func() { s.dm.EndChange(changeId) }() // @todo: don't ignore error
 
 	deleted := []etre.Entity{}
 	for {
@@ -290,7 +260,7 @@ func (s *store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error)
 
 // DeleteLabel deletes a label from an entity.
 func (s *store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
-	c, ok := s.col[wo.EntityType]
+	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteLabel: " + wo.EntityType)
 	}

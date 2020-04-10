@@ -3,9 +3,8 @@
 package mock
 
 import (
-	"errors"
+	//"github.com/gorilla/websocket"
 
-	"github.com/gorilla/websocket"
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
 )
@@ -15,14 +14,14 @@ type CDCStore struct {
 	ReadFunc  func(cdc.Filter) ([]etre.CDCEvent, error)
 }
 
-func (s *CDCStore) Write(e etre.CDCEvent) error {
+func (s CDCStore) Write(e etre.CDCEvent) error {
 	if s.WriteFunc != nil {
 		return s.WriteFunc(e)
 	}
 	return nil
 }
 
-func (s *CDCStore) Read(filter cdc.Filter) ([]etre.CDCEvent, error) {
+func (s CDCStore) Read(filter cdc.Filter) ([]etre.CDCEvent, error) {
 	if s.ReadFunc != nil {
 		return s.ReadFunc(filter)
 	}
@@ -43,7 +42,7 @@ var CDCEvents = []etre.CDCEvent{
 }
 
 // --------------------------------------------------------------------------
-
+/*
 type Feed struct {
 	StartFunc func()
 	WaitFunc  func()
@@ -86,43 +85,4 @@ func (ff *FeedFactory) MakeInternal(clientBufferSize int) *cdc.InternalFeed {
 	}
 	return nil
 }
-
-// --------------------------------------------------------------------------
-
-var (
-	ErrPoller = errors.New("error in poller")
-)
-
-type Poller struct {
-	RunFunc        func() error
-	RegisterFunc   func(string) (<-chan etre.CDCEvent, int64, error)
-	DeregisterFunc func(string)
-	ErrorFunc      func() error
-}
-
-func (p *Poller) Run() error {
-	if p.RunFunc != nil {
-		p.RunFunc()
-	}
-	return nil
-}
-
-func (p *Poller) Register(uuid string) (<-chan etre.CDCEvent, int64, error) {
-	if p.RegisterFunc != nil {
-		return p.RegisterFunc(uuid)
-	}
-	return nil, 0, nil
-}
-
-func (p *Poller) Deregister(uuid string) {
-	if p.DeregisterFunc != nil {
-		p.DeregisterFunc(uuid)
-	}
-}
-
-func (p *Poller) Error() error {
-	if p.ErrorFunc != nil {
-		return p.ErrorFunc()
-	}
-	return nil
-}
+*/

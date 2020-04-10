@@ -3,10 +3,7 @@
 package server
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"time"
 
@@ -24,7 +21,6 @@ import (
 type Server struct {
 	appCtx   app.Context
 	api      *api.API
-	poller   cdc.Poller
 	stopChan chan struct{}
 	conn     db.Connector
 }
@@ -47,119 +43,58 @@ func (s *Server) Boot(configFile string) error {
 		return fmt.Errorf("error loading config: %s", err)
 	}
 	s.appCtx.Config = cfg
+	log.Printf("Config: %+v", s.appCtx.Config)
 
 	// //////////////////////////////////////////////////////////////////////
-	// Database
+	// CDC Store and Change Stream
 	// //////////////////////////////////////////////////////////////////////
-	var tlsConfig *tls.Config
-	if (cfg.Datasource.TLSCert != "" && cfg.Datasource.TLSKey != "") || cfg.Datasource.TLSCA != "" {
-		tlsConfig = &tls.Config{}
-
-		// Root CA
-		if cfg.Datasource.TLSCA != "" {
-			caCert, err := ioutil.ReadFile(cfg.Datasource.TLSCA)
-			if err != nil {
-				return err
-			}
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(caCert)
-			tlsConfig.RootCAs = caCertPool
-			log.Println("TLS root CA loaded")
-		}
-
-		// Cert and key
-		if cfg.Datasource.TLSCert != "" && cfg.Datasource.TLSKey != "" {
-			cert, err := tls.LoadX509KeyPair(cfg.Datasource.TLSCert, cfg.Datasource.TLSKey)
-			if err != nil {
-				return err
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
-			tlsConfig.BuildNameToCertificate()
-			log.Println("TLS cert and key loaded")
-		}
-	} else {
-		log.Println("TLS cert and key not given")
-	}
-	dbCredentials := map[string]string{
-		"username":  cfg.Datasource.Username,
-		"password":  cfg.Datasource.Password,
-		"source":    cfg.Datasource.Source,
-		"mechanism": cfg.Datasource.Mechanism,
-	}
-	s.conn = db.NewConnector(s.appCtx.Config.Datasource.URL, cfg.Datasource.Timeout, tlsConfig, dbCredentials)
-
-	// //////////////////////////////////////////////////////////////////////
-	// CDC Store, Delayer, and Poller (if enabled)
-	// //////////////////////////////////////////////////////////////////////
-	var cdcStore cdc.Store
-	var dm cdc.Delayer
 	if cfg.CDC.Collection != "" {
 		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, cfg.CDC.Collection)
+		cdccfg := cfg.Datasource // shallow copy
+		cdcfg.MaxConnections = 10
+		cdcClient, err := db.Connect(cdccfg)
+		if err != nil {
+			return err
+		}
+		cdcColl := cdcClient.Database(cfg.Datasource.Database).Collection(cfg.CDC.Collection)
 
 		// Store
 		wrp := cdc.RetryPolicy{
 			RetryCount: cfg.CDC.WriteRetryCount,
 			RetryWait:  cfg.CDC.WriteRetryWait,
 		}
-		cdcStore = cdc.NewStore(
-			s.conn,
-			cfg.Datasource.Database,
-			cfg.CDC.Collection,
-			cfg.CDC.FallbackFile,
-			wrp,
-		)
+		cs.appCtx.CDCStore = cdc.NewStore(cdcColl, cfg.CDC.FallbackFile, wrp)
 
-		// Delayer
-		var err error
-		if cfg.CDC.StaticDelay >= 0 {
-			dm, err = cdc.NewStaticDelayer(cfg.CDC.StaticDelay)
+		if !cfg.CDC.ChangeStream.Disabled {
+			s.appCtx.ChangeStream = cdc.ChangeStream(cdc.ChangeStreamConfig{
+				CDCCollection: cdcColl,
+				MaxClients:    cfg.CDC.ChangeStream.MaxClients,
+				BufferSize:    cfg.CDC.ChangeStream.BufferSize,
+			})
 		} else {
-			dm, err = cdc.NewDynamicDelayer(
-				s.conn,
-				cfg.Datasource.Database,
-				cfg.CDC.DelayCollection,
-			)
+			log.Println("CDC Change Stream disabled (cfg.cdc.change_stream.disabled is true)")
 		}
-		if err != nil {
-			return err
-		}
-
-		// Poller
-		log.Printf("CDC feed poll interval: %d ms", cfg.Feed.PollInterval)
-		s.poller = cdc.NewPoller(
-			cdcStore,
-			dm,
-			cfg.Feed.StreamerBufferSize,
-			time.NewTicker(time.Duration(cfg.Feed.PollInterval)*time.Millisecond),
-		)
 	} else {
 		log.Println("CDC disabled (cfg.cdc.collection not set)")
 
 		// The CDC store and delayer must not be nil because the entity store
 		// always updates them. But when CDC is disabled, the updates are no-ops.
-		cdcStore = cdc.NoopStore{}
-		dm = cdc.NoopDelayer{}
-
-		// This results in a nil FeedFactory (below) which causes the /changes
-		// controller returns http code 501 (StatusNotImplemented).
-		s.poller = nil // cdc disabled
-	}
-	s.appCtx.CDCStore = cdcStore
-
-	// //////////////////////////////////////////////////////////////////////
-	// Feed Factory
-	// //////////////////////////////////////////////////////////////////////
-	if s.poller != nil {
-		s.appCtx.FeedFactory = cdc.NewFeedFactory(s.poller, cdcStore)
+		s.appCtx.CDCStore = cdc.NoopStore{}
+		s.appCtx.ChangeStream = cdc.NoopZChangeStream{}
 	}
 
 	// //////////////////////////////////////////////////////////////////////
-	// Entity Store
+	// Entity Store and Validator
 	// //////////////////////////////////////////////////////////////////////
-	s.appCtx.EntityStore = entity.NewStore(
-		cdcStore,
-		dm,
-	)
+	mainClient, err := db.Connect(cfg.Datasource)
+	if err != nil {
+		return err
+	}
+	coll := make(map[string]*mongo.Collection, len(cfg.Entity.Types))
+	for _, entityType := range cfg.Entity.Types {
+		coll[entityType] = mainClient.Database(cfg.Datasource.Database).Collection(entityType)
+	}
+	s.appCtx.EntityStore = entity.NewStore(coll, s.appCtx.CDCStore)
 	s.appCtx.EntityValidator = entity.NewValidator(cfg.Entity.Types)
 
 	// //////////////////////////////////////////////////////////////////////
@@ -187,8 +122,6 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	s.api = api.NewAPI(s.appCtx)
 
-	log.Printf("Config: %+v", s.appCtx.Config)
-
 	return nil
 }
 
@@ -206,10 +139,6 @@ func (s *Server) Run() error {
 		}
 		log.Printf("Connected to %s", s.appCtx.Config.Datasource.URL)
 		break
-	}
-
-	if s.poller != nil {
-		go s.runPoller()
 	}
 
 	// Run the API - this will block until the API is stopped (or encounters

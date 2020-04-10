@@ -1,4 +1,4 @@
-// Copyright 2019, Square, Inc.
+// Copyright 2019-2020, Square, Inc.
 
 // Package app provides app context and extensions: hooks and plugins.
 package app
@@ -24,7 +24,7 @@ type Context struct {
 	EntityStore     entity.Store
 	EntityValidator entity.Validator
 	CDCStore        cdc.Store
-	FeedFactory     cdc.FeedFactory
+	ChangeStream    cdc.ChangeStream
 	MetricsStore    metrics.Store
 	MetricsFactory  metrics.Factory
 	SystemMetrics   metrics.Metrics

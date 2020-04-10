@@ -5,73 +5,54 @@ package entity_test
 import (
 	"context"
 	"testing"
-	"time"
-
-	"github.com/square/etre"
-	"github.com/square/etre/db"
-	"github.com/square/etre/entity"
-	"github.com/square/etre/query"
-	"github.com/square/etre/test/mock"
 
 	"github.com/go-test/deep"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-)
 
-var testNodes []etre.Entity
+	"github.com/square/etre"
+	"github.com/square/etre/entity"
+	"github.com/square/etre/query"
+	"github.com/square/etre/test"
+	"github.com/square/etre/test/mock"
+)
 
 var (
-	url         = "localhost:27017"
-	database    = "etre_test"
-	entityType  = "nodes"
+	client    *mongo.Client
+	coll      map[string]*mongo.Collection
+	testNodes []etre.Entity
+
 	username    = "test_user"
+	entityType  = "nodes"
 	entityTypes = []string{entityType}
-	timeout     = 5
 )
 
-var conn db.Connector
 var wo = entity.WriteOp{
 	EntityType: entityType,
 	User:       username,
 }
 
-var client *mongo.Client
-var col map[string]*mongo.Collection
-
-func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
-	if col == nil {
+func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
+	if coll == nil {
 		var err error
-		url := "mongodb://" + url
-		t.Logf("Connecting to %s", url)
-		client, err = mongo.NewClient(options.Client().ApplyURI(url))
+		client, coll, err = test.DbCollections(entityTypes)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := client.Connect(ctx); err != nil {
-			t.Fatal(err)
-		}
-		col = map[string]*mongo.Collection{
-			entityType: client.Database(database).Collection(entityType),
-		}
-
 	}
 
 	// Reset the collection: delete all entities and insert the standard test entities
-	db := client.Database(database)
-	coll := db.Collection(entityType)
-
-	_, err := coll.DeleteMany(context.TODO(), bson.D{{}})
+	nodesColl := coll[entityType]
+	_, err := nodesColl.DeleteMany(context.TODO(), bson.D{{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// First time, create unique index on "x"
-	if col == nil {
-		iv := coll.Indexes()
+	if coll == nil {
+		iv := nodesColl.Indexes()
 		if _, err := iv.DropAll(context.TODO()); err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +70,7 @@ func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(4), "y": "b", "bar": ""},
 		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(6), "y": "b", "bar": ""},
 	}
-	res, err := coll.InsertMany(context.TODO(), docs(testNodes))
+	res, err := nodesColl.InsertMany(context.TODO(), docs(testNodes))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +81,7 @@ func setup(t *testing.T, cdcm *mock.CDCStore, d *mock.Delayer) entity.Store {
 		testNodes[i]["_id"] = id.(primitive.ObjectID)
 	}
 
-	return entity.NewStore(cdcm, d, col)
+	return entity.NewStore(coll, cdcm)
 }
 
 func docs(entities []etre.Entity) []interface{} {
@@ -119,7 +100,7 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 	// Test all operators: in, notin, =, ==, !=, (has) y, (does not have) !foo, <, >
 	// All values are set such that it only matches the first test node to make
 	// testing easier and ensure we don't match the other entities.
-	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	store := setup(t, &mock.CDCStore{})
 	queries := []string{
 		"y in (a, z)",
 		"y notin (b, c)",
@@ -156,7 +137,7 @@ func TestReadEntitiesMatching(t *testing.T) {
 	// Test various combinations of queries to ensure that we match and return
 	// the correct entities. This is the fundamental job of Etre, so it should
 	// be very thoroughly tested.
-	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	store := setup(t, &mock.CDCStore{})
 	readTests := []readTest{
 		{
 			// A more complex query (multiple operators) matching only 1st test node
@@ -204,7 +185,7 @@ func TestReadEntitiesFilterDistinct(t *testing.T) {
 	// Test that etre.QueryFilter{Distinct: true} returns a list of unique values
 	// for one label. The 1st test node has y=a and the 2nd and 3rd both have y=b,
 	// so the unique values are [a,b].
-	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	store := setup(t, &mock.CDCStore{})
 	q, err := query.Translate("y") // all test nodes have label "y"
 	if err != nil {
 		t.Error(err)
@@ -230,7 +211,7 @@ func TestReadEntitiesFilterReturnLabels(t *testing.T) {
 	// Test that etre.QueryFilter{ReturnLabels: []string{x}} returns only that
 	// label and not the others (y, z, bar, foo). We'll select/match by label y
 	// but return only label x.
-	store := setup(t, &mock.CDCStore{}, &mock.Delayer{})
+	store := setup(t, &mock.CDCStore{})
 	q, err := query.Translate("y") // all test nodes have label "y"
 	if err != nil {
 		t.Error(err)
@@ -266,7 +247,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 			return nil
 		},
 	}
-	store := setup(t, cdcm, &mock.Delayer{})
+	store := setup(t, cdcm)
 
 	testData := []etre.Entity{
 		etre.Entity{"x": 7},
@@ -340,7 +321,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 			return nil
 		},
 	}
-	store := setup(t, cdcm, &mock.Delayer{})
+	store := setup(t, cdcm)
 
 	// Expect first two documents to be inserted and third to fail
 	testData := []etre.Entity{
@@ -398,7 +379,7 @@ func TestUpdateEntities(t *testing.T) {
 			return nil
 		},
 	}
-	store := setup(t, cdcm, &mock.Delayer{})
+	store := setup(t, cdcm)
 
 	// ----------------------------------------------------------------------
 	// This matches first test node
@@ -535,7 +516,7 @@ func TestUpdateEntitiesDuplicate(t *testing.T) {
 			return nil
 		},
 	}
-	store := setup(t, cdcm, &mock.Delayer{})
+	store := setup(t, cdcm)
 
 	// This matches first test node
 	q, err := query.Translate("y=a")
@@ -578,7 +559,7 @@ func TestDeleteEntities(t *testing.T) {
 			return nil
 		},
 	}
-	store := setup(t, cdcm, &mock.Delayer{})
+	store := setup(t, cdcm)
 
 	// Match one first test node
 	q, err := query.Translate("y == a")
@@ -656,7 +637,7 @@ func TestDeleteLabel(t *testing.T) {
 			return nil
 		},
 	}
-	store := setup(t, cdcm, &mock.Delayer{})
+	store := setup(t, cdcm)
 
 	wo := entity.WriteOp{
 		EntityType: entityType,

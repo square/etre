@@ -14,7 +14,7 @@ func init() {
 }
 
 func TestRevOrder(t *testing.T) {
-	revo := etre.NewRevOrder(0)
+	revo := etre.NewRevOrder(0, false)
 
 	e := etre.CDCEvent{
 		EntityId: "abc",
@@ -105,7 +105,7 @@ func TestRevOrderPanicRRltQR(t *testing.T) {
 				recoverChan <- nil
 			}
 		}()
-		revo := etre.NewRevOrder(10)
+		revo := etre.NewRevOrder(10, false)
 		e := etre.CDCEvent{
 			EntityId: "abc",
 			Rev:      1,
@@ -141,7 +141,7 @@ func TestRevOrderPanicEvict(t *testing.T) {
 				recoverChan <- nil
 			}
 		}()
-		revo := etre.NewRevOrder(2)
+		revo := etre.NewRevOrder(2, false)
 		e := etre.CDCEvent{
 			EntityId: "abc",
 			Rev:      1,
@@ -179,6 +179,41 @@ func TestRevOrderPanicEvict(t *testing.T) {
 			if !strings.Contains(r.(string), pat2) {
 				t.Errorf("panic msg doesn't contain '%s': %s", pat2, r)
 			}
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for goroutine to panic")
+	}
+}
+
+func TestRevOrderIgnorePastRevs(t *testing.T) {
+	// Same as TestRevOrderPanicRRltQR but ignorePastRevs=true which ignores
+	// the past rev instead of panicing. This is used in changestream.ServerStreamer
+	// because it has two inputs: events from the backlog (cdc.Store) and
+	// events from a MongoDB change stream. These two can overlap at the start.
+	recoverChan := make(chan interface{}, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				recoverChan <- r
+			} else {
+				recoverChan <- nil
+			}
+		}()
+		revo := etre.NewRevOrder(10, true) // = ignorePastRevs
+		e := etre.CDCEvent{
+			EntityId: "abc",
+			Rev:      1,
+			Op:       "i",
+		}
+		revo.InOrder(e)
+		e.Rev = 0 // does NOT cause panic
+		revo.InOrder(e)
+	}()
+
+	select {
+	case r := <-recoverChan:
+		if r != nil {
+			t.Errorf("panic, expected nil: %v", r)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for goroutine to panic")

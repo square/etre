@@ -14,6 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-test/deep"
+	"github.com/gorilla/websocket"
+	"go.mongodb.org/mongo-driver/bson"
+
 	"github.com/square/etre"
 	"github.com/square/etre/api"
 	"github.com/square/etre/app"
@@ -25,10 +29,6 @@ import (
 	"github.com/square/etre/query"
 	"github.com/square/etre/test"
 	"github.com/square/etre/test/mock"
-
-	"github.com/globalsign/mgo/bson"
-	"github.com/go-test/deep"
-	"github.com/gorilla/websocket"
 )
 
 var (

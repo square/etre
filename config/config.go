@@ -15,15 +15,15 @@ const (
 	DEFAULT_ADDR                           = "127.0.0.1:8050"
 	DEFAULT_DATASOURCE_URL                 = "mongodb://localhost:27017"
 	DEFAULT_DB                             = "etre_dev"
-	DEFAULT_DB_TIMEOUT                     = 5
+	DEFAULT_DB_CONNECT_TIMEOUT             = "5s"
+	DEFAULT_DB_QUERY_TIMEOUT               = "5s"
+	DEFAULT_DB_MAX_CONN                    = 500
 	DEFAULT_CDC_COLLECTION                 = "" // disabled
-	DEFAULT_CDC_DELAY_COLLECTION           = "cdc_delay"
 	DEFAULT_CDC_WRITE_RETRY_COUNT          = 3
-	DEFAULT_CDC_WRITE_RETRY_WAIT           = 50
+	DEFAULT_CDC_WRITE_RETRY_WAIT           = 2
 	DEFAULT_CDC_FALLBACK_FILE              = "/tmp/etre-cdc.json"
-	DEFAULT_CDC_STATIC_DELAY               = -1 // if negative, system will use a dynamic delayer
-	DEFAULT_FEED_BUFFER_SIZE               = 100
-	DEFAULT_FEED_POLL_INTERVAL             = 2000
+	DEFAULT_CHANGESTREAM_BUFFER_SIZE       = 100
+	DEFAULT_CHANGESTREAM_RETENTION         = "3h"
 	DEFAULT_ENTITY_TYPE                    = "host"
 	DEFAULT_QUERY_LATENCY_SLA              = "1s"
 	DEFAULT_QUERY_PROFILE_SAMPLE_RATE      = 0.2
@@ -41,21 +41,22 @@ func Default() Config {
 			Addr: DEFAULT_ADDR,
 		},
 		Datasource: DatasourceConfig{
-			URL:      DEFAULT_DATASOURCE_URL,
-			Database: DEFAULT_DB,
-			Timeout:  DEFAULT_DB_TIMEOUT,
+			URL:            DEFAULT_DATASOURCE_URL,
+			Database:       DEFAULT_DB,
+			ConnectTimeout: DEFAULT_DB_CONNECT_TIMEOUT,
+			QueryTimeout:   DEFAULT_DB_QUERY_TIMEOUT,
+			MaxConnections: DEFAULT_DB_MAX_CONN,
 		},
 		CDC: CDCConfig{
 			Collection:      DEFAULT_CDC_COLLECTION,
 			FallbackFile:    DEFAULT_CDC_FALLBACK_FILE,
 			WriteRetryCount: DEFAULT_CDC_WRITE_RETRY_COUNT,
 			WriteRetryWait:  DEFAULT_CDC_WRITE_RETRY_WAIT,
-			DelayCollection: DEFAULT_CDC_DELAY_COLLECTION,
-			StaticDelay:     DEFAULT_CDC_STATIC_DELAY,
-		},
-		Feed: FeedConfig{
-			StreamerBufferSize: DEFAULT_FEED_BUFFER_SIZE,
-			PollInterval:       DEFAULT_FEED_POLL_INTERVAL,
+			ChangeStream: ChangeStreamConfig{
+				Disabled:   false,
+				BufferSize: DEFAULT_CHANGESTREAM_BUFFER_SIZE,
+				Retention:  DEFAULT_CHANGESTREAM_RETENTION,
+			},
 		},
 		ACL: ACLConfig{},
 		Metrics: MetricsConfig{
@@ -105,15 +106,16 @@ type Config struct {
 	Datasource DatasourceConfig `yaml:"datasource"`
 	Entity     EntityConfig     `yaml:"entity"`
 	CDC        CDCConfig        `yaml:"cdc"`
-	Feed       FeedConfig       `yaml:"feed"`
 	ACL        ACLConfig        `yaml:"acl"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
 }
 
 type DatasourceConfig struct {
-	URL      string `yaml:"url"`
-	Database string `yaml:"database"`
-	Timeout  int    `yaml:"timeout"`
+	URL            string `yaml:"url"`
+	Database       string `yaml:"database"`
+	ConnectTimeout string `yaml:"connect_timeout"`
+	QueryTimeout   string `yaml:"query_timeout"`
+	MaxConnections uint64 `yaml:"max_connections"`
 
 	// Certs
 	TLSCert string `yaml:"tls_cert"`
@@ -142,21 +144,20 @@ type CDCConfig struct {
 	// Wait time in milliseconds between write retry events.
 	WriteRetryWait int `yaml:"write_retry_wait"` // milliseconds
 	// The collection that delays are stored in.
-	DelayCollection string `yaml:"delay_collection"`
-	// If this value is positive, the delayer will always return a max timestamp
-	// that is time.Now() minus this config value. If this value is negative,
-	// the delayer will return a max timestamp that dynamically changes
-	// depending on the active API calls into Etre. Units in milliseconds.
-	StaticDelay int `yaml:"static_delay"`
+
+	ChangeStream ChangeStreamConfig `yaml:"change_stream"`
 }
 
-type FeedConfig struct {
+type ChangeStreamConfig struct {
+	Disabled bool `yaml:"disabled"`
+
 	// The buffer size that a streamer has when consuming from the poller. If the
 	// poller fills the buffer up then the streamer will error out since it won't
 	// be able to catch up to the poller anymore.
-	StreamerBufferSize int `yaml:"streamer_buffer_size"`
+	BufferSize int `yaml:"buffer_size"`
+
 	// The amount of time that the poller will sleep between polls, in milliseconds.
-	PollInterval int `yaml:"poll_interval"`
+	Retention string `yaml:"retention"`
 }
 
 type ServerConfig struct {

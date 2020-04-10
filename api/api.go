@@ -16,6 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/labstack/echo"
+	"go.mongodb.org/mongo-driver/bson"
+
 	"github.com/square/etre"
 	"github.com/square/etre/app"
 	"github.com/square/etre/auth"
@@ -23,10 +27,6 @@ import (
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
-
-	"github.com/globalsign/mgo/bson"
-	"github.com/gorilla/websocket"
-	"github.com/labstack/echo"
 )
 
 func init() {
@@ -40,7 +40,6 @@ type API struct {
 	key                      string
 	es                       entity.Store
 	validate                 entity.Validator
-	ff                       cdc.FeedFactory
 	auth                     auth.Plugin
 	metricsStore             metrics.Store
 	metricsFactory           metrics.Factory
@@ -67,7 +66,6 @@ func NewAPI(appCtx app.Context) *API {
 		key:                      appCtx.Config.Server.TLSKey,
 		es:                       appCtx.EntityStore,
 		validate:                 appCtx.EntityValidator,
-		ff:                       appCtx.FeedFactory,
 		auth:                     appCtx.Auth,
 		metricsFactory:           appCtx.MetricsFactory,
 		metricsStore:             appCtx.MetricsStore,
