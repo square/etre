@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path"
+	"runtime"
 	"sort"
 )
 
@@ -206,11 +209,16 @@ type Latency struct {
 	RTT  int64 // client -> server -> client
 }
 
-var Debug = false
+var (
+	DebugEnabled = false
+	debugLog     = log.New(os.Stderr, "DEBUG ", log.LstdFlags|log.Lmicroseconds)
+)
 
-func debug(fmt string, v ...interface{}) {
-	if !Debug {
+func Debug(msg string, v ...interface{}) {
+	if !DebugEnabled {
 		return
 	}
-	log.Printf(fmt, v...)
+	_, file, line, _ := runtime.Caller(1)
+	msg = fmt.Sprintf("%s:%d %s", path.Base(file), line, msg)
+	debugLog.Printf(msg, v...)
 }

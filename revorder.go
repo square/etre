@@ -122,7 +122,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 
 	// First time we see entity, we assume its rev to be a safe starting point
 	if !seen {
-		debug("add id: %s", e.EntityId)
+		Debug("add id: %s", e.EntityId)
 		r.lru.Add(e.EntityId, e.Rev)
 		return true, nil // sync event
 	}
@@ -130,7 +130,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// We've seen this entity before. Compare previous rev (qR) to current (rR)
 	qR := v.(int64)
 	rR := e.Rev
-	debug("id %s qR %d rR %d", e.EntityId, qR, rR)
+	Debug("id %s qR %d rR %d", e.EntityId, qR, rR)
 
 	// Are we reordering revs?
 	re, reordering := r.reorder[e.EntityId]
@@ -149,7 +149,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// Same rev as last time? Ignore it; don't sync (it should have already been
 	// synced first time we saw it.)
 	if rR == qR {
-		debug("duplicate (current), ignore")
+		Debug("duplicate (current), ignore")
 		return false, nil // don't sync
 	}
 
@@ -160,7 +160,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// turns out to be false.
 	if rR < qR {
 		if r.ignorePastRevs {
-			debug("duplicate (past), ignore")
+			Debug("duplicate (past), ignore")
 			return false, nil // don't sync
 		} else {
 			msg := fmt.Sprintf("Entity %s is out of order because revision %d"+
@@ -182,7 +182,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// (earlier) revs. When they arrive, reordering will be true and we'll
 	// fall through to the next code block: Reordering.
 	if !reordering {
-		debug("reorder id %s from %d", e.EntityId, qR)
+		Debug("reorder id %s from %d", e.EntityId, qR)
 		r.reorder[e.EntityId] = &events{
 			qR:  qR,
 			buf: []CDCEvent{e},
@@ -196,7 +196,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 
 	// This is 2nd and subsequent out-of-order- rev. E.g. 3, and 4, if prev rev = 2
 	// and first out-of-order received was 5. Add to buffer and sort.
-	debug("buffer rev %d", e.Rev)
+	Debug("buffer rev %d", e.Rev)
 	re.buf = append(re.buf, e)
 	sort.Sort(ByRev(re.buf))
 
@@ -205,7 +205,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// so 2+1 = 3, 3+1 = 4, 4+1 = 5 == complete rev sequence.
 	for i, b := range re.buf {
 		if b.Rev != re.qR+1+int64(i) {
-			debug("reorder fails at %d: %d != %d", i, b.Rev, re.qR+1+int64(i))
+			Debug("reorder fails at %d: %d != %d", i, b.Rev, re.qR+1+int64(i))
 			return false, nil // don't sync
 		}
 	}
@@ -215,7 +215,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	buf := re.buf
 	qR = buf[len(buf)-1].Rev
 	r.lru.Add(e.EntityId, qR)
-	debug("reorder complete: id %s (%d, %d]", e.EntityId, re.qR, qR)
+	Debug("reorder complete: id %s (%d, %d]", e.EntityId, re.qR, qR)
 
 	delete(r.reorder, e.EntityId) // done reordering
 
@@ -225,7 +225,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 // This func is called by r.lru when it evicts a key. We never call it directly.
 func (r *RevOrder) onEvictedCallback(key lru.Key, value interface{}) {
 	id := key.(string)
-	debug("evict id: %s", id)
+	Debug("evict id: %s", id)
 
 	// This should never happen: the oldest key (entity ID) is still being
 	// reordered. If maxEntities is tiny (< 10), then maybe this is just bad luck,
