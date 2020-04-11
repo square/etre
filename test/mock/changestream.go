@@ -5,6 +5,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/square/etre"
+	"github.com/square/etre/cdc/changestream"
 )
 
 type ChangeStreamServer struct {
@@ -38,6 +39,51 @@ func (s ChangeStreamServer) Stop() {
 	if s.StopFunc != nil {
 		s.StopFunc()
 	}
+}
+
+// --------------------------------------------------------------------------
+
+type Streamer struct {
+	StartFunc  func(sinceTs int64) <-chan etre.CDCEvent
+	InSyncFunc func() chan struct{}
+	StatusFunc func() changestream.Status
+	StopFunc   func()
+	ErrorFunc  func() error
+}
+
+func (s Streamer) Start(sinceTs int64) <-chan etre.CDCEvent {
+	if s.StartFunc != nil {
+		return s.StartFunc(sinceTs)
+	}
+	return nil
+
+}
+
+func (s Streamer) InSync() chan struct{} {
+	if s.InSyncFunc != nil {
+		return s.InSyncFunc()
+	}
+	return nil
+}
+
+func (s Streamer) Status() changestream.Status {
+	if s.StatusFunc != nil {
+		return s.StatusFunc()
+	}
+	return changestream.Status{}
+}
+
+func (s Streamer) Stop() {
+	if s.StopFunc != nil {
+		s.StopFunc()
+	}
+}
+
+func (s Streamer) Error() error {
+	if s.ErrorFunc != nil {
+		return s.ErrorFunc()
+	}
+	return nil
 }
 
 // --------------------------------------------------------------------------

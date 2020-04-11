@@ -42,8 +42,6 @@ func setup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	etre.DebugEnabled = true
 }
 
 // --------------------------------------------------------------------------
