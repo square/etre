@@ -1,11 +1,10 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 // Package api provides API endpoints and controllers.
 package api
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,12 +17,12 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/square/etre"
 	"github.com/square/etre/app"
 	"github.com/square/etre/auth"
-	"github.com/square/etre/cdc"
+	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -42,6 +41,8 @@ type API struct {
 	validate                 entity.Validator
 	auth                     auth.Plugin
 	metricsStore             metrics.Store
+	cdcDisabled              bool
+	changesClientFactory     changestream.ClientFactory
 	metricsFactory           metrics.Factory
 	systemMetrics            metrics.Metrics
 	defaultClientVersion     string
@@ -67,6 +68,8 @@ func NewAPI(appCtx app.Context) *API {
 		es:                       appCtx.EntityStore,
 		validate:                 appCtx.EntityValidator,
 		auth:                     appCtx.Auth,
+		cdcDisabled:              appCtx.Config.CDC.Disabled,
+		changesClientFactory:     appCtx.ChangesClientFactory,
 		metricsFactory:           appCtx.MetricsFactory,
 		metricsStore:             appCtx.MetricsStore,
 		systemMetrics:            appCtx.SystemMetrics,
@@ -775,7 +778,7 @@ var upgrader = websocket.Upgrader{
 }
 
 func (api *API) changesHandler(c echo.Context) error {
-	if api.ff == nil {
+	if !api.cdcDisabled {
 		return readError(c, ErrCDCDisabled)
 	}
 
@@ -788,11 +791,16 @@ func (api *API) changesHandler(c echo.Context) error {
 	if err != nil {
 		return readError(c, ErrInternal.New(err.Error()))
 	}
+	defer wsConn.Close()
 
 	// Create and run a feed.
-	f := api.ff.MakeWebsocket(wsConn)
-	if err := f.Run(); err != nil {
-		return readError(c, ErrInternal.New(err.Error()))
+	client := api.changesClientFactory.MakeWebsocket("clientId", wsConn)
+	if err := client.Run(); err != nil {
+		switch err {
+		case changestream.ErrWebsocketClosed:
+		default:
+			return readError(c, ErrInternal.New(err.Error()))
+		}
 	}
 
 	return nil
@@ -932,8 +940,8 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 		diffs := v.([]etre.Entity)
 		writes = make([]etre.Write, len(diffs))
 		for i, diff := range diffs {
-			// _id from db is bson.ObjectId, convert to string
-			id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
+			// _id from db is primitive.ObjectID, convert to string
+			id := diff["_id"].(primitive.ObjectID).Hex()
 			writes[i] = etre.Write{
 				Id:   id,
 				URI:  api.addr + etre.API_ROOT + "/entity/" + id,
@@ -954,8 +962,8 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 	case etre.Entity:
 		// Entity from DeleteLabel
 		diff := v.(etre.Entity)
-		// _id from db is bson.ObjectId, convert to string
-		id := hex.EncodeToString([]byte(diff["_id"].(bson.ObjectId)))
+		// _id from db is primitive.ObjectID, convert to string
+		id := diff["_id"].(primitive.ObjectID).Hex()
 		writes = []etre.Write{
 			{
 				Id:   id,
@@ -1017,8 +1025,8 @@ func validateParams(c echo.Context, needEntityId bool) error {
 	if id == "" {
 		return ErrMissingParam.New("missing id param")
 	}
-	if !bson.IsObjectIdHex(id) {
-		return ErrInvalidParam.New("id %s is not a valid bson.ObjectId", id)
+	if _, err := primitive.ObjectIDFromHex(id); err != nil {
+		return ErrInvalidParam.New("id %s is not a valid ObjectID", id)
 	}
 	return nil
 }

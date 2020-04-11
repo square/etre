@@ -23,14 +23,14 @@ const (
 	DEFAULT_CDC_WRITE_RETRY_WAIT           = 2
 	DEFAULT_CDC_FALLBACK_FILE              = "/tmp/etre-cdc.json"
 	DEFAULT_CHANGESTREAM_BUFFER_SIZE       = 100
-	DEFAULT_CHANGESTREAM_RETENTION         = "3h"
+	DEFAULT_CHANGESTREAM_MAX_CLIENTS       = 100
 	DEFAULT_ENTITY_TYPE                    = "host"
 	DEFAULT_QUERY_LATENCY_SLA              = "1s"
 	DEFAULT_QUERY_PROFILE_SAMPLE_RATE      = 0.2
 	DEFAULT_QUERY_PROFILE_REPORT_THRESHOLD = "500ms"
 )
 
-var reservedNames = []string{"entity", "entities"}
+var reservedNames = []string{"entity", "entities", "cdc"}
 
 func Default() Config {
 	return Config{
@@ -48,14 +48,14 @@ func Default() Config {
 			MaxConnections: DEFAULT_DB_MAX_CONN,
 		},
 		CDC: CDCConfig{
-			Collection:      DEFAULT_CDC_COLLECTION,
+			Disabled:        true,
+			Datasource:      DatasourceConfig{}, // default to Config.Datasource
 			FallbackFile:    DEFAULT_CDC_FALLBACK_FILE,
 			WriteRetryCount: DEFAULT_CDC_WRITE_RETRY_COUNT,
 			WriteRetryWait:  DEFAULT_CDC_WRITE_RETRY_WAIT,
 			ChangeStream: ChangeStreamConfig{
-				Disabled:   false,
+				MaxClients: DEFAULT_CHANGESTREAM_MAX_CLIENTS,
 				BufferSize: DEFAULT_CHANGESTREAM_BUFFER_SIZE,
-				Retention:  DEFAULT_CHANGESTREAM_RETENTION,
 			},
 		},
 		ACL: ACLConfig{},
@@ -98,6 +98,8 @@ func Load(file string) (Config, error) {
 		}
 	}
 
+	// Fill in missing CDC.Datasource values from main .Datasource
+
 	return config, nil
 }
 
@@ -129,13 +131,57 @@ type DatasourceConfig struct {
 	Mechanism string `yaml:"mechanism"`
 }
 
+func (c DatasourceConfig) WithDefaults(d DatasourceConfig) DatasourceConfig {
+	if c.URL == "" {
+		c.URL = d.URL
+	}
+	if c.Database == "" {
+		c.Database = d.Database
+	}
+	if c.ConnectTimeout == "" {
+		c.ConnectTimeout = d.ConnectTimeout
+	}
+	if c.QueryTimeout == "" {
+		c.QueryTimeout = d.QueryTimeout
+	}
+	if c.MaxConnections == 0 {
+		c.MaxConnections = d.MaxConnections
+	}
+
+	if c.TLSCert == "" {
+		c.TLSCert = d.TLSCert
+	}
+	if c.TLSKey == "" {
+		c.TLSKey = d.TLSKey
+	}
+	if c.TLSCA == "" {
+		c.TLSCA = d.TLSCA
+	}
+
+	if c.Username == "" {
+		c.Username = d.Username
+	}
+	if c.Password == "" {
+		c.Password = d.Password
+	}
+	if c.Source == "" {
+		c.Source = d.Source
+	}
+	if c.Mechanism == "" {
+		c.Mechanism = d.Mechanism
+	}
+	return c
+}
+
 type EntityConfig struct {
 	Types []string `yaml:"types"`
 }
 
 type CDCConfig struct {
-	// The collection that CDC events are stored in.
-	Collection string `yaml:"collection"`
+	Disabled bool `yaml:"disabled"`
+
+	Datasource DatasourceConfig `yaml:"datasource"`
+
 	// If set, CDC events will attempt to be written to this file if they cannot
 	// be written to mongo.
 	FallbackFile string `yaml:"fallback_file"`
@@ -149,15 +195,13 @@ type CDCConfig struct {
 }
 
 type ChangeStreamConfig struct {
-	Disabled bool `yaml:"disabled"`
-
 	// The buffer size that a streamer has when consuming from the poller. If the
 	// poller fills the buffer up then the streamer will error out since it won't
 	// be able to catch up to the poller anymore.
-	BufferSize int `yaml:"buffer_size"`
+	BufferSize uint `yaml:"buffer_size"`
 
 	// The amount of time that the poller will sleep between polls, in milliseconds.
-	Retention string `yaml:"retention"`
+	MaxClients uint `yaml:"max_clients"`
 }
 
 type ServerConfig struct {

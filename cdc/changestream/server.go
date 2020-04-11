@@ -43,8 +43,8 @@ type client struct {
 
 type ChangeStreamConfig struct {
 	CDCCollection *mongo.Collection
-	MaxClients    int
-	BufferSize    int
+	MaxClients    uint
+	BufferSize    uint
 }
 
 func NewChangeStream(cfg ChangeStreamConfig) *MongoDBServer {
@@ -61,7 +61,7 @@ func NewChangeStream(cfg ChangeStreamConfig) *MongoDBServer {
 func (s *MongoDBServer) Watch(clientId string) (<-chan etre.CDCEvent, error) {
 	s.Lock()
 	defer s.Unlock()
-	if len(s.clients) >= s.cfg.MaxClients {
+	if len(s.clients)+1 > int(s.cfg.MaxClients) {
 		return nil, ErrNoMoreClients
 	}
 	if _, ok := s.clients[clientId]; ok {

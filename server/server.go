@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"go.mongodb.org/mongo-driver/mongo"
+
 	"github.com/square/etre"
 	"github.com/square/etre/api"
 	"github.com/square/etre/app"
@@ -22,7 +24,6 @@ type Server struct {
 	appCtx   app.Context
 	api      *api.API
 	stopChan chan struct{}
-	conn     db.Connector
 }
 
 func NewServer(appCtx app.Context) *Server {
@@ -48,11 +49,11 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	// CDC Store and Change Stream
 	// //////////////////////////////////////////////////////////////////////
-	if cfg.CDC.Collection != "" {
+	if cfg.CDC.Disabled {
+		log.Println("CDC and change feeds are disabled because cdc.disabled=true in config")
+	} else {
 		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, cfg.CDC.Collection)
-		cdccfg := cfg.Datasource // shallow copy
-		cdcfg.MaxConnections = 10
-		cdcClient, err := db.Connect(cdccfg)
+		cdcClient, err := db.Connect(cfg.CDC.Datasource)
 		if err != nil {
 			return err
 		}
@@ -65,22 +66,12 @@ func (s *Server) Boot(configFile string) error {
 		}
 		cs.appCtx.CDCStore = cdc.NewStore(cdcColl, cfg.CDC.FallbackFile, wrp)
 
-		if !cfg.CDC.ChangeStream.Disabled {
-			s.appCtx.ChangeStream = cdc.ChangeStream(cdc.ChangeStreamConfig{
-				CDCCollection: cdcColl,
-				MaxClients:    cfg.CDC.ChangeStream.MaxClients,
-				BufferSize:    cfg.CDC.ChangeStream.BufferSize,
-			})
-		} else {
-			log.Println("CDC Change Stream disabled (cfg.cdc.change_stream.disabled is true)")
-		}
-	} else {
-		log.Println("CDC disabled (cfg.cdc.collection not set)")
+		s.appCtx.ChangeStream = cdc.ChangeStream(cdc.ChangeStreamConfig{
+			CDCCollection: cdcColl,
+			MaxClients:    cfg.CDC.ChangeStream.MaxClients,
+			BufferSize:    cfg.CDC.ChangeStream.BufferSize,
+		})
 
-		// The CDC store and delayer must not be nil because the entity store
-		// always updates them. But when CDC is disabled, the updates are no-ops.
-		s.appCtx.CDCStore = cdc.NoopStore{}
-		s.appCtx.ChangeStream = cdc.NoopZChangeStream{}
 	}
 
 	// //////////////////////////////////////////////////////////////////////
@@ -127,16 +118,12 @@ func (s *Server) Boot(configFile string) error {
 
 func (s *Server) Run() error {
 	// Verify we can connect to the db.
-	// @todo: removing this causes mgo panic "Session already closed" after 1st query
 	for {
 		if s.stopped() {
 			return nil
 		}
 		log.Printf("Verifying database connection to %s", s.appCtx.Config.Datasource.URL)
-		if err := s.conn.Init(); err != nil {
-			log.Printf("WARNING: cannot connect to %s: %s", s.appCtx.Config.Datasource.URL, err)
-			continue
-		}
+		//
 		log.Printf("Connected to %s", s.appCtx.Config.Datasource.URL)
 		break
 	}
@@ -173,21 +160,6 @@ func (s *Server) API() *api.API {
 
 func (s *Server) Context() app.Context {
 	return s.appCtx
-}
-
-func (s *Server) runPoller() {
-	if s.poller == nil {
-		return
-	}
-	for {
-		if s.stopped() {
-			return
-		}
-		if err := s.poller.Run(); err != nil {
-			log.Printf("poller error: %s (restarting in 1s)", err)
-			time.Sleep(1 * time.Second)
-		}
-	}
 }
 
 func (s *Server) stopped() bool {

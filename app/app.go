@@ -9,6 +9,7 @@ import (
 
 	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc"
+	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
@@ -21,14 +22,15 @@ type Context struct {
 	ConfigFile string
 	Config     config.Config
 
-	EntityStore     entity.Store
-	EntityValidator entity.Validator
-	CDCStore        cdc.Store
-	ChangeStream    cdc.ChangeStream
-	MetricsStore    metrics.Store
-	MetricsFactory  metrics.Factory
-	SystemMetrics   metrics.Metrics
-	Auth            auth.Manager
+	EntityStore          entity.Store
+	EntityValidator      entity.Validator
+	CDCStore             cdc.Store
+	ChangesServer        changestream.Server
+	ChangesClientFactory changestream.ClientFactory
+	MetricsStore         metrics.Store
+	MetricsFactory       metrics.Factory
+	SystemMetrics        metrics.Metrics
+	Auth                 auth.Manager
 
 	// 3rd-party extensions, all optional
 	Hooks   Hooks
