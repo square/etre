@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 package etre
 
@@ -85,7 +85,7 @@ func NewCDCClient(addr string, tlsConfig *tls.Config, bufferSize int, debug bool
 	return c
 }
 
-func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
+func (c *cdcClient) Start(startTime time.Time) (<-chan CDCEvent, error) {
 	c.debug("Start: call")
 	defer c.debug("Start: return")
 	c.Lock()
@@ -117,10 +117,15 @@ func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 	}
 	c.wsConn = conn
 
+	startTs := int64(0)
+	if !startTime.IsZero() {
+		startTs = startTime.UnixNano() / int64(time.Millisecond)
+	}
+
 	// Send start control message
 	start := map[string]interface{}{
 		"control": "start",
-		"startTs": (startTs.UnixNano() / int64(time.Millisecond)),
+		"startTs": startTs,
 		// @todo: checkpoint
 	}
 	c.debug("sending start")

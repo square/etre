@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DEFAULT_ADDR                           = "127.0.0.1:8050"
+	DEFAULT_ADDR                           = "127.0.0.1:32084"
 	DEFAULT_DATASOURCE_URL                 = "mongodb://localhost:27017"
 	DEFAULT_DB                             = "etre_dev"
 	DEFAULT_DB_CONNECT_TIMEOUT             = "5s"
@@ -29,6 +29,8 @@ const (
 	DEFAULT_QUERY_PROFILE_SAMPLE_RATE      = 0.2
 	DEFAULT_QUERY_PROFILE_REPORT_THRESHOLD = "500ms"
 )
+
+const CDC_COLLECTION = "cdc"
 
 var reservedNames = []string{"entity", "entities", "cdc"}
 
@@ -48,7 +50,6 @@ func Default() Config {
 			MaxConnections: DEFAULT_DB_MAX_CONN,
 		},
 		CDC: CDCConfig{
-			Disabled:        true,
 			Datasource:      DatasourceConfig{}, // default to Config.Datasource
 			FallbackFile:    DEFAULT_CDC_FALLBACK_FILE,
 			WriteRetryCount: DEFAULT_CDC_WRITE_RETRY_COUNT,
@@ -72,35 +73,33 @@ func Load(file string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
 		// err includes file name, e.g. "read config file: open <file>: no such file or directory"
 		return Config{}, fmt.Errorf("cannot read config file: %s", err)
 	}
-
-	config := Default()
+	var config Config
 	if err := yaml.Unmarshal(bytes, &config); err != nil {
 		return Config{}, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
 	}
+	return config, nil
+}
 
+func Validate(config Config) error {
 	if len(config.Entity.Types) == 0 {
-		return Config{}, fmt.Errorf("invalid config: no entity types specified in %s", file)
+		return fmt.Errorf("no entity types specified")
 	}
 
-	// Ensure no entityType name is a reserved word
 	for _, t := range config.Entity.Types {
 		for _, r := range reservedNames {
 			if t != r {
 				continue
 			}
-			return Config{}, fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
+			return fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
 		}
 	}
 
-	// Fill in missing CDC.Datasource values from main .Datasource
-
-	return config, nil
+	return nil
 }
 
 type Config struct {

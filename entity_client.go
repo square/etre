@@ -1,4 +1,4 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 package etre
 
@@ -328,6 +328,9 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 		if err := json.Unmarshal(bytes, &wr); err != nil {
 			return fmt.Errorf("json.Unmarshal: %s", err)
 		}
+		if resp.StatusCode == http.StatusNotFound {
+			return ErrEntityNotFound
+		}
 		if wr.IsZero() && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 			return fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
 		}
@@ -356,7 +359,7 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 		req, err = http.NewRequest(method, url, nil)
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("http.NewRequest: %s", err)
+		return nil, nil, fmt.Errorf("http.NewRequest: %s: %s", url, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(VERSION_HEADER, VERSION)

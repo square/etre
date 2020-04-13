@@ -1,3 +1,5 @@
+// Copyright 2020, Square, Inc.
+
 package db
 
 import (
@@ -25,19 +27,23 @@ func Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
 		return nil, err
 	}
 
-	creds := options.Credential{
-		AuthMechanism: cfg.Mechanism,
-		AuthSource:    cfg.Source,
-		Username:      cfg.Username,
-		Password:      cfg.Password,
-	}
-
 	opts := options.Client().
 		ApplyURI(cfg.URL).
 		SetTLSConfig(tlsConfig).
-		SetAuth(creds).
 		SetMaxPoolSize(cfg.MaxConnections).
 		SetConnectTimeout(timeout)
+
+	if cfg.Username != "" {
+		creds := options.Credential{
+			AuthMechanism: cfg.Mechanism,
+			AuthSource:    cfg.Source,
+			Username:      cfg.Username,
+			Password:      cfg.Password,
+		}
+		opts = opts.SetAuth(creds)
+	} else {
+		log.Printf("WARNING: No database username for %s specified in config. Authentication will fail unless MongoDB access control is disabled.", cfg.URL)
+	}
 
 	client, err := mongo.NewClient(opts)
 	if err != nil {

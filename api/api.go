@@ -640,7 +640,7 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.UpdateEntities(wo, query.IdEqual(wo.EntityId), patch)
 	if err == nil && len(entities) == 0 {
-		return c.JSON(http.StatusNotFound, nil)
+		return c.JSON(api.WriteResult(c, nil, ErrNotFound))
 	}
 	if len(entities) == 1 {
 		gm.Inc(metrics.Updated, 1)
@@ -661,7 +661,7 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 	wo := c.Get("wo").(entity.WriteOp)
 	entities, err := api.es.DeleteEntities(wo, query.IdEqual(wo.EntityId))
 	if err == nil && len(entities) == 0 {
-		return c.JSON(http.StatusNotFound, nil)
+		return c.JSON(api.WriteResult(c, nil, ErrNotFound))
 	}
 	if len(entities) == 1 {
 		gm.Inc(metrics.Deleted, 1)
@@ -713,7 +713,7 @@ func (api *API) entityDeleteLabelHandler(c echo.Context) error {
 	wo := c.Get("wo").(entity.WriteOp)
 	diff, err := api.es.DeleteLabel(wo, label)
 	if err != nil && err == etre.ErrEntityNotFound {
-		return c.JSON(http.StatusNotFound, nil)
+		return c.JSON(api.WriteResult(c, nil, ErrNotFound))
 	}
 	return c.JSON(api.WriteResult(c, diff, err))
 }
@@ -778,13 +778,9 @@ var upgrader = websocket.Upgrader{
 }
 
 func (api *API) changesHandler(c echo.Context) error {
-	if !api.cdcDisabled {
+	if api.cdcDisabled {
 		return readError(c, ErrCDCDisabled)
 	}
-
-	gm := c.Get("gm").(metrics.Metrics)
-	gm.Inc(metrics.CDCClients, 1)
-	defer gm.Inc(metrics.CDCClients, -1)
 
 	// Upgrade to a WebSocket connection.
 	wsConn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
@@ -793,16 +789,26 @@ func (api *API) changesHandler(c echo.Context) error {
 	}
 	defer wsConn.Close()
 
-	// Create and run a feed.
-	client := api.changesClientFactory.MakeWebsocket("clientId", wsConn)
+	gm := c.Get("gm").(metrics.Metrics)
+	gm.Inc(metrics.CDCClients, 1)
+	defer gm.Inc(metrics.CDCClients, -1)
+
+	var caller auth.Caller
+	if v := c.Get("caller"); v != nil {
+		caller = v.(auth.Caller)
+	} else {
+		caller.Name = "?"
+	}
+	clientId := fmt.Sprintf("%s@%s", caller.Name, c.Request().RemoteAddr)
+
+	client := api.changesClientFactory.MakeWebsocket(clientId, wsConn)
 	if err := client.Run(); err != nil {
 		switch err {
 		case changestream.ErrWebsocketClosed:
 		default:
-			return readError(c, ErrInternal.New(err.Error()))
+			log.Printf("%s: lost cdc client: %s", clientId, err)
 		}
 	}
-
 	return nil
 }
 
@@ -871,6 +877,8 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 			switch err {
 			case ErrInvalidQuery, ErrMissingParam, ErrInvalidParam, ErrNoContent:
 				gm.Inc(metrics.ClientError, 1)
+			case ErrNotFound:
+				// Not an error
 			default:
 				gm.Inc(metrics.APIError, 1)
 			}

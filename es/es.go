@@ -1,4 +1,4 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 // Package es provides a framework for integration with other programs.
 package es
@@ -37,8 +37,15 @@ func Run(ctx app.Context) {
 		configFiles = cmdLine.Config
 	}
 
+	if cmdLine.Debug {
+		etre.DebugEnabled = true
+	}
+
 	// Parse default options from config files
-	def := config.ParseConfigFiles(configFiles, cmdLine.Debug)
+	def := config.ParseConfigFiles(configFiles)
+	if def.Addr == "" {
+		def.Addr = config.DEFAULT_ADDR
+	}
 	if def.IFS == "" {
 		def.IFS = config.DEFAULT_IFS
 	}
@@ -111,6 +118,7 @@ func Run(ctx app.Context) {
 			fmt.Fprintf(os.Stderr, "Not enough arguments for --update: entity, id, and patches are required\n")
 			os.Exit(1)
 		}
+	} else if cmdLine.Options.Watch { // --watch
 	} else { // query
 		if len(cmdLine.Args) < 2 {
 			config.Help()
@@ -141,31 +149,15 @@ func Run(ctx app.Context) {
 
 	// Finalize options
 	var o config.Options = cmdLine.Options
-	if o.Debug {
-		app.Debug("options: %+v\n", o)
-		app.Debug("set: %+v\n", set)
-	}
+	etre.Debug("options: %+v\n", o)
+	etre.Debug("set: %+v\n", set)
 
 	if ctx.Hooks.AfterParseOptions != nil {
-		if o.Debug {
-			app.Debug("calling hook AfterParseOptions")
-		}
+		etre.Debug("calling hook AfterParseOptions")
 		ctx.Hooks.AfterParseOptions(&o)
-
-		// Dump options again to see if hook changed them
-		if o.Debug {
-			app.Debug("options: %+v\n", o)
-		}
+		etre.Debug("options: %+v\n", o)
 	}
 	ctx.Options = o
-
-	// //////////////////////////////////////////////////////////////////////
-	// Make etre.EntityClient
-	// //////////////////////////////////////////////////////////////////////
-
-	// cmdLine.Args validated above
-	entityType := strings.SplitN(cmdLine.Args[0], ".", 2)
-	ctx.EntityType = entityType[0]
 
 	if ctx.Options.Addr == "" {
 		fmt.Fprintf(os.Stderr, "Etre API address is not set."+
@@ -173,9 +165,46 @@ func Run(ctx app.Context) {
 			" or set the ES_ADDR environment variable.\n", config.DEFAULT_CONFIG_FILES)
 		os.Exit(1)
 	}
-	if ctx.Options.Debug {
-		app.Debug("addr: %s", ctx.Options.Addr)
+	if !strings.HasPrefix(ctx.Options.Addr, "http://") && !strings.HasPrefix(ctx.Options.Addr, "https://") {
+		ctx.Options.Addr = "http://" + ctx.Options.Addr
+		etre.Debug("added http:// to addr")
 	}
+	etre.Debug("addr: %s", ctx.Options.Addr)
+
+	// cmdLine.Args validated above
+	entityType := strings.SplitN(cmdLine.Args[0], ".", 2)
+	ctx.EntityType = entityType[0]
+
+	// //////////////////////////////////////////////////////////////////////
+	// Make etre.CDCClient
+	// //////////////////////////////////////////////////////////////////////
+
+	if ctx.Options.Watch {
+		if ctx.EntityType != "cdc" {
+			fmt.Fprintf(os.Stderr, "--watch requires cdc entity type but %s specified\n", ctx.EntityType)
+			os.Exit(1)
+		}
+		wsAddr := "ws" + strings.TrimPrefix(ctx.Options.Addr, "http")
+		cdcClient := etre.NewCDCClient(wsAddr, nil, 100, ctx.Options.Debug)
+		eventsChan, err := cdcClient.Start(time.Time{}) // now, no historical backlog
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Streaming changes from %s, CTRL-C to stop\n", wsAddr)
+		for e := range eventsChan {
+			fmt.Printf("%+v\n", e)
+		}
+		if err := cdcClient.Error(); err != nil {
+			fmt.Fprintf(os.Stderr, "API closed stream: %s\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// //////////////////////////////////////////////////////////////////////
+	// Make etre.EntityClient
+	// //////////////////////////////////////////////////////////////////////
 
 	ec, err := ctx.Factories.EntityClient.Make(ctx)
 	if err != nil {
@@ -211,9 +240,7 @@ func Run(ctx app.Context) {
 	} else {
 		trace = config.DefaultTrace() // user,app,host
 	}
-	if o.Debug {
-		app.Debug("trace: %s", trace)
-	}
+	etre.Debug("trace: %s", trace)
 	ec = ec.WithTrace(trace)
 
 	// //////////////////////////////////////////////////////////////////////
@@ -226,9 +253,7 @@ func Run(ctx app.Context) {
 		ctx.Patches = cmdLine.Args[2:]
 
 		if ctx.Hooks.BeforeUpdate != nil {
-			if o.Debug {
-				app.Debug("calling hook BeforeUpdate")
-			}
+			etre.Debug("calling hook BeforeUpdate")
 			ctx.Hooks.BeforeUpdate(&ctx)
 		}
 
@@ -241,9 +266,7 @@ func Run(ctx app.Context) {
 			}
 			patch[p[0]] = p[1]
 		}
-		if o.Debug {
-			app.Debug("patch: %+v", patch)
-		}
+		etre.Debug("patch: %+v", patch)
 
 		wr, err := ec.UpdateOne(ctx.EntityId, patch)
 		found, err := writeResult(ctx, set, wr, err, "update")
@@ -268,9 +291,7 @@ func Run(ctx app.Context) {
 		ctx.EntityId = cmdLine.Args[1]
 
 		if ctx.Hooks.BeforeDelete != nil {
-			if o.Debug {
-				app.Debug("calling hook BeforeDelete")
-			}
+			etre.Debug("calling hook BeforeDelete")
 			ctx.Hooks.BeforeDelete(&ctx)
 		}
 
@@ -315,18 +336,12 @@ func Run(ctx app.Context) {
 
 	// Parse args: entity[.labels] query
 	ctx.EntityType, ctx.ReturnLabels, ctx.Query = config.ParseArgs(cmdLine.Args)
-	if o.Debug {
-		app.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
-	}
+	etre.Debug("query: entityType=%s labels=%s query='%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
 
 	if ctx.Hooks.BeforeQuery != nil {
-		if o.Debug {
-			app.Debug("calling hook BeforeQuery")
-		}
+		etre.Debug("calling hook BeforeQuery")
 		ctx.Hooks.BeforeQuery(&ctx)
-		if o.Debug {
-			app.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
-		}
+		etre.Debug("query: %s %s '%s'\n", ctx.EntityType, ctx.ReturnLabels, ctx.Query)
 	}
 
 	// --unique only works with a single return label. The API enforces this, too,
@@ -346,15 +361,11 @@ func Run(ctx app.Context) {
 		Distinct:     ctx.Options.Unique,
 	}
 	entities, err := ec.Query(ctx.Query, f)
-	if o.Debug {
-		app.Debug("%d entities, err: %v", len(entities), err)
-	}
+	etre.Debug("ec.Query return: %d entities, err: %v", len(entities), err)
 
 	// If Response hook set, let it handle the reponse.
 	if ctx.Hooks.AfterQuery != nil {
-		if o.Debug {
-			app.Debug("calling hook AfterQuery")
-		}
+		etre.Debug("calling hook AfterQuery")
 		ctx.Hooks.AfterQuery(ctx, entities, err)
 		return
 	}
@@ -433,13 +444,9 @@ func setInfo(set etre.Set) string {
 
 func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error, op string) (bool, error) {
 	// Debug and let hook handle WriteResult
-	if ctx.Options.Debug {
-		app.Debug("wr: %+v (%v)", wr, err)
-	}
+	etre.Debug("wr: %+v (%v)", wr, err)
 	if ctx.Hooks.WriteResult != nil {
-		if ctx.Options.Debug {
-			app.Debug("calling hook WriteResult")
-		}
+		etre.Debug("calling hook WriteResult")
 		ctx.Hooks.WriteResult(ctx, wr, err)
 	}
 

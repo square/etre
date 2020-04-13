@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/square/etre/app"
 	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc"
+	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/config"
 	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
@@ -21,9 +23,11 @@ import (
 )
 
 type Server struct {
-	appCtx   app.Context
-	api      *api.API
-	stopChan chan struct{}
+	appCtx       app.Context
+	api          *api.API
+	mainDbClient *mongo.Client
+	cdcDbClient  *mongo.Client
+	stopChan     chan struct{}
 }
 
 func NewServer(appCtx app.Context) *Server {
@@ -41,7 +45,10 @@ func (s *Server) Boot(configFile string) error {
 	s.appCtx.ConfigFile = configFile
 	cfg, err := s.appCtx.Hooks.LoadConfig(s.appCtx)
 	if err != nil {
-		return fmt.Errorf("error loading config: %s", err)
+		return fmt.Errorf("cannot load config: %s", err)
+	}
+	if err := config.Validate(cfg); err != nil {
+		return fmt.Errorf("invalid config: %s")
 	}
 	s.appCtx.Config = cfg
 	log.Printf("Config: %+v", s.appCtx.Config)
@@ -52,26 +59,28 @@ func (s *Server) Boot(configFile string) error {
 	if cfg.CDC.Disabled {
 		log.Println("CDC and change feeds are disabled because cdc.disabled=true in config")
 	} else {
-		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, cfg.CDC.Collection)
+		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, config.CDC_COLLECTION)
 		cdcClient, err := db.Connect(cfg.CDC.Datasource)
 		if err != nil {
 			return err
 		}
-		cdcColl := cdcClient.Database(cfg.Datasource.Database).Collection(cfg.CDC.Collection)
+		s.cdcDbClient = cdcClient
+		cdcColl := cdcClient.Database(cfg.Datasource.Database).Collection(config.CDC_COLLECTION)
 
 		// Store
 		wrp := cdc.RetryPolicy{
 			RetryCount: cfg.CDC.WriteRetryCount,
 			RetryWait:  cfg.CDC.WriteRetryWait,
 		}
-		cs.appCtx.CDCStore = cdc.NewStore(cdcColl, cfg.CDC.FallbackFile, wrp)
+		s.appCtx.CDCStore = cdc.NewStore(cdcColl, cfg.CDC.FallbackFile, wrp)
 
-		s.appCtx.ChangeStream = cdc.ChangeStream(cdc.ChangeStreamConfig{
+		s.appCtx.ChangesServer = changestream.NewMongoDBServer(changestream.ServerConfig{
 			CDCCollection: cdcColl,
 			MaxClients:    cfg.CDC.ChangeStream.MaxClients,
 			BufferSize:    cfg.CDC.ChangeStream.BufferSize,
 		})
 
+		s.appCtx.ChangesClientFactory = changestream.NewClientFactory(s.appCtx.ChangesServer, s.appCtx.CDCStore)
 	}
 
 	// //////////////////////////////////////////////////////////////////////
@@ -81,6 +90,7 @@ func (s *Server) Boot(configFile string) error {
 	if err != nil {
 		return err
 	}
+	s.mainDbClient = mainClient
 	coll := make(map[string]*mongo.Collection, len(cfg.Entity.Types))
 	for _, entityType := range cfg.Entity.Types {
 		coll[entityType] = mainClient.Database(cfg.Datasource.Database).Collection(entityType)
@@ -118,15 +128,47 @@ func (s *Server) Boot(configFile string) error {
 
 func (s *Server) Run() error {
 	// Verify we can connect to the db.
+	mainDbDoneChan := make(chan struct{})
+	log.Printf("Connecting to main database: %s", s.appCtx.Config.Datasource.URL)
+	go s.connectToDatasource(s.appCtx.Config.Datasource, s.mainDbClient, mainDbDoneChan)
+
+	var cdcDbDoneChan chan struct{}
+	if !s.appCtx.Config.CDC.Disabled {
+		log.Printf("Connecting to CDC database: %s", s.appCtx.Config.CDC.Datasource.URL)
+		cdcDbDoneChan = make(chan struct{})
+		go s.connectToDatasource(s.appCtx.Config.CDC.Datasource, s.cdcDbClient, cdcDbDoneChan)
+	}
+
+	notifyTimeout := time.NewTimer(2100 * time.Millisecond)
+DB_CONN_WAIT:
 	for {
-		if s.stopped() {
+		select {
+		case <-mainDbDoneChan:
+			log.Println("Connected to main database")
+			mainDbDoneChan = nil
+			if cdcDbDoneChan == nil {
+				break DB_CONN_WAIT
+			}
+		case <-cdcDbDoneChan:
+			log.Println("Connected to CDC database")
+			cdcDbDoneChan = nil
+			if mainDbDoneChan == nil {
+				break DB_CONN_WAIT
+			}
+		case <-notifyTimeout.C:
+			notifyTimeout.Stop()
+			log.Println("WARNING: Etre offline until connected to databases")
+		case <-s.stopChan:
 			return nil
 		}
-		log.Printf("Verifying database connection to %s", s.appCtx.Config.Datasource.URL)
-		//
-		log.Printf("Connected to %s", s.appCtx.Config.Datasource.URL)
-		break
 	}
+	notifyTimeout.Stop()
+
+	go func() {
+		if err := s.appCtx.ChangesServer.Run(); err != nil {
+			log.Fatalf("Change stream server error: %s", err)
+		}
+	}()
 
 	// Run the API - this will block until the API is stopped (or encounters
 	// some fatal error). If the RunAPI hook has been provided, call that instead
@@ -167,8 +209,24 @@ func (s *Server) stopped() bool {
 	case <-s.stopChan:
 		return true
 	default:
+		return false
 	}
-	return false
+}
+
+func (s *Server) connectToDatasource(ds config.DatasourceConfig, client *mongo.Client, doneChan chan struct{}) {
+	defer close(doneChan)
+	firstError := true
+	for !s.stopped() {
+		err := client.Ping(context.TODO(), nil)
+		if err == nil {
+			return
+		}
+		if firstError {
+			log.Printf("Error connecting to %s: %s. Will retry every 500ms until successful.", ds.URL, err)
+			firstError = false
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func MapConfigACLRoles(aclRoles []config.ACL) ([]auth.ACL, error) {
