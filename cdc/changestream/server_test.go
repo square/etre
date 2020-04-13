@@ -49,7 +49,7 @@ func setup(t *testing.T) {
 func TestServer(t *testing.T) {
 	setup(t)
 
-	server := changestream.NewChangeStream(changestream.ChangeStreamConfig{
+	server := changestream.NewMongoDBServer(changestream.ServerConfig{
 		CDCCollection: coll["cdc"],
 		MaxClients:    1,
 		BufferSize:    1,
@@ -88,7 +88,7 @@ func TestServer(t *testing.T) {
 func TestServerClientBlock(t *testing.T) {
 	setup(t)
 
-	server := changestream.NewChangeStream(changestream.ChangeStreamConfig{
+	server := changestream.NewMongoDBServer(changestream.ServerConfig{
 		CDCCollection: coll["cdc"],
 		MaxClients:    1,
 		BufferSize:    0,
@@ -116,7 +116,7 @@ func TestServerClientBlock(t *testing.T) {
 func TestServerStop(t *testing.T) {
 	setup(t)
 
-	server := changestream.NewChangeStream(changestream.ChangeStreamConfig{
+	server := changestream.NewMongoDBServer(changestream.ServerConfig{
 		CDCCollection: coll["cdc"],
 		MaxClients:    1,
 		BufferSize:    0,

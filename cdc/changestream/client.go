@@ -28,7 +28,7 @@ type Client interface {
 }
 
 type ClientFactory interface {
-	MakeWebsocket(string, *websocket.Conn) *WebsocketClient
+	MakeWebsocket(clientId string, wsConn *websocket.Conn) *WebsocketClient
 }
 
 type clientFactory struct {
@@ -44,12 +44,14 @@ func NewClientFactory(server Server, store cdc.Store) *clientFactory {
 }
 
 func (f *clientFactory) MakeWebsocket(clientId string, wsConn *websocket.Conn) *WebsocketClient {
-	return NewWebsocketClient(clientId, wsConn, NewServerStreamer(f.server, f.store))
+	return NewWebsocketClient(clientId, wsConn, NewServerStreamer(clientId, f.server, f.store))
 }
 
 // --------------------------------------------------------------------------
 // Websocket client
 // --------------------------------------------------------------------------
+
+var _ Client = &WebsocketClient{}
 
 type WebsocketClient struct {
 	clientId string // clientId for this client
@@ -88,8 +90,8 @@ func (f *WebsocketClient) Run() error {
 			// might be expected. If not, though, it's a real network error,
 			// so return it as-is.
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				err2 := fmt.Errorf("client %s websocket.ReadMessage error: %w", f.clientId, err)
-				log.Print(err2)
+				// This error will be logged in api.changesHandler()
+				err2 := fmt.Errorf("cdc client %s websocket.ReadMessage error: %w", f.clientId, err)
 				return err2 // network error
 			}
 			return ErrWebsocketClosed // clean shutdown
@@ -231,37 +233,37 @@ func (f *WebsocketClient) control(msg map[string]interface{}, now time.Time) err
 	return nil
 }
 
-func (f *WebsocketClient) runStreamer(startTs int64) error {
+func (f *WebsocketClient) runStreamer(startTs int64) {
 	etre.Debug("runStreamer call")
 	defer etre.Debug("runStreamer return")
-
-	// Steamer and Client are tied together: if Streamer stops, so do we.
-	// The client can reconnect and restart streaming if they need; Client
-	// does not support restarting, it's single-use.
-	defer f.Stop()
 
 	// Don't need to call "defer f.streamer.Stop()" because a closed stream chan
 	// means Streamer has already stopped. Closing the chan is the last thing it
 	// does on shutdown.
+	var sendErr error
 	eventsChan := f.streamer.Start(startTs)
 	for event := range eventsChan {
-		if err := f.send(event); err != nil {
-			return f.sendError(err)
+		if sendErr = f.send(event); sendErr != nil {
+			break
 		}
 	}
-	err := fmt.Errorf("Steamer closed channel (error: %v), shutting down", f.streamer.Error())
-	return f.sendError(err)
-}
 
-func (f *WebsocketClient) send(v interface{}) error {
-	// DO NOT call sendError() in this func; let the caller do it
-	f.wsMutex.Lock()
-	defer f.wsMutex.Unlock()
-	f.wsConn.SetWriteDeadline(time.Now().Add(time.Duration(etre.CDC_WRITE_TIMEOUT) * time.Second))
-	if err := f.wsConn.WriteJSON(v); err != nil {
-		return fmt.Errorf("websocket write error: %s", err)
+	// Steamer and Client are tied together: if Streamer stops, so do we.
+	// The client can reconnect and restart streaming if they need; Client
+	// does not support restarting, it's single-use.
+	f.Lock()
+	if f.stopped {
+		f.Unlock()
+		return
 	}
-	return nil
+	if sendErr != nil {
+		log.Printf("Error sending event to cdc client %s, shutting down: %s", f.clientId, sendErr)
+	} else {
+		f.sendError(fmt.Errorf("Steamer closed channel (error: %v), shutting down", f.streamer.Error()))
+	}
+	f.Unlock()
+
+	f.Stop()
 }
 
 func (f *WebsocketClient) sendError(err error) error {
@@ -272,7 +274,17 @@ func (f *WebsocketClient) sendError(err error) error {
 	}
 	if err2 := f.send(msg); err2 != nil {
 		// Error sending the error, just ignore. The client has probably gone away.
-		log.Printf("Error sending error control message to client %s, ignoring: %s", f.clientId, err2)
+		log.Printf("Error sending error control message to cdc client %s, ignoring: %s", f.clientId, err2)
 	}
 	return err
+}
+
+func (f *WebsocketClient) send(v interface{}) error {
+	f.wsMutex.Lock()
+	defer f.wsMutex.Unlock()
+	f.wsConn.SetWriteDeadline(time.Now().Add(time.Duration(etre.CDC_WRITE_TIMEOUT) * time.Second))
+	if err := f.wsConn.WriteJSON(v); err != nil {
+		return fmt.Errorf("websocket write error: %s", err)
+	}
+	return nil
 }

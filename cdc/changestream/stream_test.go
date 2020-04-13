@@ -39,11 +39,11 @@ func TestStreamNow(t *testing.T) {
 	// to etre.CDCEvent to clients.
 	serverChan := make(chan etre.CDCEvent, 1)
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, &mock.CDCStore{})
+	stream := changestream.NewServerStreamer("client1", srv, &mock.CDCStore{})
 	streamChan := stream.Start(0) // startTs = 0 = no backlock
 
 	// Almost immediately after staring without a backlog (startTs=0), the streamer
@@ -68,8 +68,9 @@ func TestStreamNow(t *testing.T) {
 	// presumes client is in sync
 	gotStatus := stream.Status()
 	expectStatus := changestream.Status{
-		Running: true,
-		InSync:  true,
+		ClientId: "client1",
+		Running:  true,
+		InSync:   true,
 	}
 	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
 		t.Error(diff)
@@ -98,8 +99,9 @@ func TestStreamNow(t *testing.T) {
 	stream.Stop()
 	gotStatus = stream.Status()
 	expectStatus = changestream.Status{
-		Running: false, // this changes to false after calling Stop
-		InSync:  true,
+		ClientId: "client1",
+		Running:  false, // this changes to false after calling Stop
+		InSync:   true,
 	}
 	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
 		t.Error(diff)
@@ -109,8 +111,9 @@ func TestStreamNow(t *testing.T) {
 	stream.Stop()
 	gotStatus = stream.Status()
 	expectStatus = changestream.Status{
-		Running: false, // this changes to false after calling Stop
-		InSync:  true,
+		ClientId: "client1",
+		Running:  false, // this changes to false after calling Stop
+		InSync:   true,
 	}
 	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
 		t.Error(diff)
@@ -126,7 +129,7 @@ func TestStreamBacklogNoNewEvents(t *testing.T) {
 	// Simulating this is easy: just don't send any new events on serverChan.
 	serverChan := make(chan etre.CDCEvent, 1)
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
@@ -142,7 +145,7 @@ func TestStreamBacklogNoNewEvents(t *testing.T) {
 			return events1, nil // in changestream_test.go
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, store)
+	stream := changestream.NewServerStreamer("client2", srv, store)
 	nowTs := time.Now().UnixNano() / int64(time.Millisecond)
 	stream.Start(100) // []events1 (in changestream_test.go) starts at 100
 
@@ -182,6 +185,7 @@ func TestStreamBacklogNoNewEvents(t *testing.T) {
 	// We can tell that the sync was instant because the buffer usage is zero
 	gotStatus := stream.Status()
 	expectStatus := changestream.Status{
+		ClientId:    "client2",
 		Running:     true,
 		InSync:      true,
 		BufferUsage: []int{changestream.ServerBufferSize, 0, 0},
@@ -208,7 +212,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 	// then check the status to ensure it was saved, then unblock store.Read().
 	serverChan := make(chan etre.CDCEvent)
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
@@ -238,7 +242,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 			return events1, nil // in changestream_test.go
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, store)
+	stream := changestream.NewServerStreamer("client3", srv, store)
 	streamChan := stream.Start(100) // []events1 (in changestream_test.go) starts at 100
 
 	// Wait for streamBacklog() to call store.Read()
@@ -273,6 +277,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 	// We can tell that the sync was instant because the buffer usage is zero
 	gotStatus := stream.Status()
 	expectStatus := changestream.Status{
+		ClientId:    "client3",
 		Running:     true,
 		InSync:      true,
 		BufferUsage: []int{changestream.ServerBufferSize, 1, 1},
@@ -301,6 +306,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 	stream.Stop()
 	gotStatus = stream.Status()
 	expectStatus = changestream.Status{
+		ClientId:    "client3",
 		Running:     false,
 		InSync:      true,
 		BufferUsage: []int{changestream.ServerBufferSize, 1, 1},
@@ -316,7 +322,7 @@ func TestStreamBacklogNewOverlappingEvents(t *testing.T) {
 	// batch of writes. See code comments about BacklogWait in streamBacklog().
 	serverChan := make(chan etre.CDCEvent)
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
@@ -337,7 +343,7 @@ func TestStreamBacklogNewOverlappingEvents(t *testing.T) {
 			return events1, nil
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, store)
+	stream := changestream.NewServerStreamer("client4", srv, store)
 	streamChan := stream.Start(100) // []events1 (in changestream_test.go) starts at 100
 
 	// Wait for streamBacklog() to call store.Read()
@@ -389,11 +395,11 @@ func TestStreamNewEventsOutOfOrder(t *testing.T) {
 	// also working in this code.
 	serverChan := make(chan etre.CDCEvent)
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, &mock.CDCStore{})
+	stream := changestream.NewServerStreamer("client5", srv, &mock.CDCStore{})
 	streamChan := stream.Start(0) // no backlog
 
 	// The events are in order in events1, so we scramble them and send to client
@@ -439,7 +445,7 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 	changestream.ClientBufferSize = 0
 	serverChan := make(chan etre.CDCEvent, 1) // we'll close this
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
@@ -453,7 +459,7 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 			return []etre.CDCEvent{events1[0]}, nil // in changestream_test.go
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, store)
+	stream := changestream.NewServerStreamer("client6", srv, store)
 	streamChan := stream.Start(100)
 
 	// Wait for streamBacklog() to call store.Read()
@@ -480,6 +486,7 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 	// backlog buffer, and the server closed the stream
 	gotStatus := stream.Status()
 	expectStatus := changestream.Status{
+		ClientId:           "client6",
 		Running:            false,
 		InSync:             false,
 		BufferUsage:        []int{changestream.ServerBufferSize, 0, 0},
@@ -501,11 +508,11 @@ func TestStreamServerClosedStreamDuringSync(t *testing.T) {
 	// Test same as previous but don't backlog so we go right to the main sync loop
 	serverChan := make(chan etre.CDCEvent, 1) // we'll close this
 	srv := mock.ChangeStreamServer{
-		WatchFunc: func() (<-chan etre.CDCEvent, error) {
+		WatchFunc: func(clientId string) (<-chan etre.CDCEvent, error) {
 			return serverChan, nil
 		},
 	}
-	stream := changestream.NewServerStreamer(srv, &mock.CDCStore{})
+	stream := changestream.NewServerStreamer("client7", srv, &mock.CDCStore{})
 	streamChan := stream.Start(0)
 
 	// Wait until code gets to the in sync loop that we're testing
@@ -527,6 +534,7 @@ func TestStreamServerClosedStreamDuringSync(t *testing.T) {
 	// No BufferUsage becuse we didn't have a backlog.
 	gotStatus := stream.Status()
 	expectStatus := changestream.Status{
+		ClientId:           "client7",
 		Running:            false,
 		InSync:             true,
 		ServerClosedStream: true,

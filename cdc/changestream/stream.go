@@ -51,6 +51,7 @@ type Streamer interface {
 }
 
 type Status struct {
+	ClientId           string
 	Running            bool
 	InSync             bool
 	SyncMethod         string
@@ -60,11 +61,12 @@ type Status struct {
 	ServerClosedStream bool
 }
 
-// ServerStreamer implements the streamer interface by producing a stream of
-// events from the Store and Poller.
+var _ Streamer = &ServerStreamer{}
+
 type ServerStreamer struct {
-	server Server
-	store  cdc.Store
+	clientId string
+	server   Server
+	store    cdc.Store
 	// --
 	toClientChan chan etre.CDCEvent // to WebsocketClient or plugin code using streamer directly
 
@@ -85,15 +87,16 @@ type ServerStreamer struct {
 
 // newStreamer creates a streamer that uses the provided Poller and Store
 // to stream events. feedId is the id of the feed that created it.
-func NewServerStreamer(server Server, store cdc.Store) *ServerStreamer {
+func NewServerStreamer(clientId string, server Server, store cdc.Store) *ServerStreamer {
 	return &ServerStreamer{
+		clientId:     clientId,
 		server:       server,
 		store:        store,
 		toClientChan: make(chan etre.CDCEvent, ClientBufferSize),
 		stopChan:     make(chan struct{}),
 		syncChan:     make(chan struct{}),
 		runMux:       &sync.Mutex{},
-		status:       Status{},
+		status:       Status{ClientId: clientId},
 		wg:           &sync.WaitGroup{},
 		buffMux:      &sync.Mutex{},
 		revorder:     etre.NewRevOrder(etre.DEFAULT_MAX_ENTITIES, true),
@@ -180,11 +183,11 @@ func (s *ServerStreamer) stream(sinceTs int64) error {
 	defer etre.Debug("stream return")
 	defer s.wg.Done()
 
-	serverStreamChan, err := s.server.Watch()
+	serverStreamChan, err := s.server.Watch(s.clientId)
 	if err != nil {
 		return err
 	}
-	defer s.server.Close(serverStreamChan)
+	defer s.server.Close(s.clientId)
 
 	// ----------------------------------------------------------------------
 	// Backlog

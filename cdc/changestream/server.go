@@ -22,12 +22,20 @@ var (
 type Server interface {
 	Run() error
 	Stop()
-	Watch() (<-chan etre.CDCEvent, error)
-	Close(<-chan etre.CDCEvent)
+	Watch(clientId string) (<-chan etre.CDCEvent, error)
+	Close(clientId string)
 }
 
+type ServerConfig struct {
+	CDCCollection *mongo.Collection
+	MaxClients    uint
+	BufferSize    uint
+}
+
+var _ Server = &MongoDBServer{}
+
 type MongoDBServer struct {
-	cfg ChangeStreamConfig
+	cfg ServerConfig
 	*sync.Mutex
 	stream   *mongo.ChangeStream
 	clients  map[string]client
@@ -37,17 +45,11 @@ type MongoDBServer struct {
 }
 
 type client struct {
-	id string
-	c  chan etre.CDCEvent
+	clientId string
+	c        chan etre.CDCEvent
 }
 
-type ChangeStreamConfig struct {
-	CDCCollection *mongo.Collection
-	MaxClients    uint
-	BufferSize    uint
-}
-
-func NewChangeStream(cfg ChangeStreamConfig) *MongoDBServer {
+func NewMongoDBServer(cfg ServerConfig) *MongoDBServer {
 	s := &MongoDBServer{
 		cfg:      cfg,
 		Mutex:    &sync.Mutex{},
@@ -69,8 +71,8 @@ func (s *MongoDBServer) Watch(clientId string) (<-chan etre.CDCEvent, error) {
 	}
 	c := make(chan etre.CDCEvent, s.cfg.BufferSize)
 	s.clients[clientId] = client{
-		id: clientId,
-		c:  c,
+		clientId: clientId,
+		c:        c,
 	}
 	etre.Debug("added client %s", clientId)
 	return c, nil
