@@ -30,8 +30,10 @@ func Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
 	opts := options.Client().
 		ApplyURI(cfg.URL).
 		SetTLSConfig(tlsConfig).
+		SetMaxPoolSize(cfg.MinConnections).
 		SetMaxPoolSize(cfg.MaxConnections).
-		SetConnectTimeout(timeout)
+		SetConnectTimeout(timeout).
+		SetServerSelectionTimeout(time.Duration(500 * time.Millisecond))
 
 	if cfg.Username != "" {
 		creds := options.Credential{

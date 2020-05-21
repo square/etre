@@ -25,7 +25,7 @@ func (e DbError) Error() string {
 
 // WriteOp represents common metadata for insert, update, and delete Store methods.
 type WriteOp struct {
-	User       string // required
+	Caller     string // required (auth.Caller.Name)
 	EntityType string // required
 	EntityId   string // optional
 
@@ -67,9 +67,16 @@ func Filter(q query.Query) bson.M {
 				switch p.Value.(type) {
 				case string:
 					id, _ := primitive.ObjectIDFromHex(p.Value.(string))
-					filter[p.Label] = bson.M{"$eq": id}
+					filter[p.Label] = bson.M{operatorMap[p.Operator]: id}
+				case []string:
+					vals := p.Value.([]string)
+					oids := make([]primitive.ObjectID, len(vals))
+					for i, v := range vals {
+						oids[i], _ = primitive.ObjectIDFromHex(v)
+					}
+					filter[p.Label] = bson.M{operatorMap[p.Operator]: oids}
 				case primitive.ObjectID:
-					filter[p.Label] = bson.M{"$eq": p.Value}
+					filter[p.Label] = bson.M{operatorMap[p.Operator]: p.Value}
 				default:
 					panic(fmt.Sprintf("invalid _id value type: %T", p.Value))
 				}

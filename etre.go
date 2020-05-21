@@ -14,13 +14,15 @@ import (
 )
 
 const (
+	VERSION                  = "0.11.0"
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.10.0"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
-	VERSION_HEADER           = "X-Etre-Version"
-	TRACE_HEADER             = "X-Etre-Trace"
+
+	VERSION_HEADER = "X-Etre-Version"
+	TRACE_HEADER   = "X-Etre-Trace"
+	TIMEOUT_HEADER = "X-Etre-Timeout"
 )
 
 var (
@@ -150,10 +152,9 @@ func (wr WriteResult) IsZero() bool {
 
 // Write represents the successful write of one entity.
 type Write struct {
-	Id    string `json:"id"`              // internal _id of entity (all write ops)
-	URI   string `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
-	Diff  Entity `json:"diff,omitempty"`  // previous entity label values (update)
-	Error string `json:"error,omitempty"` // v0.8 backward-compatibility
+	EntityId string `json:"entityId"`       // internal _id of entity (all write ops)
+	URI      string `json:"uri,omitempty"`  // fully-qualified address of new entity (insert)
+	Diff     Entity `json:"diff,omitempty"` // previous entity label values (update)
 }
 
 // Error is the standard response for all handled errors. Client errors (HTTP 400
@@ -183,13 +184,14 @@ func (e Error) Error() string {
 }
 
 type CDCEvent struct {
-	EventId    string  `json:"eventId" bson:"_id"`
-	EntityId   string  `json:"entityId" bson:"entityId"`     // _id of entity
-	EntityType string  `json:"entityType" bson:"entityType"` // user-defined
-	Rev        int64   `json:"rev" bson:"rev"`               // entity revision as of this op, 0 on insert
-	Ts         int64   `json:"ts" bson:"ts"`                 // Unix nanoseconds
-	User       string  `json:"user" bson:"user"`
-	Op         string  `json:"op" bson:"op"`                       // i=insert, u=update, d=delete
+	Id     string `json:"eventId" bson:"_id,omitempty"`
+	Ts     int64  `json:"ts" bson:"ts"` // Unix nanoseconds
+	Op     string `json:"op" bson:"op"` // i=insert, u=update, d=delete
+	Caller string `json:"user" bson:"caller"`
+
+	EntityId   string  `json:"entityId" bson:"entityId"`           // _id of entity
+	EntityType string  `json:"entityType" bson:"entityType"`       // user-defined
+	EntityRev  int64   `json:"rev" bson:"entityRev"`               // entity revision as of this op, 0 on insert
 	Old        *Entity `json:"old,omitempty" bson:"old,omitempty"` // old values of affected labels, null on insert
 	New        *Entity `json:"new,omitempty" bson:"new,omitempty"` // new values of affected labels, null on delete
 

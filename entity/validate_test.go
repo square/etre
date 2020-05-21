@@ -26,7 +26,7 @@ func TestValidateEntities(t *testing.T) {
 func TestValidateWriteOp(t *testing.T) {
 	wo := entity.WriteOp{
 		EntityType: "grue",
-		User:       "dn",
+		Caller:     "dn",
 	}
 	err := validate.WriteOp(wo)
 	if err == nil {

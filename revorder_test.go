@@ -1,3 +1,5 @@
+// Copyright 2017-2020, Square, Inc.
+
 package etre_test
 
 import (
@@ -9,17 +11,13 @@ import (
 	"github.com/square/etre"
 )
 
-func init() {
-	etre.Debug = true
-}
-
 func TestRevOrder(t *testing.T) {
 	revo := etre.NewRevOrder(0, false)
 
 	e := etre.CDCEvent{
-		EntityId: "abc",
-		Rev:      0,
-		Op:       "i",
+		EntityId:  "abc",
+		EntityRev: 0,
+		Op:        "i",
 	}
 
 	ok, buf := revo.InOrder(e)
@@ -38,7 +36,7 @@ func TestRevOrder(t *testing.T) {
 		t.Errorf("buf not nil, expected nil: %#v", buf)
 	}
 
-	e.Rev = 1
+	e.EntityRev = 1
 	ok, buf = revo.InOrder(e)
 	if !ok {
 		t.Error("not ok, expected ok becuase rev += 1")
@@ -47,7 +45,7 @@ func TestRevOrder(t *testing.T) {
 		t.Errorf("buf not nil, expected nil: %#v", buf)
 	}
 
-	e.Rev = 3
+	e.EntityRev = 3
 	ok, buf = revo.InOrder(e)
 	if ok {
 		t.Error("ok, expected not ok becuase rev 2 not sent yet")
@@ -56,7 +54,7 @@ func TestRevOrder(t *testing.T) {
 		t.Errorf("buf not nil, expected nil: %#v", buf)
 	}
 
-	e.Rev = 4
+	e.EntityRev = 4
 	ok, buf = revo.InOrder(e)
 	if ok {
 		t.Error("ok, expected not ok becuase rev 2 not sent yet")
@@ -65,7 +63,7 @@ func TestRevOrder(t *testing.T) {
 		t.Errorf("buf not nil, expected nil: %#v", buf)
 	}
 
-	e.Rev = 2
+	e.EntityRev = 2
 	ok, buf = revo.InOrder(e)
 	if !ok {
 		t.Error("not ok, expected ok becuase rev set complete (2, 3)")
@@ -75,19 +73,19 @@ func TestRevOrder(t *testing.T) {
 	}
 	expect := []etre.CDCEvent{
 		{
-			EntityId: "abc",
-			Rev:      2,
-			Op:       "i",
+			EntityId:  "abc",
+			EntityRev: 2,
+			Op:        "i",
 		},
 		{
-			EntityId: "abc",
-			Rev:      3,
-			Op:       "i",
+			EntityId:  "abc",
+			EntityRev: 3,
+			Op:        "i",
 		},
 		{
-			EntityId: "abc",
-			Rev:      4,
-			Op:       "i",
+			EntityId:  "abc",
+			EntityRev: 4,
+			Op:        "i",
 		},
 	}
 	if diffs := deep.Equal(buf, expect); diffs != nil {
@@ -107,12 +105,12 @@ func TestRevOrderPanicRRltQR(t *testing.T) {
 		}()
 		revo := etre.NewRevOrder(10, false)
 		e := etre.CDCEvent{
-			EntityId: "abc",
-			Rev:      1,
-			Op:       "i",
+			EntityId:  "abc",
+			EntityRev: 1,
+			Op:        "i",
 		}
 		revo.InOrder(e)
-		e.Rev = 0 // causes panic
+		e.EntityRev = 0 // causes panic
 		revo.InOrder(e)
 	}()
 
@@ -143,21 +141,21 @@ func TestRevOrderPanicEvict(t *testing.T) {
 		}()
 		revo := etre.NewRevOrder(2, false)
 		e := etre.CDCEvent{
-			EntityId: "abc",
-			Rev:      1,
-			Op:       "i",
+			EntityId:  "abc",
+			EntityRev: 1,
+			Op:        "i",
 		}
 		revo.InOrder(e)
-		e.Rev = 2
+		e.EntityRev = 2
 		revo.InOrder(e)
-		e.Rev = 4
+		e.EntityRev = 4
 		revo.InOrder(e)
 		// Now abc is being reordered
 
 		e.EntityId = "def"
-		e.Rev = 1
+		e.EntityRev = 1
 		revo.InOrder(e)
-		e.Rev = 2
+		e.EntityRev = 2
 		revo.InOrder(e)
 		// Now LRU cache is full: abc and def
 
@@ -201,12 +199,12 @@ func TestRevOrderIgnorePastRevs(t *testing.T) {
 		}()
 		revo := etre.NewRevOrder(10, true) // = ignorePastRevs
 		e := etre.CDCEvent{
-			EntityId: "abc",
-			Rev:      1,
-			Op:       "i",
+			EntityId:  "abc",
+			EntityRev: 1,
+			Op:        "i",
 		}
 		revo.InOrder(e)
-		e.Rev = 0 // does NOT cause panic
+		e.EntityRev = 0 // does NOT cause panic
 		revo.InOrder(e)
 	}()
 

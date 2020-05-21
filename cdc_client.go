@@ -7,8 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/url"
+	"path"
+	"runtime"
 	"sync"
 	"time"
 
@@ -40,6 +41,8 @@ type CDCClient interface {
 	// resets the error.
 	Error() error
 }
+
+var _ CDCClient = &cdcClient{}
 
 // Internal implementation of CDCClient over a websocket.
 type cdcClient struct {
@@ -86,8 +89,8 @@ func NewCDCClient(addr string, tlsConfig *tls.Config, bufferSize int, debug bool
 }
 
 func (c *cdcClient) Start(startTime time.Time) (<-chan CDCEvent, error) {
-	c.debug("Start: call")
-	defer c.debug("Start: return")
+	c.debug("Start call")
+	defer c.debug("Start return")
 	c.Lock()
 	defer c.Unlock()
 
@@ -148,7 +151,7 @@ func (c *cdcClient) Start(startTime time.Time) (<-chan CDCEvent, error) {
 	}
 
 	// Start consuming CDC feed
-	c.debug("OK, cdc feed started")
+	c.debug("cdc feed started")
 	c.started = true
 	c.stopped = false
 	c.err = nil
@@ -159,8 +162,8 @@ func (c *cdcClient) Start(startTime time.Time) (<-chan CDCEvent, error) {
 }
 
 func (c *cdcClient) Stop() {
-	c.debug("Stop: call")
-	defer c.debug("Stop: return")
+	c.debug("Stop call")
+	defer c.debug("Stop return")
 	c.Lock()
 	defer c.Unlock()
 	if c.stopped {
@@ -168,14 +171,15 @@ func (c *cdcClient) Stop() {
 		return
 	}
 	if c.wsConn != nil {
+		c.wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(1000, "etre.CDCClient stopped"))
 		c.wsConn.Close()
 	}
 	c.stopped = true
 }
 
 func (c *cdcClient) Ping(timeout time.Duration) Latency {
-	c.debug("Ping: call")
-	defer c.debug("Ping: return")
+	c.debug("Ping call")
+	defer c.debug("Ping return")
 
 	// DO NOT guard this function with c.Lock(). We only need to guard ws writes,
 	// and send() will do that for us.
@@ -213,27 +217,36 @@ func (c *cdcClient) Error() error {
 // Receive CDC events and control messages until there's an error or caller
 // calls Stop. Control messages should be infrequent.
 func (c *cdcClient) recv() {
-	c.debug("recv: call")
-	defer c.debug("recv: return")
-	defer close(c.events)
-	var now time.Time
-	for {
-		_, bytes, err := c.wsConn.ReadMessage()
-		now = time.Now()
+	c.debug("recv call")
+	defer c.debug("recv return")
+
+	var err error
+	defer func() {
 		if err != nil {
 			c.shutdown(err)
+		}
+		close(c.events)
+	}()
+
+	var now time.Time
+	for {
+		_, bytes, rerr := c.wsConn.ReadMessage()
+		now = time.Now()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				err = rerr
+			}
 			return
 		}
 
 		// CDC events should be the bulk of data we recv, so presume it's that.
 		var e CDCEvent
-		if err := json.Unmarshal(bytes, &e); err != nil {
-			c.shutdown(err)
+		if err = json.Unmarshal(bytes, &e); err != nil {
 			return
 		}
 
-		// If EventId is set (not empty), then it's a CDC event as expected
-		if e.EventId != "" {
+		// If event ID is set (not empty), then it's a CDC event as expected
+		if e.Id != "" {
 			c.debug("cdc event: %#v", e)
 			select {
 			case c.events <- e: // send CDC event to caller
@@ -245,8 +258,7 @@ func (c *cdcClient) recv() {
 		} else {
 			// It's not a CDC event, so it should be a control message
 			var msg map[string]interface{}
-			if err := json.Unmarshal(bytes, &msg); err != nil {
-				c.shutdown(err)
+			if err = json.Unmarshal(bytes, &msg); err != nil {
 				return
 			}
 			if _, ok := msg["control"]; !ok {
@@ -254,8 +266,7 @@ func (c *cdcClient) recv() {
 				c.shutdown(ErrBadData)
 				return
 			}
-			if err := c.control(msg, now); err != nil {
-				c.shutdown(err)
+			if err = c.control(msg, now); err != nil {
 				return
 			}
 		}
@@ -265,8 +276,8 @@ func (c *cdcClient) recv() {
 // Handle a control message from the API. Returning an error causes the recv loop
 // to shutdown.
 func (c *cdcClient) control(msg map[string]interface{}, now time.Time) error {
-	c.debug("control: call: %#v", msg)
-	defer c.debug("control: return")
+	c.debug("control call: %#v", msg)
+	defer c.debug("control return")
 
 	switch msg["control"] {
 	case "error":
@@ -320,8 +331,8 @@ func (c *cdcClient) control(msg map[string]interface{}, now time.Time) error {
 }
 
 func (c *cdcClient) send(v interface{}) error {
-	c.debug("send: call")
-	defer c.debug("send: return")
+	c.debug("send call")
+	defer c.debug("send return")
 	c.wsMutex.Lock()
 	defer c.wsMutex.Unlock()
 	c.wsConn.SetWriteDeadline(time.Now().Add(time.Duration(CDC_WRITE_TIMEOUT) * time.Second))
@@ -333,8 +344,8 @@ func (c *cdcClient) send(v interface{}) error {
 
 // Close websocket and save error, if not already stopped gracefully.
 func (c *cdcClient) shutdown(err error) {
-	c.debug("shutdown: call: %v", err)
-	defer c.debug("shutdown: return")
+	c.debug("shutdown call: %v", err)
+	defer c.debug("shutdown return")
 	c.Lock()
 	defer c.Unlock()
 	if c.stopped {
@@ -347,16 +358,20 @@ func (c *cdcClient) shutdown(err error) {
 	c.err = err
 }
 
-func (c *cdcClient) debug(fmt string, v ...interface{}) {
+func (c *cdcClient) debug(msg string, v ...interface{}) {
 	if !c.dbg {
 		return
 	}
-	log.Printf(fmt, v...)
+	_, file, line, _ := runtime.Caller(1)
+	msg = fmt.Sprintf("%s:%d %s", path.Base(file), line, msg)
+	debugLog.Printf(msg, v...)
 }
 
 // //////////////////////////////////////////////////////////////////////////
 // Mock client
 // //////////////////////////////////////////////////////////////////////////
+
+var _ CDCClient = MockCDCClient{}
 
 type MockCDCClient struct {
 	StartFunc func(time.Time) (<-chan CDCEvent, error)

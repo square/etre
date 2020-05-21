@@ -22,15 +22,15 @@ type Context struct {
 	ConfigFile string
 	Config     config.Config
 
-	EntityStore          entity.Store
-	EntityValidator      entity.Validator
-	CDCStore             cdc.Store
-	ChangesServer        changestream.Server
-	ChangesClientFactory changestream.ClientFactory
-	MetricsStore         metrics.Store
-	MetricsFactory       metrics.Factory
-	SystemMetrics        metrics.Metrics
-	Auth                 auth.Manager
+	EntityStore     entity.Store
+	EntityValidator entity.Validator
+	CDCStore        cdc.Store
+	ChangesServer   changestream.Server
+	StreamerFactory changestream.StreamerFactory
+	MetricsStore    metrics.Store
+	MetricsFactory  metrics.Factory
+	SystemMetrics   metrics.Metrics
+	Auth            auth.Manager
 
 	// 3rd-party extensions, all optional
 	Hooks   Hooks

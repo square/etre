@@ -1,3 +1,5 @@
+// Copyright 2020, Square, Inc.
+
 package mock
 
 import (
@@ -43,7 +45,22 @@ func (s ChangeStreamServer) Stop() {
 
 // --------------------------------------------------------------------------
 
-type Streamer struct {
+var _ changestream.StreamerFactory = StreamerFactory{}
+
+type StreamerFactory struct {
+	MakeFunc func(clientId string) changestream.Streamer
+}
+
+func (f StreamerFactory) Make(clientId string) changestream.Streamer {
+	if f.MakeFunc != nil {
+		return f.MakeFunc(clientId)
+	}
+	return Stream{}
+}
+
+var _ changestream.Streamer = &Stream{}
+
+type Stream struct {
 	StartFunc  func(sinceTs int64) <-chan etre.CDCEvent
 	InSyncFunc func() chan struct{}
 	StatusFunc func() changestream.Status
@@ -51,7 +68,7 @@ type Streamer struct {
 	ErrorFunc  func() error
 }
 
-func (s Streamer) Start(sinceTs int64) <-chan etre.CDCEvent {
+func (s Stream) Start(sinceTs int64) <-chan etre.CDCEvent {
 	if s.StartFunc != nil {
 		return s.StartFunc(sinceTs)
 	}
@@ -59,27 +76,27 @@ func (s Streamer) Start(sinceTs int64) <-chan etre.CDCEvent {
 
 }
 
-func (s Streamer) InSync() chan struct{} {
+func (s Stream) InSync() chan struct{} {
 	if s.InSyncFunc != nil {
 		return s.InSyncFunc()
 	}
 	return nil
 }
 
-func (s Streamer) Status() changestream.Status {
+func (s Stream) Status() changestream.Status {
 	if s.StatusFunc != nil {
 		return s.StatusFunc()
 	}
 	return changestream.Status{}
 }
 
-func (s Streamer) Stop() {
+func (s Stream) Stop() {
 	if s.StopFunc != nil {
 		s.StopFunc()
 	}
 }
 
-func (s Streamer) Error() error {
+func (s Stream) Error() error {
 	if s.ErrorFunc != nil {
 		return s.ErrorFunc()
 	}

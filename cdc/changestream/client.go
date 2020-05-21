@@ -13,7 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/square/etre"
-	"github.com/square/etre/cdc"
 )
 
 var (
@@ -21,56 +20,24 @@ var (
 	ErrAlreadyStarted  = errors.New("already started")
 )
 
-type Client interface {
-	Run() error
-	Stop()
-	Ping(time.Duration) etre.Latency
-}
-
-type ClientFactory interface {
-	MakeWebsocket(clientId string, wsConn *websocket.Conn) *WebsocketClient
-}
-
-type clientFactory struct {
-	server Server
-	store  cdc.Store
-}
-
-func NewClientFactory(server Server, store cdc.Store) *clientFactory {
-	return &clientFactory{
-		server: server,
-		store:  store,
-	}
-}
-
-func (f *clientFactory) MakeWebsocket(clientId string, wsConn *websocket.Conn) *WebsocketClient {
-	return NewWebsocketClient(clientId, wsConn, NewServerStreamer(clientId, f.server, f.store))
-}
-
-// --------------------------------------------------------------------------
-// Websocket client
-// --------------------------------------------------------------------------
-
-var _ Client = &WebsocketClient{}
-
 type WebsocketClient struct {
 	clientId string // clientId for this client
 	wsConn   *websocket.Conn
-	streamer Streamer
+	stream   Streamer
 	// --
-	*sync.Mutex     // guards function calls
-	stopped         bool
-	streamerStarted bool              // true once client sends start control msg
-	wsMutex         *sync.Mutex       // guards wsConn.Write
-	pingChan        chan etre.Latency // for Ping
+	*sync.Mutex   // guards function calls
+	stopped       bool
+	streamStarted bool              // true once client sends start control msg
+	wsMutex       *sync.Mutex       // guards wsConn.Write
+	pingChan      chan etre.Latency // for Ping
 
 }
 
-func NewWebsocketClient(clientId string, wsConn *websocket.Conn, streamer Streamer) *WebsocketClient {
+func NewWebsocketClient(clientId string, wsConn *websocket.Conn, stream Streamer) *WebsocketClient {
 	return &WebsocketClient{
 		clientId: clientId,
 		wsConn:   wsConn,
-		streamer: streamer,
+		stream:   stream,
 		wsMutex:  &sync.Mutex{},
 		Mutex:    &sync.Mutex{},
 		pingChan: make(chan etre.Latency, 1),
@@ -121,8 +88,8 @@ func (f *WebsocketClient) Stop() {
 		return
 	}
 	f.stopped = true
-	f.streamer.Stop() // stops runStreamer goroutine, if running
-	f.wsConn.Close()  // causes wsConn.ReadMessage to return
+	f.stream.Stop()  // stops runStreamer goroutine, if running
+	f.wsConn.Close() // causes wsConn.ReadMessage to return
 }
 
 func (f *WebsocketClient) Ping(timeout time.Duration) etre.Latency {
@@ -204,10 +171,10 @@ func (f *WebsocketClient) control(msg map[string]interface{}, now time.Time) err
 			etre.Debug("pingChan blocked")
 		}
 	case "start":
-		if f.streamerStarted {
+		if f.streamStarted {
 			return ErrAlreadyStarted
 		}
-		f.streamerStarted = true
+		f.streamStarted = true
 
 		v, ok := msg["startTs"]
 		var startTs int64
@@ -237,11 +204,11 @@ func (f *WebsocketClient) runStreamer(startTs int64) {
 	etre.Debug("runStreamer call")
 	defer etre.Debug("runStreamer return")
 
-	// Don't need to call "defer f.streamer.Stop()" because a closed stream chan
+	// Don't need to call "defer f.stream.Stop()" because a closed stream chan
 	// means Streamer has already stopped. Closing the chan is the last thing it
 	// does on shutdown.
 	var sendErr error
-	eventsChan := f.streamer.Start(startTs)
+	eventsChan := f.stream.Start(startTs)
 	for event := range eventsChan {
 		if sendErr = f.send(event); sendErr != nil {
 			break
@@ -259,7 +226,7 @@ func (f *WebsocketClient) runStreamer(startTs int64) {
 	if sendErr != nil {
 		log.Printf("Error sending event to cdc client %s, shutting down: %s", f.clientId, sendErr)
 	} else {
-		f.sendError(fmt.Errorf("Steamer closed channel (error: %v), shutting down", f.streamer.Error()))
+		f.sendError(fmt.Errorf("Steamer closed channel (error: %v), shutting down", f.stream.Error()))
 	}
 	f.Unlock()
 

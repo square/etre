@@ -88,7 +88,7 @@ func TestRead(t *testing.T) {
 
 	actualIds := []string{}
 	for _, event := range events {
-		actualIds = append(actualIds, event.EventId)
+		actualIds = append(actualIds, event.Id)
 	}
 
 	expectedIds := []string{"p34", "vno", "4pi"} // order matters
@@ -109,7 +109,7 @@ func TestRead(t *testing.T) {
 
 	actualIds = []string{}
 	for _, event := range events {
-		actualIds = append(actualIds, event.EventId)
+		actualIds = append(actualIds, event.Id)
 	}
 
 	expectedIds = []string{"nru", "p34", "61p", "qwp", "vno", "4pi", "vb0", "bnu"} // order matters
@@ -124,13 +124,13 @@ func TestWriteSuccess(t *testing.T) {
 	cdcs := setup(t, "", cdc.NoRetryPolicy)
 
 	event := etre.CDCEvent{
-		EventId:    "abc",
+		Id:         "abc",
+		Ts:         54,
+		Op:         "i",
+		Caller:     "mike",
 		EntityId:   "e13",
 		EntityType: "node",
-		Rev:        int64(7),
-		Ts:         54,
-		User:       "mike",
-		Op:         "i",
+		EntityRev:  int64(7),
 		New: &etre.Entity{
 			"_id":   "e13",
 			"_type": "node",
@@ -139,7 +139,7 @@ func TestWriteSuccess(t *testing.T) {
 		},
 	}
 
-	err := cdcs.Write(event)
+	err := cdcs.Write(context.TODO(), event)
 	if err != nil {
 		t.Error(err)
 	}
@@ -173,8 +173,8 @@ func TestWriteFailure(t *testing.T) {
 
 	tries := 0
 
-	event := etre.CDCEvent{EventId: "abc", EntityId: "e13", Rev: 7, Ts: 54}
-	err := cdcs.Write(event)
+	event := etre.CDCEvent{Id: "abc", EntityId: "e13", EntityRev: 7, Ts: 54}
+	err := cdcs.Write(context.TODO(), event)
 	if err == nil {
 		t.Error("expected an error but did not get one")
 	}
@@ -204,56 +204,56 @@ func TestSortByEntityIdRev(t *testing.T) {
 	sortTests := []sortTest{
 		{
 			rand: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 1, Ts: 1}, // written second (rev=1) but logged first at ts=1
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 0, Ts: 2}, // written first (rev=0) but logged second at ts=2
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 1, Ts: 1}, // written second (rev=1) but logged first at ts=1
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 0, Ts: 2}, // written first (rev=0) but logged second at ts=2
 			},
 			wro: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 0, Ts: 2}, // rev 0 must be before
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 1, Ts: 1}, // rev 1 regardless of ts
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 0, Ts: 2}, // rev 0 must be before
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 1, Ts: 1}, // rev 1 regardless of ts
 			},
 		},
 		{
 			rand: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 1, Ts: 1}, // written second, logged at same time
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 0, Ts: 1}, // written first, logged at same time
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 1, Ts: 1}, // written second, logged at same time
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 0, Ts: 1}, // written first, logged at same time
 			},
 			wro: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 0, Ts: 1}, // rev 0 must be before
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 1, Ts: 1}, // rev 1 regardless of ts
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 0, Ts: 1}, // rev 0 must be before
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 1, Ts: 1}, // rev 1 regardless of ts
 			},
 		},
 		{
 			rand: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 3, Ts: 1}, // same entity badly out of order
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 2, Ts: 1},
-				etre.CDCEvent{EventId: "c", EntityId: "e1", Rev: 0, Ts: 2},
-				etre.CDCEvent{EventId: "d", EntityId: "e1", Rev: 1, Ts: 3},
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 3, Ts: 1}, // same entity badly out of order
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 2, Ts: 1},
+				etre.CDCEvent{Id: "c", EntityId: "e1", EntityRev: 0, Ts: 2},
+				etre.CDCEvent{Id: "d", EntityId: "e1", EntityRev: 1, Ts: 3},
 			},
 			wro: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "c", EntityId: "e1", Rev: 0, Ts: 2}, // rev order matters for same entity
-				etre.CDCEvent{EventId: "d", EntityId: "e1", Rev: 1, Ts: 3},
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 2, Ts: 1},
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 3, Ts: 1},
+				etre.CDCEvent{Id: "c", EntityId: "e1", EntityRev: 0, Ts: 2}, // rev order matters for same entity
+				etre.CDCEvent{Id: "d", EntityId: "e1", EntityRev: 1, Ts: 3},
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 2, Ts: 1},
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 3, Ts: 1},
 			},
 		},
 		{
 			rand: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 3, Ts: 1}, // two different entities badly out of order
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 1, Ts: 3}, // ts also out of order, which could happen
-				etre.CDCEvent{EventId: "c", EntityId: "e9", Rev: 0, Ts: 2}, // because we don't ask db to sort by anything
-				etre.CDCEvent{EventId: "d", EntityId: "e1", Rev: 0, Ts: 2},
-				etre.CDCEvent{EventId: "e", EntityId: "e9", Rev: 1, Ts: 1},
-				etre.CDCEvent{EventId: "f", EntityId: "e1", Rev: 2, Ts: 1},
-				etre.CDCEvent{EventId: "g", EntityId: "e9", Rev: 2, Ts: 3},
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 3, Ts: 1}, // two different entities badly out of order
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 1, Ts: 3}, // ts also out of order, which could happen
+				etre.CDCEvent{Id: "c", EntityId: "e9", EntityRev: 0, Ts: 2}, // because we don't ask db to sort by anything
+				etre.CDCEvent{Id: "d", EntityId: "e1", EntityRev: 0, Ts: 2},
+				etre.CDCEvent{Id: "e", EntityId: "e9", EntityRev: 1, Ts: 1},
+				etre.CDCEvent{Id: "f", EntityId: "e1", EntityRev: 2, Ts: 1},
+				etre.CDCEvent{Id: "g", EntityId: "e9", EntityRev: 2, Ts: 3},
 			},
 			wro: []etre.CDCEvent{
-				etre.CDCEvent{EventId: "d", EntityId: "e1", Rev: 0, Ts: 2},
-				etre.CDCEvent{EventId: "b", EntityId: "e1", Rev: 1, Ts: 3},
-				etre.CDCEvent{EventId: "f", EntityId: "e1", Rev: 2, Ts: 1},
-				etre.CDCEvent{EventId: "a", EntityId: "e1", Rev: 3, Ts: 1},
-				etre.CDCEvent{EventId: "c", EntityId: "e9", Rev: 0, Ts: 2},
-				etre.CDCEvent{EventId: "e", EntityId: "e9", Rev: 1, Ts: 1},
-				etre.CDCEvent{EventId: "g", EntityId: "e9", Rev: 2, Ts: 3},
+				etre.CDCEvent{Id: "d", EntityId: "e1", EntityRev: 0, Ts: 2},
+				etre.CDCEvent{Id: "b", EntityId: "e1", EntityRev: 1, Ts: 3},
+				etre.CDCEvent{Id: "f", EntityId: "e1", EntityRev: 2, Ts: 1},
+				etre.CDCEvent{Id: "a", EntityId: "e1", EntityRev: 3, Ts: 1},
+				etre.CDCEvent{Id: "c", EntityId: "e9", EntityRev: 0, Ts: 2},
+				etre.CDCEvent{Id: "e", EntityId: "e9", EntityRev: 1, Ts: 1},
+				etre.CDCEvent{Id: "g", EntityId: "e9", EntityRev: 2, Ts: 3},
 			},
 		},
 	}

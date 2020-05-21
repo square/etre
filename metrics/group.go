@@ -1,4 +1,4 @@
-// Copyright 2018-2019, Square, Inc.
+// Copyright 2018-2020, Square, Inc.
 
 package metrics
 
@@ -36,37 +36,37 @@ func NewGroup(groupNames []string, store Store) Metrics {
 	}
 }
 
-func (mg Group) EntityType(entityType string) {
-	for _, m := range mg.groups {
+func (gm Group) EntityType(entityType string) {
+	for _, m := range gm.groups {
 		m.EntityType(entityType)
 	}
 }
 
-func (mg Group) Inc(mn byte, n int64) {
-	for _, m := range mg.groups {
+func (gm Group) Inc(mn byte, n int64) {
+	for _, m := range gm.groups {
 		m.Inc(mn, n)
 	}
 }
 
-func (mg Group) IncLabel(mn byte, label string) {
-	for _, m := range mg.groups {
+func (gm Group) IncLabel(mn byte, label string) {
+	for _, m := range gm.groups {
 		m.IncLabel(mn, label)
 	}
 }
 
-func (mg Group) Val(mn byte, n int64) {
-	for _, m := range mg.groups {
+func (gm Group) Val(mn byte, n int64) {
+	for _, m := range gm.groups {
 		m.Val(mn, n)
 	}
 }
 
-func (mg Group) Trace(trace map[string]string) {
-	for _, m := range mg.groups {
+func (gm Group) Trace(trace map[string]string) {
+	for _, m := range gm.groups {
 		m.Trace(trace)
 	}
 }
 
-func (mg Group) Report(reset bool) etre.Metrics {
+func (gm Group) Report(reset bool) etre.Metrics {
 	panic("do not call groupMetrics.Group.Report() directly")
 }
 

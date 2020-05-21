@@ -53,7 +53,7 @@ func (a ByEntityIdRevAsc) Len() int      { return len(a) }
 func (a ByEntityIdRevAsc) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a ByEntityIdRevAsc) Less(i, j int) bool {
 	if a[i].EntityId == a[j].EntityId {
-		return a[i].Rev < a[j].Rev
+		return a[i].EntityRev < a[j].EntityRev
 	}
 	return a[i].EntityId < a[j].EntityId
 }
@@ -71,7 +71,7 @@ type Store interface {
 	// the event is written to the fallbackFile. A ErrWriteEvent is
 	// returned if writing to the persistent data store fails, even if
 	// writing to fallbackFile succeeds.
-	Write(etre.CDCEvent) error
+	Write(context.Context, etre.CDCEvent) error
 
 	// Read queries a persistent data store for events that satisfy the
 	// given filter.
@@ -144,11 +144,11 @@ func (s *store) Read(f Filter) ([]etre.CDCEvent, error) {
 	return events, nil
 }
 
-func (s *store) Write(event etre.CDCEvent) error {
+func (s *store) Write(ctx context.Context, event etre.CDCEvent) error {
 	var err error
 	tries := 1 + s.wrp.RetryCount
 	for tryNo := 1; tryNo <= tries; tryNo++ {
-		if _, err = s.coll.InsertOne(context.TODO(), event); err != nil {
+		if _, err = s.coll.InsertOne(ctx, event); err != nil {
 			if tryNo == tries {
 				break // don't wait on last try
 			}

@@ -43,7 +43,7 @@ func TestStreamNow(t *testing.T) {
 			return serverChan, nil
 		},
 	}
-	stream := changestream.NewServerStreamer("client1", srv, &mock.CDCStore{})
+	stream := changestream.NewServerStream("client1", srv, &mock.CDCStore{})
 	streamChan := stream.Start(0) // startTs = 0 = no backlock
 
 	// Almost immediately after staring without a backlog (startTs=0), the streamer
@@ -145,7 +145,7 @@ func TestStreamBacklogNoNewEvents(t *testing.T) {
 			return events1, nil // in changestream_test.go
 		},
 	}
-	stream := changestream.NewServerStreamer("client2", srv, store)
+	stream := changestream.NewServerStream("client2", srv, store)
 	nowTs := time.Now().UnixNano() / int64(time.Millisecond)
 	stream.Start(100) // []events1 (in changestream_test.go) starts at 100
 
@@ -218,12 +218,12 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 	}
 
 	newEvent := etre.CDCEvent{
-		EventId:    "4",
-		EntityId:   "e2",
-		EntityType: "node",
-		Rev:        9,
+		Id:         "4",
 		Ts:         401,
 		Op:         "i",
+		EntityId:   "e2",
+		EntityType: "node",
+		EntityRev:  9,
 		New: &etre.Entity{
 			"_id":   "e1",
 			"_type": "node",
@@ -242,7 +242,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 			return events1, nil // in changestream_test.go
 		},
 	}
-	stream := changestream.NewServerStreamer("client3", srv, store)
+	stream := changestream.NewServerStream("client3", srv, store)
 	streamChan := stream.Start(100) // []events1 (in changestream_test.go) starts at 100
 
 	// Wait for streamBacklog() to call store.Read()
@@ -343,7 +343,7 @@ func TestStreamBacklogNewOverlappingEvents(t *testing.T) {
 			return events1, nil
 		},
 	}
-	stream := changestream.NewServerStreamer("client4", srv, store)
+	stream := changestream.NewServerStream("client4", srv, store)
 	streamChan := stream.Start(100) // []events1 (in changestream_test.go) starts at 100
 
 	// Wait for streamBacklog() to call store.Read()
@@ -399,7 +399,7 @@ func TestStreamNewEventsOutOfOrder(t *testing.T) {
 			return serverChan, nil
 		},
 	}
-	stream := changestream.NewServerStreamer("client5", srv, &mock.CDCStore{})
+	stream := changestream.NewServerStream("client5", srv, &mock.CDCStore{})
 	streamChan := stream.Start(0) // no backlog
 
 	// The events are in order in events1, so we scramble them and send to client
@@ -459,7 +459,7 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 			return []etre.CDCEvent{events1[0]}, nil // in changestream_test.go
 		},
 	}
-	stream := changestream.NewServerStreamer("client6", srv, store)
+	stream := changestream.NewServerStream("client6", srv, store)
 	streamChan := stream.Start(100)
 
 	// Wait for streamBacklog() to call store.Read()
@@ -512,7 +512,7 @@ func TestStreamServerClosedStreamDuringSync(t *testing.T) {
 			return serverChan, nil
 		},
 	}
-	stream := changestream.NewServerStreamer("client7", srv, &mock.CDCStore{})
+	stream := changestream.NewServerStream("client7", srv, &mock.CDCStore{})
 	streamChan := stream.Start(0)
 
 	// Wait until code gets to the in sync loop that we're testing

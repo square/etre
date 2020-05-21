@@ -31,7 +31,7 @@ var (
 
 var wo = entity.WriteOp{
 	EntityType: entityType,
-	User:       username,
+	Caller:     username,
 }
 
 func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
@@ -242,7 +242,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	// logged with the correct info about the new entities.
 	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
 			gotEvents = append(gotEvents, e)
 			return nil
 		},
@@ -269,34 +269,34 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	id3, _ := primitive.ObjectIDFromHex(ids[2])
 	expectEvents := []etre.CDCEvent{
 		{
-			EventId:    gotEvents[0].EventId, // non-deterministic
+			Id:         gotEvents[0].Id, // non-deterministic
 			EntityId:   id1.Hex(),
 			EntityType: entityType,
-			Rev:        int64(0),
+			EntityRev:  int64(0),
 			Ts:         gotEvents[0].Ts, // non-deterministic
-			User:       username,
+			Caller:     username,
 			Op:         "i",
 			Old:        nil,
 			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 7},
 		},
 		{
-			EventId:    gotEvents[1].EventId, // non-deterministic
+			Id:         gotEvents[1].Id, // non-deterministic
 			EntityId:   id2.Hex(),
 			EntityType: entityType,
-			Rev:        int64(0),
+			EntityRev:  int64(0),
 			Ts:         gotEvents[1].Ts, // non-deterministic
-			User:       username,
+			Caller:     username,
 			Op:         "i",
 			Old:        nil,
 			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "x": 8},
 		},
 		{
-			EventId:    gotEvents[2].EventId, // non-deterministic
+			Id:         gotEvents[2].Id, // non-deterministic
 			EntityId:   id3.Hex(),
 			EntityType: entityType,
-			Rev:        int64(0),
+			EntityRev:  int64(0),
 			Ts:         gotEvents[2].Ts, // non-deterministic
-			User:       username,
+			Caller:     username,
 			Op:         "i",
 			Old:        nil,
 			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1},
@@ -316,7 +316,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 	// The 3rd isn't created because the first error stops the insert process.
 	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
 			gotEvents = append(gotEvents, e)
 			return nil
 		},
@@ -348,12 +348,12 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
 	expectEvents := []etre.CDCEvent{
 		{
-			EventId:    gotEvents[0].EventId, // non-deterministic
+			Id:         gotEvents[0].Id, // non-deterministic
 			EntityId:   id1.Hex(),
 			EntityType: entityType,
-			Rev:        int64(0),
+			EntityRev:  int64(0),
 			Ts:         gotEvents[0].Ts, // non-deterministic
-			User:       username,
+			Caller:     username,
 			Op:         "i",
 			Old:        nil,
 			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 5},
@@ -374,7 +374,7 @@ func TestUpdateEntities(t *testing.T) {
 	// test the CDC events correctly reflect the changes.
 	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
 			gotEvents = append(gotEvents, e)
 			return nil
 		},
@@ -390,7 +390,7 @@ func TestUpdateEntities(t *testing.T) {
 	patch := etre.Entity{"y": "y"} // y=a -> y=y
 	wo1 := entity.WriteOp{
 		EntityType: entityType,
-		User:       username,
+		Caller:     username,
 		SetOp:      "update-y1",
 		SetId:      "111",
 		SetSize:    1,
@@ -424,7 +424,7 @@ func TestUpdateEntities(t *testing.T) {
 	patch = etre.Entity{"y": "c"} // y=b -> y=c
 	wo2 := entity.WriteOp{
 		EntityType: entityType,
-		User:       username,
+		Caller:     username,
 		SetOp:      "update-y2",
 		SetId:      "222",
 		SetSize:    1,
@@ -458,7 +458,7 @@ func TestUpdateEntities(t *testing.T) {
 	// ----------------------------------------------------------------------
 	// 3 CDC events because 3 entities were updated
 	for i := range gotEvents {
-		gotEvents[i].EventId = ""
+		gotEvents[i].Id = ""
 		gotEvents[i].Ts = 0
 	}
 	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
@@ -468,11 +468,11 @@ func TestUpdateEntities(t *testing.T) {
 		{
 			EntityId:   id1.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "y": "a"},
-			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(1), "y": "y"},
+			Old:        &etre.Entity{"y": "a"},
+			New:        &etre.Entity{"y": "y"},
 			SetId:      "111",
 			SetOp:      "update-y1",
 			SetSize:    1,
@@ -480,11 +480,11 @@ func TestUpdateEntities(t *testing.T) {
 		{
 			EntityId:   id2.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "y": "b"},
-			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(1), "y": "c"},
+			Old:        &etre.Entity{"y": "b"},
+			New:        &etre.Entity{"y": "c"},
 			SetId:      "222",
 			SetOp:      "update-y2",
 			SetSize:    1,
@@ -492,11 +492,149 @@ func TestUpdateEntities(t *testing.T) {
 		{
 			EntityId:   id3.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "y": "b"},
-			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(1), "y": "c"},
+			Old:        &etre.Entity{"y": "b"},
+			New:        &etre.Entity{"y": "c"},
+			SetId:      "222",
+			SetOp:      "update-y2",
+			SetSize:    1,
+		},
+	}
+	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
+		t.Error(diff)
+	}
+}
+
+func TestUpdateEntitiesById(t *testing.T) {
+	// Test that an update by object ID works. In the test above, we look up
+	// label y and also change it: y=a -> y=y. So the store can loop over calls
+	// to FindOneAndUpdate() and the loop is self-terminating as it changes
+	// all y=a to y=y. But if we look up _id and chagne y, the loop become infinite
+	// because it'll keep finding _id.
+	gotEvents := []etre.CDCEvent{}
+	cdcm := &mock.CDCStore{
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
+			gotEvents = append(gotEvents, e)
+			return nil
+		},
+	}
+	store := setup(t, cdcm)
+
+	// ----------------------------------------------------------------------
+	// This matches first test node
+	q, _ := query.Translate("_id=" + testNodes[0]["_id"].(primitive.ObjectID).Hex())
+	patch := etre.Entity{"y": "y"} // y=a -> y=y
+	wo1 := entity.WriteOp{
+		EntityType: entityType,
+		Caller:     username,
+		SetOp:      "update-y1",
+		SetId:      "111",
+		SetSize:    1,
+	}
+	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotDiffs) != 1 {
+		t.Errorf("got %d diffs, expected 1", len(gotDiffs))
+	}
+	expectDiffs := []etre.Entity{
+		{
+			"_id":   testNodes[0]["_id"],
+			"_type": entityType,
+			"_rev":  int64(0),
+			"y":     "a",
+		},
+	}
+	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
+		t.Logf("got: %+v", gotDiffs)
+		t.Error(diff)
+	}
+
+	// ----------------------------------------------------------------------
+	// And this matches 2nd and 3rd test nodes
+	q, err = query.Translate("y=b")
+	if err != nil {
+		t.Error(err)
+	}
+	patch = etre.Entity{"y": "c"} // y=b -> y=c
+	wo2 := entity.WriteOp{
+		EntityType: entityType,
+		Caller:     username,
+		SetOp:      "update-y2",
+		SetId:      "222",
+		SetSize:    1,
+	}
+	gotDiffs, err = store.UpdateEntities(wo2, q, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotDiffs) != 2 {
+		t.Errorf("got %d diffs, expected 2", len(gotDiffs))
+	}
+	expectDiffs = []etre.Entity{
+		{
+			"_id":   testNodes[1]["_id"],
+			"_type": entityType,
+			"_rev":  int64(0),
+			"y":     "b",
+		},
+		{
+			"_id":   testNodes[2]["_id"],
+			"_type": entityType,
+			"_rev":  int64(0),
+			"y":     "b",
+		},
+	}
+	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
+		t.Logf("got: %+v", gotDiffs)
+		t.Error(diff)
+	}
+
+	// ----------------------------------------------------------------------
+	// 3 CDC events because 3 entities were updated
+	for i := range gotEvents {
+		gotEvents[i].Id = ""
+		gotEvents[i].Ts = 0
+	}
+	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
+	id2, _ := testNodes[1]["_id"].(primitive.ObjectID)
+	id3, _ := testNodes[2]["_id"].(primitive.ObjectID)
+	expectEvent := []etre.CDCEvent{
+		{
+			EntityId:   id1.Hex(),
+			EntityType: entityType,
+			EntityRev:  int64(1),
+			Caller:     username,
+			Op:         "u",
+			Old:        &etre.Entity{"y": "a"},
+			New:        &etre.Entity{"y": "y"},
+			SetId:      "111",
+			SetOp:      "update-y1",
+			SetSize:    1,
+		},
+		{
+			EntityId:   id2.Hex(),
+			EntityType: entityType,
+			EntityRev:  int64(1),
+			Caller:     username,
+			Op:         "u",
+			Old:        &etre.Entity{"y": "b"},
+			New:        &etre.Entity{"y": "c"},
+			SetId:      "222",
+			SetOp:      "update-y2",
+			SetSize:    1,
+		},
+		{
+			EntityId:   id3.Hex(),
+			EntityType: entityType,
+			EntityRev:  int64(1),
+			Caller:     username,
+			Op:         "u",
+			Old:        &etre.Entity{"y": "b"},
+			New:        &etre.Entity{"y": "c"},
 			SetId:      "222",
 			SetOp:      "update-y2",
 			SetSize:    1,
@@ -511,7 +649,7 @@ func TestUpdateEntitiesDuplicate(t *testing.T) {
 	// Test that dupes are handled on update. There's a uniqe index on x.
 	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
 			gotEvents = append(gotEvents, e)
 			return nil
 		},
@@ -526,7 +664,7 @@ func TestUpdateEntitiesDuplicate(t *testing.T) {
 	patch := etre.Entity{"x": 6} // x=2 -> x=6 conflicts with 3rd test node
 	wo1 := entity.WriteOp{
 		EntityType: entityType,
-		User:       username,
+		Caller:     username,
 	}
 	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
 	if err == nil {
@@ -554,7 +692,7 @@ func TestUpdateEntitiesDuplicate(t *testing.T) {
 func TestDeleteEntities(t *testing.T) {
 	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
 			gotEvents = append(gotEvents, e)
 			return nil
 		},
@@ -588,7 +726,7 @@ func TestDeleteEntities(t *testing.T) {
 	}
 
 	for i := range gotEvents {
-		gotEvents[i].EventId = ""
+		gotEvents[i].Id = ""
 		gotEvents[i].Ts = 0
 	}
 	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
@@ -598,24 +736,24 @@ func TestDeleteEntities(t *testing.T) {
 		{
 			EntityId:   id1.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "d",
 			Old:        &testNodes[0],
 		},
 		{
 			EntityId:   id2.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "d",
 			Old:        &testNodes[1],
 		},
 		{
 			EntityId:   id3.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "d",
 			Old:        &testNodes[2],
 		},
@@ -632,7 +770,7 @@ func TestDeleteEntities(t *testing.T) {
 func TestDeleteLabel(t *testing.T) {
 	gotEvents := []etre.CDCEvent{}
 	cdcm := &mock.CDCStore{
-		WriteFunc: func(e etre.CDCEvent) error {
+		WriteFunc: func(ctx context.Context, e etre.CDCEvent) error {
 			gotEvents = append(gotEvents, e)
 			return nil
 		},
@@ -642,7 +780,7 @@ func TestDeleteLabel(t *testing.T) {
 	wo := entity.WriteOp{
 		EntityType: entityType,
 		EntityId:   testNodes[0]["_id"].(primitive.ObjectID).Hex(),
-		User:       username,
+		Caller:     username,
 	}
 	gotOld, err := store.DeleteLabel(wo, "foo")
 	if err != nil {
@@ -677,7 +815,7 @@ func TestDeleteLabel(t *testing.T) {
 	}
 
 	for i := range gotEvents {
-		gotEvents[i].EventId = ""
+		gotEvents[i].Id = ""
 		gotEvents[i].Ts = 0
 	}
 	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
@@ -685,8 +823,8 @@ func TestDeleteLabel(t *testing.T) {
 		{
 			EntityId:   id1.Hex(),
 			EntityType: entityType,
-			Rev:        int64(1),
-			User:       username,
+			EntityRev:  int64(1),
+			Caller:     username,
 			Op:         "u",
 			Old:        &expectOld,
 		},

@@ -1,72 +1,107 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 package query_test
 
 import (
-	"reflect"
-	"strings"
 	"testing"
+
+	"github.com/go-test/deep"
 
 	"github.com/square/etre/query"
 )
 
-func TestTranslateSingle(t *testing.T) {
-	expectedQuery := query.Query{
-		Predicates: []query.Predicate{
-			query.Predicate{
-				Label:    "foo",
-				Operator: "=",
-				Value:    "bar",
-			},
-		},
-	}
-
-	labelSelector := "foo=bar"
-	actualQuery, err := query.Translate(labelSelector)
-
-	if !reflect.DeepEqual(actualQuery, expectedQuery) {
-		t.Errorf("query = %v, expected %v", actualQuery, expectedQuery)
-	}
-	if err != nil {
-		t.Errorf("err = %s, expected nil", err)
-	}
+type test struct {
+	query        string
+	expect       query.Query
+	returnsError bool
 }
 
-func TestTranslateMultiple(t *testing.T) {
-	expectedQuery := query.Query{
-		Predicates: []query.Predicate{
-			query.Predicate{
-				Label:    "foo",
-				Operator: "=",
-				Value:    "bar",
-			},
-			query.Predicate{
-				Label:    "name",
-				Operator: "notin",
-				Value:    []string{"baz", "qux"},
+func TestQueryTranslate(t *testing.T) {
+	testCases := []test{
+		// Valid
+		// ------------------------------------------------------------------
+		{
+			query: "foo=bar",
+			expect: query.Query{
+				Predicates: []query.Predicate{
+					query.Predicate{
+						Label:    "foo",
+						Operator: "=",
+						Value:    "bar",
+					},
+				},
 			},
 		},
+		{
+			query: "_id=5ec543505c222dbd2ad74720",
+			expect: query.Query{
+				Predicates: []query.Predicate{
+					query.Predicate{
+						Label:    "_id",
+						Operator: "=",
+						Value:    "5ec543505c222dbd2ad74720",
+					},
+				},
+			},
+		},
+		{
+			query: "foo",
+			expect: query.Query{
+				Predicates: []query.Predicate{
+					query.Predicate{
+						Label:    "foo",
+						Operator: "exists",
+					},
+				},
+			},
+		},
+		{
+			query: "!foo",
+			expect: query.Query{
+				Predicates: []query.Predicate{
+					query.Predicate{
+						Label:    "foo",
+						Operator: "notexists",
+					},
+				},
+			},
+		},
+		{
+			query: "foo=bar, name notin (baz,qux)",
+			expect: query.Query{
+				Predicates: []query.Predicate{
+					query.Predicate{
+						Label:    "foo",
+						Operator: "=",
+						Value:    "bar",
+					},
+					query.Predicate{
+						Label:    "name",
+						Operator: "notin",
+						Value:    []string{"baz", "qux"},
+					},
+				},
+			},
+		},
+
+		// Invalid
+		// ------------------------------------------------------------------
+		{
+			query:        "foo=", // missing value
+			returnsError: true,
+		},
+		{
+			query:        "=val", // missing label
+			returnsError: true,
+		},
 	}
-
-	labelSelector := "foo=bar, name notin (baz,qux)"
-	actualQuery, err := query.Translate(labelSelector)
-
-	if !reflect.DeepEqual(actualQuery, expectedQuery) {
-		t.Errorf("query = %v, expected %v", actualQuery, expectedQuery)
-	}
-	if err != nil {
-		t.Errorf("err = %s, expected nil", err)
-	}
-}
-
-func TestTranslateError(t *testing.T) {
-	t.Skip("add more validation to ksl.Parse()")
-	labelSelector := "foo~~bar"
-	_, err := query.Translate(labelSelector)
-
-	expectedErrMsg := "unable to parse requirement"
-
-	if !strings.Contains(err.Error(), expectedErrMsg) {
-		t.Errorf("err = %s, expected to contain: %s", err, expectedErrMsg)
+	for _, tc := range testCases {
+		got, err := query.Translate(tc.query)
+		if tc.returnsError && err == nil {
+			t.Errorf("query '%s' should return an error but didn't", tc.query)
+		}
+		if diff := deep.Equal(got, tc.expect); diff != nil {
+			t.Errorf("query '%s': %v", tc.query, diff)
+		}
 	}
 }

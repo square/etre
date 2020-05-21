@@ -1,3 +1,5 @@
+// Copyright 2017-2020, Square, Inc.
+
 package changestream_test
 
 import (
@@ -6,10 +8,10 @@ import (
 
 var events1 = []etre.CDCEvent{
 	{
-		EventId:    "1",
+		Id:         "1",
 		EntityId:   "e1",
 		EntityType: "node",
-		Rev:        0,
+		EntityRev:  0,
 		Ts:         100,
 		Op:         "i",
 		New: &etre.Entity{
@@ -20,10 +22,10 @@ var events1 = []etre.CDCEvent{
 		},
 	},
 	{
-		EventId:    "2",
+		Id:         "2",
 		EntityId:   "e1",
 		EntityType: "node",
-		Rev:        1,
+		EntityRev:  1,
 		Ts:         200,
 		Op:         "u",
 		New: &etre.Entity{
@@ -34,10 +36,10 @@ var events1 = []etre.CDCEvent{
 		},
 	},
 	{
-		EventId:    "3",
+		Id:         "3",
 		EntityId:   "e1",
 		EntityType: "node",
-		Rev:        2,
+		EntityRev:  2,
 		Ts:         300,
 		Op:         "u",
 		New: &etre.Entity{
@@ -48,10 +50,10 @@ var events1 = []etre.CDCEvent{
 		},
 	},
 	{
-		EventId:    "4",
+		Id:         "4",
 		EntityId:   "e1",
 		EntityType: "node",
-		Rev:        3,
+		EntityRev:  3,
 		Ts:         400,
 		Op:         "d",
 		Old: &etre.Entity{

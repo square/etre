@@ -13,7 +13,7 @@ type ByRev []CDCEvent
 
 func (a ByRev) Len() int           { return len(a) }
 func (a ByRev) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByRev) Less(i, j int) bool { return a[i].Rev < a[j].Rev }
+func (a ByRev) Less(i, j int) bool { return a[i].EntityRev < a[j].EntityRev }
 
 const DEFAULT_MAX_ENTITIES = 1000
 
@@ -123,13 +123,13 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// First time we see entity, we assume its rev to be a safe starting point
 	if !seen {
 		Debug("add id: %s", e.EntityId)
-		r.lru.Add(e.EntityId, e.Rev)
+		r.lru.Add(e.EntityId, e.EntityRev)
 		return true, nil // sync event
 	}
 
 	// We've seen this entity before. Compare previous rev (qR) to current (rR)
 	qR := v.(int64)
-	rR := e.Rev
+	rR := e.EntityRev
 	Debug("id %s qR %d rR %d", e.EntityId, qR, rR)
 
 	// Are we reordering revs?
@@ -138,7 +138,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// The normal case: we're not reordering and this rev is exactly +1 of the
 	// previous rev. This should be the 99.99999% case.
 	if !reordering && rR == qR+1 {
-		r.lru.Add(e.EntityId, e.Rev)
+		r.lru.Add(e.EntityId, e.EntityRev)
 		return true, nil // sync event
 	}
 
@@ -196,7 +196,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 
 	// This is 2nd and subsequent out-of-order- rev. E.g. 3, and 4, if prev rev = 2
 	// and first out-of-order received was 5. Add to buffer and sort.
-	Debug("buffer rev %d", e.Rev)
+	Debug("buffer rev %d", e.EntityRev)
 	re.buf = append(re.buf, e)
 	sort.Sort(ByRev(re.buf))
 
@@ -204,8 +204,8 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// the buff +1 by +1. So if prev rev = 2, eventually we'll receive 3, 4, and 5,
 	// so 2+1 = 3, 3+1 = 4, 4+1 = 5 == complete rev sequence.
 	for i, b := range re.buf {
-		if b.Rev != re.qR+1+int64(i) {
-			Debug("reorder fails at %d: %d != %d", i, b.Rev, re.qR+1+int64(i))
+		if b.EntityRev != re.qR+1+int64(i) {
+			Debug("reorder fails at %d: %d != %d", i, b.EntityRev, re.qR+1+int64(i))
 			return false, nil // don't sync
 		}
 	}
@@ -213,7 +213,7 @@ func (r *RevOrder) InOrder(e CDCEvent) (bool, []CDCEvent) {
 	// Complete rev sequence. Return only the buf of previously out-of-order events,
 	// _not_ the current event--the caller already has that one.
 	buf := re.buf
-	qR = buf[len(buf)-1].Rev
+	qR = buf[len(buf)-1].EntityRev
 	r.lru.Add(e.EntityId, qR)
 	Debug("reorder complete: id %s (%d, %d]", e.EntityId, re.qR, qR)
 
@@ -236,7 +236,7 @@ func (r *RevOrder) onEvictedCallback(key lru.Key, value interface{}) {
 			" it is the oldest entity but still waiting to receive revisions"+
 			" > %d. Received revisions:", id, re.qR)
 		for _, b := range re.buf {
-			msg1 += fmt.Sprintf(" %d", b.Rev)
+			msg1 += fmt.Sprintf(" %d", b.EntityRev)
 		}
 		msg2 := fmt.Sprintf(". This is a rare edge case that indicates some revisions"+
 			" were not received or extremely delayed. Increasing maxEntities and replaying"+

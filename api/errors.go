@@ -42,12 +42,6 @@ var ErrInvalidQuery = etre.Error{
 	Message:    "invalid query",
 }
 
-var ErrDb = etre.Error{
-	Type:       "db-error",
-	HTTPStatus: http.StatusServiceUnavailable,
-	Message:    "unknown database error",
-}
-
 var ErrInternal = etre.Error{
 	Type:       "internal-error",
 	HTTPStatus: http.StatusInternalServerError,
@@ -61,7 +55,13 @@ var ErrCDCDisabled = etre.Error{
 }
 
 var ErrNoContent = etre.Error{
-	Message:    "no entities provided (PUT or POST with zero-length HTTP payload; ContentLength = 0)",
+	Message:    "no entities provided (PUT or POST with zero-length HTTP payload or JSON array)",
 	Type:       "no-content",
+	HTTPStatus: http.StatusBadRequest,
+}
+
+var ErrInvalidContent = etre.Error{
+	Message:    "HTTP payload is not valid JSON: []etre.Entity for POST or etre.Entity for PUT",
+	Type:       "invalid-content",
 	HTTPStatus: http.StatusBadRequest,
 }

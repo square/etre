@@ -1,4 +1,4 @@
-// Copyright 2018-2019, Square, Inc.
+// Copyright 2018-2020, Square, Inc.
 
 package server
 
@@ -48,7 +48,7 @@ func (s *Server) Boot(configFile string) error {
 		return fmt.Errorf("cannot load config: %s", err)
 	}
 	if err := config.Validate(cfg); err != nil {
-		return fmt.Errorf("invalid config: %s")
+		return fmt.Errorf("invalid config: %s", err)
 	}
 	s.appCtx.Config = cfg
 	log.Printf("Config: %+v", s.appCtx.Config)
@@ -80,7 +80,10 @@ func (s *Server) Boot(configFile string) error {
 			BufferSize:    cfg.CDC.ChangeStream.BufferSize,
 		})
 
-		s.appCtx.ChangesClientFactory = changestream.NewClientFactory(s.appCtx.ChangesServer, s.appCtx.CDCStore)
+		s.appCtx.StreamerFactory = changestream.ServerStreamFactory{
+			Server: s.appCtx.ChangesServer,
+			Store:  s.appCtx.CDCStore,
+		}
 	}
 
 	// //////////////////////////////////////////////////////////////////////
@@ -101,7 +104,7 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	// Auth
 	// //////////////////////////////////////////////////////////////////////
-	acls, err := MapConfigACLRoles(cfg.ACL.Roles)
+	acls, err := MapConfigACLRoles(cfg.Security.ACL)
 	if err != nil {
 		return fmt.Errorf("invalid ACL role: %s", err)
 	}
@@ -165,8 +168,11 @@ DB_CONN_WAIT:
 	notifyTimeout.Stop()
 
 	go func() {
-		if err := s.appCtx.ChangesServer.Run(); err != nil {
-			log.Fatalf("Change stream server error: %s", err)
+		for {
+			if err := s.appCtx.ChangesServer.Run(); err != nil {
+				log.Printf("ERROR: change stream server: %s", err)
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
@@ -233,7 +239,7 @@ func MapConfigACLRoles(aclRoles []config.ACL) ([]auth.ACL, error) {
 	acls := make([]auth.ACL, len(aclRoles))
 	for i, acl := range aclRoles {
 		acls[i] = auth.ACL{
-			Role:              acl.Name,
+			Role:              acl.Role,
 			Admin:             acl.Admin,
 			Read:              acl.Read,
 			Write:             acl.Write,

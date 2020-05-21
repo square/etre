@@ -1,7 +1,6 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
-// Package kls provides a light-weight parser for Kubernetes label selectors.
-package kls
+package query
 
 import (
 	"fmt"
@@ -21,9 +20,9 @@ type Requirement struct {
 const (
 	state_space byte = iota
 	state_label
-	state_op
-	state_eq_op
-	state_set_op
+	state_op        // op -> state_symbol_op || state_set_op
+	state_symbol_op // =, !, <, >
+	state_set_op    // in, notin
 	state_value
 )
 
@@ -31,22 +30,47 @@ var stateName = map[byte]string{
 	0: "space",
 	1: "label",
 	2: "op",
-	3: "eq_op",
+	3: "symbol_op",
 	4: "set_op",
 	5: "value",
 }
 
-// All ops end with =. Technically, only = and == are equality, but
-// we call them all "equality" for convenience.
-var eqOp = map[rune]bool{
-	'=': true, // =, ==
-	'!': true, // !=
-	'>': true, // >, >=
-	'<': true, // <, <=
+// IsOp returns true if the rune is an operator character.
+func IsOp(r rune) bool {
+	// This used to be a map[run]bool, but this func is 10x faster:
+	//   BenchmarkHash-8   	166499444	         7.23 ns/op
+	//   BenchmarkFunc-8   	1000000000	         0.502 ns/op
+	return r == '=' || r == '!' || r == '>' || r == '<'
+}
+
+// IsInvalidLabelChar returns true if the character is invalid for a label.
+func IsInvalidLabelChar(r rune) bool {
+	// Implicitly want these:
+	//   @username
+	//   #channel
+	//   $cashTag
+	//   -flag
+	//   _metalabel
+	//   /directory
+	//
+	// Explicitly do not want these:
+	//
+	return IsOp(r) || // cannot be operator
+		r == '%' || // HTML escape: "%20"
+		r == '&' || // HTML param: "?a=b&foo=bar"
+		r == '?' || // HTML query: "?foo=bar"
+		r == '(' || // avoid confusion with [not]in()
+		r == ')' || // avoid confusion with [not]in()
+		r == '^' || // reserved for OR operator
+		r == '+' || // reserved for addition (es --update entity cnt+=1)
+		r == '~' || // reserved for pattern match (es entity cnt=~foo)
+		r == '\\' || // escape char
+		r == '*' // reserved for wildcard
 }
 
 var Debug = false
 
+// Parse parses	a Kubernetes Label Selector sttring.
 func Parse(selector string) ([]Requirement, error) {
 	if selector == "" {
 		return []Requirement{}, nil
@@ -111,6 +135,9 @@ func Parse(selector string) ([]Requirement, error) {
 						if Debug {
 							fmt.Printf("first char of label at %d\n", right)
 						}
+						if IsInvalidLabelChar(cur) {
+							return nil, fmt.Errorf("'%s': invalid label first character: %s", selector, string(cur))
+						}
 						left = right // 1st char of label
 					} else {
 						// Label begins with not-exists op: "!foo"
@@ -124,8 +151,8 @@ func Parse(selector string) ([]Requirement, error) {
 					}
 				case state_op:
 					left = right // 1st char of op
-					if eqOp[cur] {
-						state = state_eq_op
+					if IsOp(cur) {
+						state = state_symbol_op
 					} else {
 						state = state_set_op
 					}
@@ -140,22 +167,25 @@ func Parse(selector string) ([]Requirement, error) {
 					break PARSE_LOOP
 				}
 			case state_label:
-				// Label ends on op char or space
-				if !isSpace(cur) && !eqOp[cur] {
-					continue // more chars in label
+				// Label char if not space or operator
+				if !isSpace(cur) && !IsOp(cur) {
+					if IsInvalidLabelChar(cur) {
+						return nil, fmt.Errorf("%s: invalid label character: %s", selector, string(cur))
+					}
+					continue // more label chars
 				}
 				req.Label = selector[left:right] // label ends
-				if eqOp[cur] {
+				if IsOp(cur) {
 					// No space between label and op: "foo=bar"
 					if req.Op != "" {
 						return nil, fmt.Errorf("already have op: %s", req.Op)
 					}
 					if Debug {
-						fmt.Printf("state change 2: %s -> %s\n", stateName[state], stateName[state_eq_op])
+						fmt.Printf("state change 2: %s -> %s\n", stateName[state], stateName[state_symbol_op])
 						fmt.Printf("first char of op at %d (2)\n", right)
 					}
-					state = state_eq_op // state change
-					left = right        // 1st char of op
+					state = state_symbol_op // state change
+					left = right            // 1st char of op
 				} else {
 					// Space between label and op: "foo = bar"
 					if Debug {
@@ -164,14 +194,14 @@ func Parse(selector string) ([]Requirement, error) {
 					state = state_space // state change
 					next = state_op
 				}
-			case state_set_op, state_eq_op:
+			case state_set_op, state_symbol_op:
 				switch state {
 				case state_set_op:
 					// Set op ends on ( or space
 					if !isSpace(cur) && cur != '(' {
 						continue // more chars in op
 					}
-				case state_eq_op:
+				case state_symbol_op:
 					// Set op ends on space or non-op char
 					if !isSpace(cur) && cur == '=' {
 						continue // more chars in op
@@ -183,7 +213,10 @@ func Parse(selector string) ([]Requirement, error) {
 						fmt.Printf("value from '%s' at %d (2)\n", string(cur), right)
 					}
 					if cur == '(' && (req.Op != "in" && req.Op != "notin") {
-						return nil, fmt.Errorf("not not( and notin(")
+						return nil, fmt.Errorf("'(' is not valid after '%s' operator, only valid after 'not' or 'notin' operator", string(cur))
+					}
+					if req.Op == "!" {
+						return nil, fmt.Errorf("%s: invalid not-equal operator: missing '=' after '!'", selector)
 					}
 					left = right
 					state = state_value // state change
@@ -205,7 +238,7 @@ func Parse(selector string) ([]Requirement, error) {
 			if req.Op == "" {
 				req.Op = "exists"
 			}
-		case state_op, state_eq_op, state_set_op:
+		case state_op, state_symbol_op, state_set_op:
 			return nil, fmt.Errorf("stopped parsing in %s", stateName[state])
 		case state_value:
 			if req.Label == "" || req.Op == "" {
@@ -224,7 +257,7 @@ func Parse(selector string) ([]Requirement, error) {
 			return nil, fmt.Errorf("stopped parsing in %s", stateName[state])
 		}
 
-		if eqOp[rune(req.Op[0])] {
+		if IsOp(rune(req.Op[0])) {
 			req.Values = []string{req.val}
 		} else if req.Op == "in" || req.Op == "notin" {
 			if len(req.val) < 3 {
@@ -232,7 +265,7 @@ func Parse(selector string) ([]Requirement, error) {
 			}
 			req.Values = strings.Split(req.val[1:len(req.val)-1], ",")
 		} else if req.Op == "exists" || req.Op == "notexists" {
-			req.Values = nil
+			// No values
 		} else {
 			return nil, fmt.Errorf("invalid op: %s", req.Op)
 		}

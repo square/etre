@@ -5,6 +5,7 @@ package changestream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 var (
 	ErrNoMoreClients   = errors.New("max clients reached, no more clients allowed")
 	ErrDuplicateClient = errors.New("Watch called with duplicate clientId")
+	ErrAlreadyRunning  = errors.New("already running")
 )
 
 type Server interface {
@@ -42,6 +44,7 @@ type MongoDBServer struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	doneChan chan struct{}
+	running  bool
 }
 
 type client struct {
@@ -51,22 +54,24 @@ type client struct {
 
 func NewMongoDBServer(cfg ServerConfig) *MongoDBServer {
 	s := &MongoDBServer{
-		cfg:      cfg,
-		Mutex:    &sync.Mutex{},
-		clients:  map[string]client{},
-		doneChan: make(chan struct{}),
+		cfg:     cfg,
+		Mutex:   &sync.Mutex{},
+		clients: map[string]client{},
 	}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	return s
 }
 
 func (s *MongoDBServer) Watch(clientId string) (<-chan etre.CDCEvent, error) {
+	etre.Debug("Watched called: client %s", clientId)
 	s.Lock()
 	defer s.Unlock()
 	if len(s.clients)+1 > int(s.cfg.MaxClients) {
+		etre.Debug("no more clients: %d + 1 > %d", len(s.clients), int(s.cfg.MaxClients))
 		return nil, ErrNoMoreClients
 	}
 	if _, ok := s.clients[clientId]; ok {
+		etre.Debug("duplicate client %s", clientId)
 		return nil, ErrDuplicateClient
 	}
 	c := make(chan etre.CDCEvent, s.cfg.BufferSize)
@@ -101,16 +106,33 @@ type rawCDCEvent struct {
 func (s *MongoDBServer) Run() error {
 	etre.Debug("Run call")
 	defer etre.Debug("Run return")
-	defer close(s.doneChan)
 
+	s.Lock()
+	if s.running {
+		s.Unlock()
+		return ErrAlreadyRunning
+	}
+	s.doneChan = make(chan struct{})
+	s.running = true
+	s.Unlock()
+
+	defer func() {
+		s.Lock()
+		s.running = false
+		close(s.doneChan)
+		s.Unlock()
+	}()
+
+	etre.Debug("starting MongoDB change stream...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	matchStage := bson.D{{"$match", bson.D{{"operationType", "insert"}}}}
 	stream, err := s.cfg.CDCCollection.Watch(ctx, mongo.Pipeline{matchStage})
 	cancel()
 	if err != nil {
-		return err
+		return fmt.Errorf("error starting MongoDB change stream: %s", err)
 	}
 	s.stream = stream
+	etre.Debug("started MongoDB change stream")
 
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -123,6 +145,7 @@ func (s *MongoDBServer) Run() error {
 		if err := stream.Decode(&e); err != nil {
 			return err
 		}
+		etre.Debug("cdc event: %+v", e.EtreCDCEvent)
 		s.Lock()
 		for clientId, c := range s.clients {
 			select {
@@ -150,6 +173,12 @@ func (s *MongoDBServer) Run() error {
 func (s *MongoDBServer) Stop() {
 	etre.Debug("Stop call")
 	defer etre.Debug("Stop return")
+	s.Lock()
+	running := s.running
+	s.Unlock()
+	if !running {
+		return
+	}
 	s.cancel()
 	<-s.doneChan
 }

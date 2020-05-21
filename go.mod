@@ -3,18 +3,23 @@ module github.com/square/etre
 go 1.13
 
 require (
-	github.com/alexflint/go-arg v1.0.1-0.20181227200040-57836b82be06
+	github.com/alexflint/go-arg v1.3.0
 	github.com/daniel-nichter/go-metrics v1.0.0
 	github.com/go-test/deep v1.0.5
-	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef
-	github.com/gorilla/websocket v1.2.0
+	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
+	github.com/google/go-cmp v0.4.0 // indirect
+	github.com/gorilla/websocket v1.4.2
 	github.com/labstack/echo v3.3.10+incompatible
-	github.com/labstack/gommon v0.2.2-0.20180613044413-d6898124de91 // indirect
-	github.com/mattn/go-colorable v0.0.9 // indirect
-	github.com/mattn/go-isatty v0.0.3 // indirect
-	github.com/rs/xid v1.2.1
-	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasttemplate v0.0.0-20170224212429-dcecefd839c4 // indirect
-	go.mongodb.org/mongo-driver v1.3.0
-	gopkg.in/yaml.v2 v2.2.4
+	github.com/labstack/gommon v0.3.0 // indirect
+	github.com/mattn/go-colorable v0.1.4 // indirect
+	github.com/mattn/go-isatty v0.0.11 // indirect
+	github.com/valyala/fasttemplate v1.1.0 // indirect
+	github.com/xdg/stringprep v1.0.0 // indirect
+	go.mongodb.org/mongo-driver v1.3.3
+	golang.org/x/crypto v0.0.0-20191227163750-53104e6ec876 // indirect
+	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553 // indirect
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
+	golang.org/x/sys v0.0.0-20191228213918-04cbcbbfeed8 // indirect
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
+	gopkg.in/yaml.v2 v2.2.8
 )

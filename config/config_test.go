@@ -1,3 +1,5 @@
+// Copyright 2017-2020, Square, Inc.
+
 package config_test
 
 import (

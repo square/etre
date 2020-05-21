@@ -50,6 +50,19 @@ type Streamer interface {
 	Error() error
 }
 
+type StreamerFactory interface {
+	Make(clientId string) Streamer
+}
+
+type ServerStreamFactory struct {
+	Server Server
+	Store  cdc.Store
+}
+
+func (f ServerStreamFactory) Make(clientId string) Streamer {
+	return NewServerStream(clientId, f.Server, f.Store)
+}
+
 type Status struct {
 	ClientId           string
 	Running            bool
@@ -61,9 +74,9 @@ type Status struct {
 	ServerClosedStream bool
 }
 
-var _ Streamer = &ServerStreamer{}
+var _ Streamer = &ServerStream{}
 
-type ServerStreamer struct {
+type ServerStream struct {
 	clientId string
 	server   Server
 	store    cdc.Store
@@ -87,8 +100,8 @@ type ServerStreamer struct {
 
 // newStreamer creates a streamer that uses the provided Poller and Store
 // to stream events. feedId is the id of the feed that created it.
-func NewServerStreamer(clientId string, server Server, store cdc.Store) *ServerStreamer {
-	return &ServerStreamer{
+func NewServerStream(clientId string, server Server, store cdc.Store) *ServerStream {
+	return &ServerStream{
 		clientId:     clientId,
 		server:       server,
 		store:        store,
@@ -103,16 +116,16 @@ func NewServerStreamer(clientId string, server Server, store cdc.Store) *ServerS
 	}
 }
 
-func (s *ServerStreamer) Start(sinceTs int64) <-chan etre.CDCEvent {
+func (s *ServerStream) Start(sinceTs int64) <-chan etre.CDCEvent {
 	s.runMux.Lock()
 	defer s.runMux.Unlock()
 
 	if s.status.Running {
-		panic("ServerStreamer.Start called twice")
+		panic("ServerStream.Start called twice")
 	}
 	select {
 	case <-s.stopChan:
-		panic("ServerStreamer.Start called after Stop")
+		panic("ServerStream.Start called after Stop")
 	default:
 	}
 
@@ -122,7 +135,7 @@ func (s *ServerStreamer) Start(sinceTs int64) <-chan etre.CDCEvent {
 				etre.Debug("PANIC: stream: %v", r)
 				s.runMux.Lock()
 				// @todo stack trace
-				s.err = fmt.Errorf("ServerStreamer.stream panic: %v", r)
+				s.err = fmt.Errorf("ServerStream.stream panic: %v", r)
 				s.runMux.Unlock()
 			}
 			s.Stop()
@@ -140,7 +153,7 @@ func (s *ServerStreamer) Start(sinceTs int64) <-chan etre.CDCEvent {
 	return s.toClientChan
 }
 
-func (s *ServerStreamer) Stop() {
+func (s *ServerStream) Stop() {
 	etre.Debug("Stop call")
 	defer etre.Debug("Stop return")
 	s.runMux.Lock()
@@ -156,21 +169,41 @@ func (s *ServerStreamer) Stop() {
 	close(s.toClientChan) // signal client to stop
 }
 
-func (s *ServerStreamer) Error() error {
+func (s *ServerStream) Error() error {
 	s.runMux.Lock()
 	defer s.runMux.Unlock()
 	return s.err
 }
 
-func (s *ServerStreamer) Status() Status {
+func (s *ServerStream) Status() Status {
 	etre.Debug("Status call")
 	defer etre.Debug("Status return")
+
 	s.runMux.Lock()
 	defer s.runMux.Unlock()
-	return s.status
+
+	// Copy BufferUsage because it's a slice, so if we return s.status the caller
+	// will have the same slice which creates a race condition
+	var buf []int
+	if s.status.BufferUsage != nil {
+		buf = make([]int, len(s.status.BufferUsage))
+		copy(buf, s.status.BufferUsage)
+	}
+
+	status := Status{
+		ClientId:           s.status.ClientId,
+		Running:            s.status.Running,
+		InSync:             s.status.InSync,
+		SyncMethod:         s.status.SyncMethod,
+		Since:              s.status.Since,
+		BacklogState:       s.status.BacklogState,
+		BufferUsage:        buf,
+		ServerClosedStream: s.status.ServerClosedStream,
+	}
+	return status
 }
 
-func (s *ServerStreamer) InSync() chan struct{} {
+func (s *ServerStream) InSync() chan struct{} {
 	etre.Debug("InSync call")
 	defer etre.Debug("InSync return")
 	return s.syncChan
@@ -178,7 +211,7 @@ func (s *ServerStreamer) InSync() chan struct{} {
 
 // --------------------------------------------------------------------------
 
-func (s *ServerStreamer) stream(sinceTs int64) error {
+func (s *ServerStream) stream(sinceTs int64) error {
 	etre.Debug("stream call")
 	defer etre.Debug("stream return")
 	defer s.wg.Done()
@@ -227,7 +260,7 @@ func (s *ServerStreamer) stream(sinceTs int64) error {
 	}
 }
 
-func (s *ServerStreamer) backlog(sinceTs int64, serverStreamChan <-chan etre.CDCEvent) error {
+func (s *ServerStream) backlog(sinceTs int64, serverStreamChan <-chan etre.CDCEvent) error {
 	etre.Debug("backlog call")
 	defer etre.Debug("backlog return")
 	defer s.wg.Done()
@@ -246,7 +279,7 @@ func (s *ServerStreamer) backlog(sinceTs int64, serverStreamChan <-chan etre.CDC
 		defer func() {
 			if r := recover(); r != nil {
 				etre.Debug("PANIC: bufferCurrentEvents: %v", r)
-				buffErrChan <- fmt.Errorf("ServerStreamer.bufferCurrentEvents panic: %v", r)
+				buffErrChan <- fmt.Errorf("ServerStream.bufferCurrentEvents panic: %v", r)
 			}
 		}()
 		buffErrChan <- s.bufferCurrentEvents(serverStreamChan, backlogDoneChan)
@@ -289,7 +322,7 @@ func (s *ServerStreamer) backlog(sinceTs int64, serverStreamChan <-chan etre.CDC
 	return nil
 }
 
-func (s *ServerStreamer) bufferCurrentEvents(serverStreamChan <-chan etre.CDCEvent, backlogDoneChan chan struct{}) error {
+func (s *ServerStream) bufferCurrentEvents(serverStreamChan <-chan etre.CDCEvent, backlogDoneChan chan struct{}) error {
 	etre.Debug("bufferCurrentEvents call")
 	defer etre.Debug("bufferCurrentEvents return")
 	defer s.wg.Done()
@@ -324,7 +357,7 @@ func (s *ServerStreamer) bufferCurrentEvents(serverStreamChan <-chan etre.CDCEve
 	return ErrBufferTooSmall
 }
 
-func (s *ServerStreamer) streamBacklog(sinceTs int64, backlogDoneChan chan struct{}) error {
+func (s *ServerStream) streamBacklog(sinceTs int64, backlogDoneChan chan struct{}) error {
 	etre.Debug("streamBacklog call")
 	defer etre.Debug("streamBacklog return")
 	defer s.wg.Done()
@@ -372,7 +405,7 @@ func (s *ServerStreamer) streamBacklog(sinceTs int64, backlogDoneChan chan struc
 // event is saved and sent later once revorder receives the other out-of-order
 // event. This means a single call to sendToClient can send zero or more events.
 // If the streamer is stopped, the event is not sent and ErrStopped is returned.
-func (s *ServerStreamer) sendToClient(e etre.CDCEvent) error {
+func (s *ServerStream) sendToClient(e etre.CDCEvent) error {
 	inOrder, prevEvents := s.revorder.InOrder(e)
 
 	// inOrder is false when this e is not rev+1 of its previous rev.
@@ -403,7 +436,7 @@ func (s *ServerStreamer) sendToClient(e etre.CDCEvent) error {
 // send actually sends the event to the client, unless the streamer is stopped.
 // Do not call this fucntion directly; always call sendToClient to ensure proper
 // event ordering.
-func (s *ServerStreamer) send(e etre.CDCEvent) error {
+func (s *ServerStream) send(e etre.CDCEvent) error {
 	// Don't send if already stopped
 	select {
 	case <-s.stopChan:

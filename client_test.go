@@ -1,3 +1,5 @@
+// Copyright 2017-2020, Square, Inc.
+
 package etre_test
 
 import (
@@ -312,8 +314,8 @@ func TestInsertOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 			},
 		},
 	}
@@ -517,8 +519,8 @@ func TestUpdateOneOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -559,8 +561,8 @@ func TestDeleteOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -602,8 +604,8 @@ func TestDeleteWithSet(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -656,8 +658,8 @@ func TestDeleteOneOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -690,8 +692,8 @@ func TestDeleteOneWithSet(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -762,8 +764,8 @@ func TestDeleteLabelOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -887,12 +889,12 @@ func TestCDCClient(t *testing.T) {
 	// First, let's send the client a CDC event and make sure it sends via the
 	// events chan it returned from Start()
 	sentEvent := etre.CDCEvent{
-		EventId:    "xyz",
+		Id:         "xyz",
+		Ts:         1001,
+		Op:         "i", // insert
+		Caller:     "ryan",
 		EntityId:   "abc",
 		EntityType: "node",
-		Ts:         1001,
-		User:       "ryan",
-		Op:         "i", // insert
 		Old:        nil,
 		New: &etre.Entity{
 			"_id": "abc",

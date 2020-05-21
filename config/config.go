@@ -16,10 +16,10 @@ const (
 	DEFAULT_DATASOURCE_URL                 = "mongodb://localhost:27017"
 	DEFAULT_DB                             = "etre_dev"
 	DEFAULT_DB_CONNECT_TIMEOUT             = "5s"
-	DEFAULT_DB_QUERY_TIMEOUT               = "5s"
-	DEFAULT_DB_MAX_CONN                    = 500
-	DEFAULT_CDC_COLLECTION                 = "" // disabled
-	DEFAULT_CDC_WRITE_RETRY_COUNT          = 3
+	DEFAULT_DB_QUERY_TIMEOUT               = "2s"
+	DEFAULT_DB_MIN_CONN                    = 10
+	DEFAULT_DB_MAX_CONN                    = 1000
+	DEFAULT_CDC_WRITE_RETRY_COUNT          = 2
 	DEFAULT_CDC_WRITE_RETRY_WAIT           = 2
 	DEFAULT_CDC_FALLBACK_FILE              = "/tmp/etre-cdc.json"
 	DEFAULT_CHANGESTREAM_BUFFER_SIZE       = 100
@@ -32,7 +32,7 @@ const (
 
 const CDC_COLLECTION = "cdc"
 
-var reservedNames = []string{"entity", "entities", "cdc"}
+var reservedNames = []string{"entity", "entities", "cdc", "etre"}
 
 func Default() Config {
 	return Config{
@@ -47,6 +47,7 @@ func Default() Config {
 			Database:       DEFAULT_DB,
 			ConnectTimeout: DEFAULT_DB_CONNECT_TIMEOUT,
 			QueryTimeout:   DEFAULT_DB_QUERY_TIMEOUT,
+			MinConnections: DEFAULT_DB_MIN_CONN,
 			MaxConnections: DEFAULT_DB_MAX_CONN,
 		},
 		CDC: CDCConfig{
@@ -59,7 +60,7 @@ func Default() Config {
 				BufferSize: DEFAULT_CHANGESTREAM_BUFFER_SIZE,
 			},
 		},
-		ACL: ACLConfig{},
+		Security: SecurityConfig{},
 		Metrics: MetricsConfig{
 			QueryLatencySLA:             DEFAULT_QUERY_LATENCY_SLA,
 			QueryProfileSampleRate:      DEFAULT_QUERY_PROFILE_SAMPLE_RATE,
@@ -107,7 +108,7 @@ type Config struct {
 	Datasource DatasourceConfig `yaml:"datasource"`
 	Entity     EntityConfig     `yaml:"entity"`
 	CDC        CDCConfig        `yaml:"cdc"`
-	ACL        ACLConfig        `yaml:"acl"`
+	Security   SecurityConfig   `yaml: "security"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
 }
 
@@ -116,6 +117,7 @@ type DatasourceConfig struct {
 	Database       string `yaml:"database"`
 	ConnectTimeout string `yaml:"connect_timeout"`
 	QueryTimeout   string `yaml:"query_timeout"`
+	MinConnections uint64 `yaml:"min_connections"`
 	MaxConnections uint64 `yaml:"max_connections"`
 
 	// Certs
@@ -142,6 +144,9 @@ func (c DatasourceConfig) WithDefaults(d DatasourceConfig) DatasourceConfig {
 	}
 	if c.QueryTimeout == "" {
 		c.QueryTimeout = d.QueryTimeout
+	}
+	if c.MinConnections == 0 {
+		c.MinConnections = d.MinConnections
 	}
 	if c.MaxConnections == 0 {
 		c.MaxConnections = d.MaxConnections
@@ -213,12 +218,12 @@ type ServerConfig struct {
 	DefaultClientVersion string `yaml:"default_client_version"`
 }
 
-type ACLConfig struct {
-	Roles []ACL `yaml:"roles"`
+type SecurityConfig struct {
+	ACL []ACL `yaml:"acl"`
 }
 
 type ACL struct {
-	Name              string   `yaml:"name"`
+	Role              string   `yaml:"role"`
 	Admin             bool     `yaml:"admin"`
 	Read              []string `yaml:"read"`
 	Write             []string `yaml:"write"`

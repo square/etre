@@ -1,3 +1,5 @@
+// Copyright 2020, Square, Inc.
+
 package changestream_test
 
 import (
@@ -47,6 +49,7 @@ func setup(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestServer(t *testing.T) {
+	//etre.DebugEnabled = true
 	setup(t)
 
 	server := changestream.NewMongoDBServer(changestream.ServerConfig{
@@ -56,15 +59,17 @@ func TestServer(t *testing.T) {
 	})
 	go server.Run()
 	defer server.Stop()
+	time.Sleep(200 * time.Millisecond) // given server.Run() a moment to start
 
 	stream, err := server.Watch("c1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := store.Write(events1[0]); err != nil {
+	if err := store.Write(context.TODO(), events1[0]); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(100 * time.Millisecond)
 
 	var gotEvent etre.CDCEvent
 	select {
@@ -95,19 +100,22 @@ func TestServerClientBlock(t *testing.T) {
 	})
 	go server.Run()
 	defer server.Stop()
+	time.Sleep(200 * time.Millisecond) // given server.Run() a moment to start
 
 	stream, err := server.Watch("c1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := store.Write(events1[0]); err != nil {
+	if err := store.Write(context.TODO(), events1[0]); err != nil {
 		t.Fatal(err)
 	}
 
 	time.Sleep(300 * time.Millisecond)
 	select {
 	case <-stream:
+	case <-time.After(1 * time.Second):
+		t.Error("client channel not closed by server after blocking (timeout)")
 	default:
 		t.Error("client channel not closed by server after blocking")
 	}
@@ -122,6 +130,7 @@ func TestServerStop(t *testing.T) {
 		BufferSize:    0,
 	})
 	go server.Run()
+	time.Sleep(200 * time.Millisecond) // given server.Run() a moment to start
 
 	stream, err := server.Watch("c1")
 	if err != nil {

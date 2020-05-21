@@ -36,7 +36,7 @@ type server struct {
 	*sync.Mutex
 	ts            *httptest.Server
 	url           string
-	Client        changestream.Client
+	Client        *changestream.WebsocketClient
 	clientRunning chan struct{}
 	doneChan      chan struct{}
 	err           error
@@ -45,7 +45,7 @@ type server struct {
 var clientNo int
 
 func setupClient(t *testing.T, streamer changestream.Streamer) *server {
-	etre.DebugEnabled = true
+	//etre.DebugEnabled = true
 	server := &server{
 		Mutex:         &sync.Mutex{},
 		doneChan:      make(chan struct{}),
@@ -89,7 +89,7 @@ func setupClient(t *testing.T, streamer changestream.Streamer) *server {
 func TestClientWebsocketPingFromClient(t *testing.T) {
 	// Test client -> server ping control message. HTTP clients should ping
 	// the server (Etre) periodically.
-	server := setupClient(t, mock.Streamer{})
+	server := setupClient(t, mock.Stream{})
 	defer server.ts.Close()
 
 	// Connect to server.ts/wsHandler
@@ -130,7 +130,7 @@ func TestClientWebsocketPingToClient(t *testing.T) {
 	// Test server -> client ping. Client (this test) should respond with "pong",
 	// and Client (code under test) should log the latency.
 	// the server (Etre) periodically.
-	server := setupClient(t, mock.Streamer{})
+	server := setupClient(t, mock.Stream{})
 	defer server.ts.Close()
 
 	// Connect to server.ts/wsHandler
@@ -194,7 +194,7 @@ func TestClientStreamer(t *testing.T) {
 	// Test that client starts getting CDC events after sending "start" control message,
 	// which makes the server-side Client start its Streamer
 	eventsChan := make(chan etre.CDCEvent, 1)
-	streamer := mock.Streamer{
+	streamer := mock.Stream{
 		StartFunc: func(sinceTs int64) <-chan etre.CDCEvent {
 			return eventsChan
 		},
@@ -232,12 +232,12 @@ func TestClientStreamer(t *testing.T) {
 		}
 	}
 
-	// Send some events via mock Streamer which should flow through the Client
+	// Send some events via mock.Stream which should flow through the Client
 	// and to the HTTP client
 	events := []etre.CDCEvent{
-		etre.CDCEvent{EventId: "abc", Ts: 2}, // these timestamps have to be greater than startTs
-		etre.CDCEvent{EventId: "def", Ts: 3},
-		etre.CDCEvent{EventId: "ghi", Ts: 4},
+		etre.CDCEvent{Id: "abc", Ts: 2}, // these timestamps have to be greater than startTs
+		etre.CDCEvent{Id: "def", Ts: 3},
+		etre.CDCEvent{Id: "ghi", Ts: 4},
 	}
 	for _, event := range events {
 		eventsChan <- event // when Client called Streamer.Start(), it got this chan
@@ -283,7 +283,7 @@ func TestClientStreamer(t *testing.T) {
 func TestClientInvalidMessageType(t *testing.T) {
 	// Test that client returns an error control message if given an invalid message
 	eventsChan := make(chan etre.CDCEvent, 1)
-	streamer := mock.Streamer{
+	streamer := mock.Stream{
 		StartFunc: func(sinceTs int64) <-chan etre.CDCEvent {
 			return eventsChan
 		},
@@ -318,7 +318,7 @@ func TestClientInvalidMessageContent(t *testing.T) {
 	// Test that client returns error control message if given a valid message
 	// struct that doesn't have "control"
 	eventsChan := make(chan etre.CDCEvent, 1)
-	streamer := mock.Streamer{
+	streamer := mock.Stream{
 		StartFunc: func(sinceTs int64) <-chan etre.CDCEvent {
 			return eventsChan
 		},
@@ -354,7 +354,7 @@ func TestClientInvalidMessageContent(t *testing.T) {
 func TestClientClose(t *testing.T) {
 	// Test that Client stops nicely if the websocket client goes away unexpectedly.
 	eventsChan := make(chan etre.CDCEvent, 1)
-	streamer := mock.Streamer{
+	streamer := mock.Stream{
 		StartFunc: func(sinceTs int64) <-chan etre.CDCEvent {
 			return eventsChan
 		},
