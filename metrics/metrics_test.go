@@ -47,6 +47,7 @@ func TestEntityMetrics(t *testing.T) {
 	em.Inc(metrics.Created, 118)
 	em.Inc(metrics.Updated, 119)
 	em.Inc(metrics.Deleted, 120)
+	em.Inc(metrics.QueryTimeout, 130)
 
 	em.IncLabel(metrics.LabelRead, "lr")
 	em.IncLabel(metrics.LabelUpdate, "lu")
@@ -139,6 +140,7 @@ func TestEntityMetrics(t *testing.T) {
 							Created:        118,
 							Updated:        119,
 							Deleted:        120,
+							QueryTimeout:   130,
 						},
 						Label: map[string]*etre.MetricsLabelReport{
 							"lr": &etre.MetricsLabelReport{

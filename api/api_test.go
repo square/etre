@@ -3,11 +3,13 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/go-test/deep"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -19,6 +21,7 @@ import (
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
+	"github.com/square/etre/query"
 	srv "github.com/square/etre/server"
 	"github.com/square/etre/test"
 	"github.com/square/etre/test/mock"
@@ -67,6 +70,9 @@ var testEntitiesWithObjectIDs = []etre.Entity{
 var defaultConfig = config.Config{
 	Server: config.ServerConfig{
 		Addr: addr,
+	},
+	Datasource: config.DatasourceConfig{
+		QueryTimeout: config.DEFAULT_DB_QUERY_TIMEOUT,
 	},
 }
 
@@ -206,5 +212,71 @@ func TestValidateEntityType(t *testing.T) {
 		t.Logf("   got: %+v", server.metricsrec.Called)
 		t.Logf("expect: %+v", expectMetrics)
 		t.Error(diffs)
+	}
+}
+
+func TestClientQueryTimeout(t *testing.T) {
+	// Test client header X-Etre-Query-Timeout (etre.QUERY_TIMEOUT_HEADER) is
+	// used in lieu of the server default (config.datasource.query_timeout)
+	// and plumbed all the way down to the entity.Store context
+	var gotCtx context.Context
+	store := mock.EntityStore{}
+	store.WithContextFunc = func(ctx context.Context) entity.Store {
+		gotCtx = ctx
+		return store
+	}
+	store.ReadEntitiesFunc = func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		return testEntitiesWithObjectIDs[0:1], nil
+	}
+	server := setup(t, defaultConfig, store)
+	defer server.ts.Close()
+
+	// ----------------------------------------------------------------------
+	// Default server value: config.DEFAULT_DB_QUERY_TIMEOUT = 2s
+
+	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
+	var gotEntity etre.Entity
+	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusOK {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
+	}
+
+	// If set properly, the deadline of the context will be very close to 2s.
+	// This is a number number because the deadline is in the future.
+	gotDeadline, set := gotCtx.Deadline()
+	d := time.Now().Sub(gotDeadline).Seconds()
+	t.Logf("deadline: set=%t, %s (%f)", set, gotDeadline, d)
+	if !set {
+		t.Errorf("query timeout deadline not set, expected it to be set")
+	}
+	if d < -2.2 || d > -1.8 {
+		t.Errorf("deadline %f, expected between 1.8-2.2s (2s default)", d)
+	}
+
+	// ----------------------------------------------------------------------
+	// Client passes X-Etre-Query-Timeout
+	test.Headers = map[string]string{
+		etre.QUERY_TIMEOUT_HEADER: "5s",
+	}
+	defer func() { test.Headers = map[string]string{} }()
+
+	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusOK {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
+	}
+	gotDeadline, set = gotCtx.Deadline()
+	d = time.Now().Sub(gotDeadline).Seconds()
+	t.Logf("deadline: set=%t, %s (%f)", set, gotDeadline, d)
+	if !set {
+		t.Errorf("query timeout deadline not set, expected it to be set")
+	}
+	if d < -5.2 || d > -4.8 {
+		t.Errorf("deadline %f, expected between 4.8-5.2s (2s default)", d)
 	}
 }

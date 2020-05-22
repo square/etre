@@ -895,7 +895,11 @@ func readError(c echo.Context, err error) *echo.HTTPError {
 		}
 		return echo.NewHTTPError(etreError.HTTPStatus, etreError)
 	case entity.DbError:
-		maybeInc(metrics.DbError, 1, gm)
+		if err.(entity.DbError).Err == context.DeadlineExceeded {
+			maybeInc(metrics.QueryTimeout, 1, gm)
+		} else {
+			maybeInc(metrics.DbError, 1, gm)
+		}
 		etreError := etre.Error{
 			Message:    v.Err.Error(),
 			Type:       v.Type,
@@ -938,7 +942,11 @@ func (api *API) WriteResult(c echo.Context, v interface{}, err error) (int, inte
 				HTTPStatus: http.StatusBadRequest,
 			}
 		case entity.DbError:
-			maybeInc(metrics.DbError, 1, gm)
+			if err.(entity.DbError).Err == context.DeadlineExceeded {
+				maybeInc(metrics.QueryTimeout, 1, gm)
+			} else {
+				maybeInc(metrics.DbError, 1, gm)
+			}
 			switch v.Type {
 			case "duplicate-entity":
 				dupeErr := ErrDuplicateEntity // copy

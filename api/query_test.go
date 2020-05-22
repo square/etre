@@ -403,7 +403,7 @@ func TestQueryErrorsTimeout(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ReadQuery, IntVal: 1},
 		{Method: "Val", Metric: metrics.Labels, IntVal: 1},
 		{Method: "IncLabel", Metric: metrics.LabelRead, StringVal: "a"},
-		{Method: "Inc", Metric: metrics.DbError, IntVal: 1}, // db error
+		{Method: "Inc", Metric: metrics.QueryTimeout, IntVal: 1}, // query timeout
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
