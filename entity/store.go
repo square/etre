@@ -89,6 +89,9 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 	opts := options.Find().SetProjection(p)
 	cursor, err := c.Find(s.ctx, Filter(q), opts)
 	if err != nil {
+		if ctxErr := s.ctx.Err(); ctxErr != nil {
+			return nil, DbError{Err: ctxErr, Type: "db-read-query"}
+		}
 		return nil, DbError{Err: err, Type: "db-read-query"}
 	}
 	entities := []etre.Entity{}
