@@ -68,6 +68,9 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 	if len(f.ReturnLabels) == 1 && f.Distinct {
 		values, err := c.Distinct(s.ctx, f.ReturnLabels[0], Filter(q))
 		if err != nil {
+			if ctxErr := s.ctx.Err(); ctxErr != nil {
+				return nil, DbError{Err: ctxErr, Type: "db-read-distinct"}
+			}
 			return nil, DbError{Err: err, Type: "db-read-distinct"}
 		}
 		entities := make([]etre.Entity, len(values))
@@ -96,6 +99,9 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 	}
 	entities := []etre.Entity{}
 	if err := cursor.All(s.ctx, &entities); err != nil {
+		if ctxErr := s.ctx.Err(); ctxErr != nil {
+			return nil, DbError{Err: ctxErr, Type: "db-read-cursor"}
+		}
 		return nil, DbError{Err: err, Type: "db-read-cursor"}
 	}
 	return entities, nil
