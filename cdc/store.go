@@ -68,9 +68,9 @@ func (a ByTsAsc) Less(i, j int) bool { return a[i].Ts < a[j].Ts }
 type Store interface {
 	// Write writes the CDC event to a persisitent data store. If writing
 	// fails, it retries according to the RetryPolicy. If retrying fails,
-	// the event is written to the fallbackFile. A ErrWriteEvent is
-	// returned if writing to the persistent data store fails, even if
-	// writing to fallbackFile succeeds.
+	// the event is written to the fallbackFile. An error is returned if
+	// writing to the persistent data store fails, even if writing to
+	// fallback file succeeds.
 	Write(context.Context, etre.CDCEvent) error
 
 	// Read queries a persistent data store for events that satisfy the
@@ -145,10 +145,13 @@ func (s *store) Read(f Filter) ([]etre.CDCEvent, error) {
 }
 
 func (s *store) Write(ctx context.Context, event etre.CDCEvent) error {
-	var err error
+	var werr error
 	tries := 1 + s.wrp.RetryCount
 	for tryNo := 1; tryNo <= tries; tryNo++ {
-		if _, err = s.coll.InsertOne(ctx, event); err != nil {
+		if _, werr = s.coll.InsertOne(ctx, event); werr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				break // don't retry when context is done
+			}
 			if tryNo == tries {
 				break // don't wait on last try
 			}
@@ -158,8 +161,10 @@ func (s *store) Write(ctx context.Context, event etre.CDCEvent) error {
 		return nil // success
 	}
 
-	errResp := ErrWriteEvent{
-		datastoreError: err.Error(),
+	// If context timed out, use the context error instead of the mongo driver
+	// error so the API knows it's a db timeout
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		werr = ctxErr
 	}
 
 	// If we can't write the event to Mongo, and if a fallback file is
@@ -167,54 +172,25 @@ func (s *store) Write(ctx context.Context, event etre.CDCEvent) error {
 	// at writing to the file, return an error so that the caller knows
 	// there was a problem.
 	if s.fallbackFile == "" {
-		return errResp
+		return werr
 	}
 
-	bytes, err := json.Marshal(event)
-	if err != nil {
-		errResp.fileError = err.Error()
-		return errResp
+	bytes, ferr := json.Marshal(event)
+	if ferr != nil {
+		return fmt.Errorf("cannot marshal CDCEvent as JSON: %s", ferr)
 	}
 
 	// If the file doesn't exist, create it, or append to the file.
-	f, err := os.OpenFile(s.fallbackFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		errResp.fileError = err.Error()
-		return errResp
+	f, ferr := os.OpenFile(s.fallbackFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if ferr != nil {
+		return fmt.Errorf("cannot open CDC fallback file: %s", ferr)
 	}
-	if _, err := f.Write(bytes); err != nil {
-		errResp.fileError = err.Error()
-		return errResp
+	if _, ferr := f.Write(bytes); ferr != nil {
+		return fmt.Errorf("cannot write to CDC fallback file: %s", ferr)
 	}
-	if err := f.Close(); err != nil {
-		errResp.fileError = err.Error()
-		return errResp
+	if ferr := f.Close(); ferr != nil {
+		return fmt.Errorf("cannot close CDC fallback file: %s", ferr)
 	}
 
-	return errResp
-}
-
-// ErrWriteEvent represents an error in writing a CDC event to a persistent
-// data store. It satisfies the Error interface.
-type ErrWriteEvent struct {
-	datastoreError string
-	fileError      string
-}
-
-func (e ErrWriteEvent) Error() string {
-	msg := fmt.Sprintf("error writing CDC event (datastore error: %s)", e.datastoreError)
-	if e.fileError != "" {
-		msg = fmt.Sprintf("%s (file error: %s)", msg, e.fileError)
-	}
-	return msg
-}
-
-type NoopStore struct{}
-
-func (s NoopStore) Write(e etre.CDCEvent) error {
-	return nil
-}
-
-func (s NoopStore) Read(f Filter) ([]etre.CDCEvent, error) {
-	return nil, nil
+	return werr
 }

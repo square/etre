@@ -178,14 +178,6 @@ func TestWriteFailure(t *testing.T) {
 	if err == nil {
 		t.Error("expected an error but did not get one")
 	}
-
-	switch err.(type) {
-	case cdc.ErrWriteEvent:
-		// this is what we expect
-	default:
-		t.Errorf("err = %s, expected error of type cdc.ErrWriteEvent", err)
-	}
-
 	if tries != 4 {
 		t.Errorf("create tries = %d, expected 4", tries)
 	}

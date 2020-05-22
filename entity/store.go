@@ -68,10 +68,7 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 	if len(f.ReturnLabels) == 1 && f.Distinct {
 		values, err := c.Distinct(s.ctx, f.ReturnLabels[0], Filter(q))
 		if err != nil {
-			if ctxErr := s.ctx.Err(); ctxErr != nil {
-				return nil, DbError{Err: ctxErr, Type: "db-read-distinct"}
-			}
-			return nil, DbError{Err: err, Type: "db-read-distinct"}
+			return nil, s.dbError(err, "db-read-distinct")
 		}
 		entities := make([]etre.Entity, len(values))
 		for i, v := range values {
@@ -92,17 +89,11 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 	opts := options.Find().SetProjection(p)
 	cursor, err := c.Find(s.ctx, Filter(q), opts)
 	if err != nil {
-		if ctxErr := s.ctx.Err(); ctxErr != nil {
-			return nil, DbError{Err: ctxErr, Type: "db-read-query"}
-		}
-		return nil, DbError{Err: err, Type: "db-read-query"}
+		return nil, s.dbError(err, "db-query")
 	}
 	entities := []etre.Entity{}
 	if err := cursor.All(s.ctx, &entities); err != nil {
-		if ctxErr := s.ctx.Err(); ctxErr != nil {
-			return nil, DbError{Err: ctxErr, Type: "db-read-cursor"}
-		}
-		return nil, DbError{Err: err, Type: "db-read-cursor"}
+		return nil, s.dbError(err, "db-read-cursor")
 	}
 	return entities, nil
 }
@@ -138,10 +129,7 @@ func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, err
 
 		res, err := c.InsertOne(s.ctx, entities[i])
 		if err != nil {
-			if dupe := IsDupeKeyError(err); dupe != nil {
-				return newIds, DbError{Err: dupe, Type: "duplicate-entity"}
-			}
-			return newIds, DbError{Err: err, Type: "db-insert"}
+			return newIds, s.dbError(err, "db-insert")
 		}
 		id := res.InsertedID.(primitive.ObjectID)
 		newIds = append(newIds, id.Hex())
@@ -186,7 +174,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 	fopts := options.Find().SetProjection(bson.M{"_id": 1})
 	cursor, err := c.Find(s.ctx, Filter(q), fopts)
 	if err != nil {
-		return nil, DbError{Err: err, Type: "db-read-query"}
+		return nil, s.dbError(err, "db-query")
 	}
 	defer cursor.Close(s.ctx)
 
@@ -209,7 +197,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 	nextId := map[string]primitive.ObjectID{}
 	for cursor.Next(s.ctx) {
 		if err := cursor.Decode(&nextId); err != nil {
-			return nil, err
+			return diffs, s.dbError(err, "db-cursor-decode")
 		}
 		uq, _ := query.Translate("_id=" + nextId["_id"].Hex())
 
@@ -219,10 +207,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 			if err == mongo.ErrNoDocuments {
 				break
 			}
-			if dupe := IsDupeKeyError(err); dupe != nil {
-				return diffs, DbError{Err: dupe, Type: "duplicate-entity"}
-			}
-			return diffs, DbError{Err: err, Type: "db-update"}
+			return diffs, s.dbError(err, "db-update")
 		}
 		diffs = append(diffs, orig)
 
@@ -244,6 +229,10 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 		if err := s.cdcWrite(patch, wo, cp); err != nil {
 			return diffs, err
 		}
+	}
+
+	if err := cursor.Err(); err != nil {
+		return diffs, s.dbError(err, "db-cursor-next")
 	}
 
 	return diffs, nil
@@ -271,7 +260,7 @@ func (s store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) 
 			if err == mongo.ErrNoDocuments {
 				break
 			}
-			return deleted, DbError{Err: err, Type: "db-delete"}
+			return deleted, s.dbError(err, "db-delete")
 		}
 		deleted = append(deleted, old)
 		ce := cdcPartial{
@@ -308,12 +297,7 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 	var old etre.Entity
 	err := c.FindOneAndUpdate(s.ctx, filter, update, opts).Decode(&old)
 	if err != nil {
-		switch err {
-		case mongo.ErrNoDocuments:
-			return nil, etre.ErrEntityNotFound
-		default:
-			return nil, DbError{Err: err, Type: "db-deletel-label", EntityId: wo.EntityId}
-		}
+		return nil, s.dbError(err, "db-update")
 	}
 	cp := cdcPartial{
 		op:  "u",
@@ -327,6 +311,19 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 	}
 
 	return old, nil
+}
+
+func (s store) dbError(err error, errType string) error {
+	if ctxErr := s.ctx.Err(); ctxErr != nil {
+		return DbError{Err: ctxErr, Type: errType}
+	}
+	if dupe := IsDupeKeyError(err); dupe != nil {
+		return DbError{Err: dupe, Type: "duplicate-entity"}
+	}
+	if err == mongo.ErrNoDocuments {
+		return etre.ErrEntityNotFound
+	}
+	return DbError{Err: err, Type: errType}
 }
 
 // --------------------------------------------------------------------------
