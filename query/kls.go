@@ -70,7 +70,7 @@ func IsInvalidLabelChar(r rune) bool {
 
 var Debug = false
 
-// Parse parses	a Kubernetes Label Selector sttring.
+// Parse parses a Kubernetes Label Selector sttring.
 func Parse(selector string) ([]Requirement, error) {
 	if selector == "" {
 		return []Requirement{}, nil

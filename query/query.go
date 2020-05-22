@@ -38,7 +38,7 @@ func Translate(labelSelectors string) (Query, error) {
 		p := Predicate{
 			Label:    r.Label,
 			Operator: r.Op,
-			Value:    translateValues(r.Label, r.Op, r.Values),
+			Value:    translateValues(r.Op, r.Values),
 		}
 		query.Predicates = append(query.Predicates, p)
 	}
@@ -51,7 +51,7 @@ func Translate(labelSelectors string) (Query, error) {
 // https://github.com/kubernetes/apimachinery/blob/master/pkg/labels/selector.go#L104-L110.).
 // We choose to translate data here to keep data consistent between db package
 // and audit log package.
-func translateValues(label, operator string, values []string) interface{} {
+func translateValues(operator string, values []string) interface{} {
 	var value interface{}
 	switch operator {
 	case "in", "notin":

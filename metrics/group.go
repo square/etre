@@ -414,6 +414,7 @@ func (m *groupEntityMetrics) Inc(mn byte, n int64) {
 }
 
 func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
+	m.Lock()
 	lm := m.em.label[label]
 	if lm == nil {
 		lm = &labelMetrics{
@@ -423,6 +424,7 @@ func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
 		}
 		m.em.label[label] = lm
 	}
+	m.Unlock()
 	switch mn {
 	case LabelRead:
 		lm.Read.Add(1)

@@ -137,57 +137,9 @@ func NewAPI(appCtx app.Context) *API {
 			method := c.Request().Method
 			write := method == "PUT" || method == "POST" || method == "DELETE"
 
-			// -----------------------------------------------------------------------
-			// Client options via headers
-			// -----------------------------------------------------------------------
-			inst.Start("client_headers")
-
-			// Get client version ("vX.Y") from X-Etre-Version header, if set
-			clientVersion := c.Request().Header.Get(etre.VERSION_HEADER) // explicit
-			vf := "X-Etre-Version header"
-			if clientVersion == "" {
-				if api.defaultClientVersion != "" {
-					clientVersion = api.defaultClientVersion // default
-					vf = "config.server.default_client_version"
-				} else {
-					clientVersion = etre.VERSION // current
-					vf = "etre.VERSION"
-				}
-			}
-			m := reVersion.FindAllStringSubmatch(clientVersion, 1) // v0.9.0-alpha -> [ [v0.9, 0.9] ]
-			if len(m) != 1 {
-				// @todo
-				errMsg := fmt.Sprintf("invalid client (es) version from %s: '%s', does not match %s (%v)", vf, clientVersion, reVersion, m)
-				log.Println(errMsg)
-				c.Set("t0", time.Time{}) // don't skew latency samples toward zero
-				return echo.NewHTTPError(http.StatusBadRequest, errMsg)
-			}
-			c.Set("clientVersion", m[0][1]) // 0.9
-
-			var ctx context.Context
-			var cancel context.CancelFunc
-			timeout := c.Request().Header.Get(etre.TIMEOUT_HEADER) // explicit
-			if timeout == "" {
-				ctx, cancel = context.WithTimeout(context.Background(), api.queryTimeout)
-			} else {
-				d, err := time.ParseDuration(timeout)
-				if err != nil {
-					// @todo
-					errMsg := fmt.Sprintf("invalid %s header: %s: %s", etre.TIMEOUT_HEADER, timeout, err)
-					log.Println(errMsg)
-					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
-					return echo.NewHTTPError(http.StatusBadRequest, errMsg)
-				}
-				ctx, cancel = context.WithTimeout(context.Background(), d)
-			}
-			c.Set("ctx", ctx)
-			c.Set("cancelFunc", cancel)
-
-			inst.Stop("client_headers")
-
-			// -----------------------------------------------------------------------
+			// --------------------------------------------------------------
 			// Authenticate
-			// -----------------------------------------------------------------------
+			// --------------------------------------------------------------
 			inst.Start("authenticate")
 			caller, err := api.auth.Authenticate(c.Request())
 			inst.Stop("authenticate")
@@ -207,9 +159,9 @@ func NewAPI(appCtx app.Context) *API {
 			}
 			c.Set("caller", caller)
 
-			// -----------------------------------------------------------------------
+			// --------------------------------------------------------------
 			// Metrics
-			// -----------------------------------------------------------------------
+			// --------------------------------------------------------------
 
 			// This makes a metrics.Group which is a 1-to-many proxy for every
 			// metric group in caller.MetricGroups. E.g. if the groups are "ods"
@@ -241,6 +193,10 @@ func NewAPI(appCtx app.Context) *API {
 			if caller.Trace != nil {
 				gm.Trace(caller.Trace)
 			}
+
+			// --------------------------------------------------------------
+			// Authorize
+			// --------------------------------------------------------------
 
 			// Routes with an :entity param query the db, so increment query.Metrics
 			// and query.Read or .Write depending on the route. Specific Read/Write
@@ -292,6 +248,59 @@ func NewAPI(appCtx app.Context) *API {
 				}
 			}
 			inst.Stop("authorize")
+
+			// --------------------------------------------------------------
+			// Client options via headers
+			// --------------------------------------------------------------
+			inst.Start("client_headers")
+
+			// Get client version ("vX.Y") from X-Etre-Version header, if set
+			clientVersion := c.Request().Header.Get(etre.VERSION_HEADER) // explicit
+			if clientVersion == "" {
+				clientVersion = etre.VERSION // current
+			}
+			m := reVersion.FindAllStringSubmatch(clientVersion, 1) // v0.9.0-alpha -> [ [v0.9, 0.9] ]
+			if len(m) != 1 {
+				c.Set("t0", time.Time{}) // don't skew latency samples toward zero
+				err := etre.Error{
+					Message:    fmt.Sprintf("invalid %s header value: %s: does not match %s (%v)", etre.VERSION_HEADER, clientVersion, reVersion, m),
+					Type:       "invalid-client-version",
+					HTTPStatus: http.StatusBadRequest,
+				}
+				if write {
+					return c.JSON(api.WriteResult(c, nil, err))
+				} else {
+					return readError(c, err)
+				}
+			}
+			c.Set("clientVersion", m[0][1]) // 0.9
+
+			var ctx context.Context
+			var cancel context.CancelFunc
+			queryTimeout := c.Request().Header.Get(etre.QUERY_TIMEOUT_HEADER) // explicit
+			if queryTimeout == "" {
+				ctx, cancel = context.WithTimeout(context.Background(), api.queryTimeout)
+			} else {
+				d, err := time.ParseDuration(queryTimeout)
+				if err != nil {
+					c.Set("t0", time.Time{}) // don't skew latency samples toward zero
+					err := etre.Error{
+						Message:    fmt.Sprintf("invalid %s header: %s: %s", etre.QUERY_TIMEOUT_HEADER, queryTimeout, err),
+						Type:       "invalid-query-timeout",
+						HTTPStatus: http.StatusBadRequest,
+					}
+					if write {
+						return c.JSON(api.WriteResult(c, nil, err))
+					} else {
+						return readError(c, err)
+					}
+				}
+				ctx, cancel = context.WithTimeout(context.Background(), d)
+			}
+			c.Set("ctx", ctx)
+			c.Set("cancelFunc", cancel)
+
+			inst.Stop("client_headers")
 
 			return next(c)
 		}
@@ -867,10 +876,7 @@ func readError(c echo.Context, err error) *echo.HTTPError {
 	switch v := err.(type) {
 	case etre.Error:
 		log.Printf("READ ERROR: %s: %s", v.Type, v.Message)
-		switch v.Type {
-		case ErrInvalidQuery.Type, ErrMissingParam.Type, ErrInvalidParam.Type:
-			maybeInc(metrics.ClientError, 1, gm)
-		}
+		maybeInc(metrics.ClientError, 1, gm)
 		return echo.NewHTTPError(v.HTTPStatus, err)
 	case entity.ValidationError:
 		maybeInc(metrics.ClientError, 1, gm)

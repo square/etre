@@ -20,9 +20,9 @@ const (
 	META_LABEL_TYPE          = "_type"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
 
-	VERSION_HEADER = "X-Etre-Version"
-	TRACE_HEADER   = "X-Etre-Trace"
-	TIMEOUT_HEADER = "X-Etre-Timeout"
+	VERSION_HEADER       = "X-Etre-Version"
+	TRACE_HEADER         = "X-Etre-Trace"
+	QUERY_TIMEOUT_HEADER = "X-Etre-Query-Timeout"
 )
 
 var (
@@ -35,6 +35,7 @@ var (
 	ErrBadData        = errors.New("data from CDC feed is not event or control")
 	ErrCallerBlocked  = errors.New("caller blocked")
 	ErrEntityNotFound = errors.New("entity not found")
+	ErrClientTimeout  = errors.New("client timeout")
 )
 
 // Entity represents a single Etre entity. The caller is responsible for knowing

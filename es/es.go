@@ -37,10 +37,6 @@ func Run(ctx app.Context) {
 		configFiles = cmdLine.Config
 	}
 
-	if cmdLine.Debug {
-		etre.DebugEnabled = true
-	}
-
 	// Parse default options from config files
 	def := config.ParseConfigFiles(configFiles)
 	if def.Addr == "" {
@@ -49,7 +45,10 @@ func Run(ctx app.Context) {
 	if def.IFS == "" {
 		def.IFS = config.DEFAULT_IFS
 	}
-	if def.Timeout == 0 {
+	if def.QueryTimeout == "" {
+		def.QueryTimeout = config.DEFAULT_QUERY_TIMEOUT
+	}
+	if def.Timeout == "" {
 		def.Timeout = config.DEFAULT_TIMEOUT
 	}
 	if def.RetryWait == "" {
@@ -140,12 +139,11 @@ func Run(ctx app.Context) {
 		}
 	}
 
-	if cmdLine.Options.Retry > 0 {
-		if _, err := time.ParseDuration(cmdLine.Options.RetryWait); err != nil {
-			fmt.Fprintf(os.Stderr, "Invalid --retry-wait %s: %s\n", cmdLine.Options.RetryWait, err)
-			os.Exit(1)
-		}
-	}
+	// ----------------------------------------------------------------------
+	// Finalize options
+	// ----------------------------------------------------------------------
+
+	etre.DebugEnabled = cmdLine.Debug
 
 	// Finalize options
 	var o config.Options = cmdLine.Options
@@ -158,6 +156,30 @@ func Run(ctx app.Context) {
 		etre.Debug("options: %+v\n", o)
 	}
 	ctx.Options = o
+
+	if cmdLine.Options.Retry > 0 {
+		if _, err := time.ParseDuration(ctx.Options.RetryWait); err != nil {
+			printAndExit(fmt.Errorf("Invalid --retry-wait %s: %s", ctx.Options.RetryWait, err), ctx)
+		}
+	}
+
+	if _, err := time.ParseDuration(ctx.Options.RetryWait); err != nil {
+		printAndExit(fmt.Errorf("invalid --retry-wait %s: %s", ctx.Options.RetryWait, err), ctx)
+	}
+
+	timeout, err := time.ParseDuration(ctx.Options.Timeout)
+	if err != nil {
+		printAndExit(fmt.Errorf("invalid --timeout %s: %s", ctx.Options.Timeout, err), ctx)
+	}
+
+	queryTimeout, err := time.ParseDuration(ctx.Options.QueryTimeout)
+	if err != nil {
+		printAndExit(fmt.Errorf("invalid --query-timeout %s: %s", ctx.Options.Timeout, err), ctx)
+	}
+
+	if queryTimeout >= timeout {
+		printAndExit(fmt.Errorf("--query-timeout (%s) must be less than --timeout (%s)", queryTimeout, timeout), ctx)
+	}
 
 	if ctx.Options.Addr == "" {
 		fmt.Fprintf(os.Stderr, "Etre API address is not set."+
@@ -271,8 +293,7 @@ func Run(ctx app.Context) {
 		wr, err := ec.UpdateOne(ctx.EntityId, patch)
 		found, err := writeResult(ctx, set, wr, err, "update")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
+			printAndExit(err, ctx)
 		}
 		if found {
 			fmt.Printf("OK, updated %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
@@ -298,8 +319,7 @@ func Run(ctx app.Context) {
 		wr, err := ec.DeleteOne(ctx.EntityId)
 		found, err := writeResult(ctx, set, wr, err, "delete")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
+			printAndExit(err, ctx)
 		}
 		if found {
 			fmt.Printf("OK, deleted %s %s%s\n", ctx.EntityType, ctx.EntityId, setInfo(set))
@@ -319,8 +339,7 @@ func Run(ctx app.Context) {
 		wr, err := ec.DeleteLabel(ctx.EntityId, label)
 		found, err := writeResult(ctx, set, wr, err, "delete label from")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
+			printAndExit(err, ctx)
 		}
 		if found {
 			fmt.Printf("OK, deleted label %s from %s %s%s\n", label, ctx.EntityType, ctx.EntityId, setInfo(set))
@@ -372,8 +391,7 @@ func Run(ctx app.Context) {
 
 	// Else, do the default: print the entities, if no error.
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		os.Exit(1)
+		printAndExit(err, ctx)
 	}
 
 	// No entities? No fun. :-(
@@ -480,4 +498,14 @@ func writeResult(ctx app.Context, set etre.Set, wr etre.WriteResult, err error, 
 		}
 	}
 	return true, nil
+}
+
+func printAndExit(err error, ctx app.Context) {
+	if err == etre.ErrClientTimeout {
+		fmt.Fprintf(os.Stderr, "Timeout waiting for response from %s (--timeout=%s)\n",
+			ctx.Options.Addr, ctx.Options.Timeout)
+	} else {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+	}
+	os.Exit(1)
 }

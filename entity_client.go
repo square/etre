@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -71,6 +72,8 @@ type EntityClientConfig struct {
 	Retry        uint          // optional retry count on network or API error
 	RetryWait    time.Duration // optional wait time between retries
 	RetryLogging bool          // log error on retry to stderr
+	QueryTimeout time.Duration // timeout passed to API via etre.QUERY_TIMEOUT_HEADER
+	Debug        bool
 }
 
 // EntityClients represents type-specific entity clients keyed on user-defined const
@@ -100,6 +103,7 @@ type entityClient struct {
 	retry            uint
 	retryWait        time.Duration
 	retryLogging     bool
+	queryTimeout     time.Duration
 }
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
@@ -117,6 +121,7 @@ func NewEntityClient(entityType, addr string, httpClient *http.Client) EntityCli
 }
 
 func NewEntityClientWithConfig(c EntityClientConfig) EntityClient {
+	DebugEnabled = c.Debug
 	return entityClient{
 		entityType:   c.EntityType,
 		addr:         c.Addr,
@@ -124,6 +129,7 @@ func NewEntityClientWithConfig(c EntityClientConfig) EntityClient {
 		retry:        c.Retry,
 		retryWait:    c.RetryWait,
 		retryLogging: c.RetryLogging,
+		queryTimeout: c.QueryTimeout,
 	}
 }
 
@@ -144,36 +150,20 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	if query == "" {
 		return nil, ErrNoQuery
 	}
+	Debug("query='%s', filter=%+v", query, filter)
 
-	// Queries typically use "GET <path>?query=<query>", but sometimes URLs >2k
-	// don't work (dependent on http implementation). So if it's short enough,
-	// use GET, else use POST with the unescaped query.
-	var (
-		method string
-		path   string
-		data   []byte
-	)
-	if len(query) < 2000 {
-		method = "GET"
-		path = "/entities/" + c.entityType + "?query=" + url.QueryEscape(query) // always escape the query
-		if len(filter.ReturnLabels) > 0 {
-			rl := strings.Join(filter.ReturnLabels, ",")
-			path += "&labels=" + rl
-		}
-		if filter.Distinct {
-			path += "&distinct"
-		}
-	} else {
-		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
-		// @todo: support QueryFilter
-		method = "POST"
-		path = "/query/" + c.entityType
-		data = []byte(query)
+	path := "/entities/" + c.entityType + "?query=" + url.QueryEscape(query) // always escape the query
+	if len(filter.ReturnLabels) > 0 {
+		rl := strings.Join(filter.ReturnLabels, ",")
+		path += "&labels=" + rl
+	}
+	if filter.Distinct {
+		path += "&distinct"
 	}
 
 	var entities []Entity
 	err := c.apiRetry(func() error {
-		resp, bytes, err := c.do(method, path, data)
+		resp, bytes, err := c.do("GET", path, nil)
 		if err != nil {
 			return err
 		}
@@ -203,6 +193,7 @@ func (c entityClient) Update(query string, patch Entity) (WriteResult, error) {
 	if query == "" {
 		return WriteResult{}, ErrNoQuery
 	}
+	Debug("query='%s', patch=%+v", query, patch)
 	query = url.QueryEscape(query) // always escape the query
 	if len(patch) == 0 {
 		return WriteResult{}, ErrNoEntity
@@ -216,6 +207,7 @@ func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
+	Debug("_id=%s, patch=%+v", id, patch)
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
 	wr, err := c.write(patch, 1, "PUT", "/entity/"+c.entityType+"/"+id)
@@ -229,6 +221,7 @@ func (c entityClient) Delete(query string) (WriteResult, error) {
 	if query == "" {
 		return WriteResult{}, ErrNoQuery
 	}
+	Debug("query='%s'", query)
 	query = url.QueryEscape(query) // always escape the query
 	return c.write(nil, -1, "DELETE", "/entities/"+c.entityType+"?query="+query)
 }
@@ -237,6 +230,7 @@ func (c entityClient) DeleteOne(id string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
+	Debug("_id=%s", id)
 	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
@@ -273,6 +267,7 @@ func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) 
 	if label == "" {
 		return WriteResult{}, ErrNoLabel
 	}
+	Debug("_id=%s, label=%s", id, label)
 	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
 	if err != nil {
 		return WriteResult{}, err
@@ -328,6 +323,7 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 		if err := json.Unmarshal(bytes, &wr); err != nil {
 			return fmt.Errorf("json.Unmarshal: %s", err)
 		}
+		Debug("write result: %+v", wr)
 		if resp.StatusCode == http.StatusNotFound {
 			return ErrEntityNotFound
 		}
@@ -363,15 +359,22 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(VERSION_HEADER, VERSION)
+	req.Header.Set(QUERY_TIMEOUT_HEADER, c.queryTimeout.String())
 	if c.traceHeaderValue != "" {
 		req.Header.Set(TRACE_HEADER, c.traceHeaderValue)
 	}
 
 	// Send request
+	Debug("request: %+v", req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		Debug("httpClient.Do() error: %v", err)
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			return nil, nil, ErrClientTimeout
+		}
 		return nil, nil, fmt.Errorf("http.Client.Do: %s", err)
 	}
+	Debug("response: %+v", resp)
 
 	// Read API response
 	defer resp.Body.Close()

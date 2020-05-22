@@ -19,12 +19,13 @@ import (
 )
 
 const (
-	DEFAULT_ADDR         = "http://127.0.0.1:32084"
-	DEFAULT_CONFIG_FILES = "/etc/etre/es.yaml,~/.es.yaml"
-	DEFAULT_IFS          = ","
-	DEFAULT_TIMEOUT      = 10000 // 10s
-	DEFAULT_RETRY        = 0
-	DEFAULT_RETRY_WAIT   = "1s"
+	DEFAULT_ADDR          = "http://127.0.0.1:32084"
+	DEFAULT_CONFIG_FILES  = "/etc/etre/es.yaml,~/.es.yaml"
+	DEFAULT_IFS           = ","
+	DEFAULT_QUERY_TIMEOUT = "5s"
+	DEFAULT_TIMEOUT       = "10s"
+	DEFAULT_RETRY         = 0
+	DEFAULT_RETRY_WAIT    = "1s"
 )
 
 var (
@@ -33,29 +34,30 @@ var (
 
 // Options represents typical command line options: --addr, --config, etc.
 type Options struct {
-	Addr        string `arg:"env:ES_ADDR" yaml:"addr"`
-	Config      string `arg:"env:ES_CONFIG"`
-	Debug       bool   `arg:"env:ES_DEBUG" yaml:"debug"`
-	Delete      bool
-	DeleteLabel bool   `arg:"--delete-label"`
-	Env         string `arg:"env:ES_ENV" yaml:"env"`
-	Help        bool
-	JSON        bool   `arg:"env:ES_JSON" yaml:"json"`
-	IFS         string `arg:"env" yaml:"ifs"`
-	Labels      bool   `arg:"env:ES_LABELS" yaml:"labels"`
-	Old         bool   `arg:"env:ES_OLD" yaml:"old"`
-	Retry       uint   `arg:"env:ES_RETRY" yaml:"retry"`
-	RetryWait   string `arg:"--retry-wait,env:ES_RETRY_WAIT" yaml:"retry_wait"`
-	SetOp       string `arg:"--set-op,env:ES_SET_OP"`
-	SetId       string `arg:"--set-id,env:ES_SET_ID"`
-	SetSize     int    `arg:"--set-size,env:ES_SET_SIZE"`
-	Strict      bool   `arg:"env:ES_STRICT" yaml:"strict"`
-	Timeout     uint   `arg:"env:ES_TIMEOUT" yaml:"timeout"`
-	Trace       string `arg:"env:ES_TRACE" yaml:"trace"`
-	Update      bool
-	Unique      bool `arg:"-u"`
-	Version     bool `arg:"-v"`
-	Watch       bool
+	Addr         string `arg:"env:ES_ADDR" yaml:"addr"`
+	Config       string `arg:"env:ES_CONFIG"`
+	Debug        bool   `arg:"env:ES_DEBUG" yaml:"debug"`
+	Delete       bool
+	DeleteLabel  bool   `arg:"--delete-label"`
+	Env          string `arg:"env:ES_ENV" yaml:"env"`
+	Help         bool
+	JSON         bool   `arg:"env:ES_JSON" yaml:"json"`
+	IFS          string `arg:"env" yaml:"ifs"`
+	Labels       bool   `arg:"env:ES_LABELS" yaml:"labels"`
+	Old          bool   `arg:"env:ES_OLD" yaml:"old"`
+	QueryTimeout string `arg:"--query-timeout,env:ES_QUERY_TIMEOUT" yaml:"query_timeout"`
+	Retry        uint   `arg:"env:ES_RETRY" yaml:"retry"`
+	RetryWait    string `arg:"--retry-wait,env:ES_RETRY_WAIT" yaml:"retry_wait"`
+	SetOp        string `arg:"--set-op,env:ES_SET_OP"`
+	SetId        string `arg:"--set-id,env:ES_SET_ID"`
+	SetSize      int    `arg:"--set-size,env:ES_SET_SIZE"`
+	Strict       bool   `arg:"env:ES_STRICT" yaml:"strict"`
+	Timeout      string `arg:"env:ES_TIMEOUT" yaml:"timeout"`
+	Trace        string `arg:"env:ES_TRACE" yaml:"trace"`
+	Update       bool
+	Unique       bool `arg:"-u"`
+	Version      bool `arg:"-v"`
+	Watch        bool
 }
 
 // CommandLine represents options (--addr, etc.) and args: entity type, return
@@ -120,19 +122,20 @@ func Help() {
 		"  --json          Print entities as JSON\n"+
 		"  --labels        Print label: before value\n"+
 		"  --old           Print old values on --update\n"+
+		"  --query-timeout Query timeout on server (default: %s)\n"+
 		"  --retry         Retry count on network or API error (default: %d)\n"+
 		"  --retry-wait    Wait time between retries (default: %s)\n"+
 		"  --set-id        User-defined set ID for --update and --delete\n"+
 		"  --set-op        User-defined set op for --update and --delete\n"+
 		"  --set-size      User-defined set size for --update and --delete (must be > 0)\n"+
 		"  --strict        Error if query or --delete does not match entities\n"+
-		"  --timeout       API timeout, milliseconds (default: %d)\n"+
+		"  --timeout       Response timeout per try, includes --query-timeout (default: %s)\n"+
 		"  --trace         Comma-separated key=val pairs for server metrics\n"+
 		"  --update        Apply patches to one entity by id\n"+
 		"  --unique (-u)   Return distinct values of a single return label\n"+
 		"  --version       Print version\n"+
 		"  --watch         Stream changes from CDC\n\n",
-		DEFAULT_ADDR, DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_RETRY, DEFAULT_RETRY_WAIT, DEFAULT_TIMEOUT)
+		DEFAULT_ADDR, DEFAULT_CONFIG_FILES, DEFAULT_IFS, DEFAULT_QUERY_TIMEOUT, DEFAULT_RETRY, DEFAULT_RETRY_WAIT, DEFAULT_TIMEOUT)
 }
 
 func ParseConfigFiles(files string) Options {
@@ -168,7 +171,7 @@ func ParseConfigFiles(files string) Options {
 		if o.Addr != "" {
 			def.Addr = o.Addr
 		}
-		if o.Timeout != 0 {
+		if o.Timeout != "" {
 			def.Timeout = o.Timeout
 		}
 	}
