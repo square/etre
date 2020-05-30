@@ -4,6 +4,9 @@ package cdc_test
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
+	"os"
 	"sort"
 	"testing"
 
@@ -163,28 +166,39 @@ func TestWriteSuccess(t *testing.T) {
 	}
 }
 
-func TestWriteFailure(t *testing.T) {
-	t.Skip("@todo: make db fail")
-	wrp := cdc.RetryPolicy{
-		RetryCount: 3,
-		RetryWait:  0,
+func TestWriteFallbackFile(t *testing.T) {
+	fallbackFile, err := ioutil.TempFile("", "etre-cdc-test.json")
+	if err != nil {
+		t.Fatal(err)
 	}
-	cdcs := setup(t, "", wrp)
+	defer os.Remove(fallbackFile.Name())
 
-	tries := 0
+	fallbackFile.Close()
 
+	cdcs := setup(t, fallbackFile.Name(), cdc.NoRetryPolicy)
+
+	// Write an event...
 	event := etre.CDCEvent{Id: "abc", EntityId: "e13", EntityRev: 7, Ts: 54}
-	err := cdcs.Write(context.TODO(), event)
+	err = cdcs.Write(context.TODO(), event)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Then write the same event which causes a duplice key error and triggers
+	// a write to the fallback file...
+	err = cdcs.Write(context.TODO(), event)
 	if err == nil {
 		t.Error("expected an error but did not get one")
 	}
-	if tries != 4 {
-		t.Errorf("create tries = %d, expected 4", tries)
-	}
-}
 
-func TestWriteFallbackFile(t *testing.T) {
-	// @todo: test writing to the fallback file as well
+	bytes, err := ioutil.ReadFile(fallbackFile.Name())
+	var gotEvent etre.CDCEvent
+	if err := json.Unmarshal(bytes, &gotEvent); err != nil {
+		t.Fatal(err)
+	}
+	if diff := deep.Equal(gotEvent, event); diff != nil {
+		t.Error(diff)
+	}
 }
 
 type sortTest struct {

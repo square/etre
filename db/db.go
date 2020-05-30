@@ -27,6 +27,19 @@ func Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
 		return nil, err
 	}
 
+	// SetServerSelectionTimeout is different and more important than SetConnectTimeout.
+	// Internally, the mongo driver is polling and updating the topology,
+	// i.e. the list of replicas/nodes in the cluster. SetServerSelectionTimeout
+	// applies to selecting a node from the topology, which should be nearly
+	// instantaneous when the cluster is ok _and_ when it's down. When a node
+	// is down, it's reflected in the topology, so there's no need to wait for
+	// another server because we only use one server: the master replica.
+	// The 500ms below is really how long the driver will wait for the master
+	// replica to come back online.
+	//
+	// SetConnectTimeout is what is seems: timeout when a connection is actually
+	// made. This guards against slows networks, or the case when the mongo driver
+	// thinks the master is online but really it's not.
 	opts := options.Client().
 		ApplyURI(cfg.URL).
 		SetTLSConfig(tlsConfig).
@@ -51,9 +64,17 @@ func Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := client.Connect(ctx); err != nil {
+
+	// mongo.Connect() does not actually connect:
+	//   The Client.Connect method starts background goroutines to monitor the
+	//   state of the deployment and does not do any I/O in the main goroutine to
+	//   prevent the main goroutine from blocking. Therefore, it will not error if
+	//   the deployment is down.
+	// https://pkg.go.dev/go.mongodb.org/mongo-driver/mongo?tab=doc#Connect
+	// The caller must call client.Ping() to actually connect. Consequently,
+	// we don't need a context here. As long as there's not a bug in the mongo
+	// driver, this won't block.
+	if err := client.Connect(context.Background()); err != nil {
 		return nil, err
 	}
 	return client, nil

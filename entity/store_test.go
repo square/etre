@@ -149,12 +149,6 @@ func TestReadEntitiesMatching(t *testing.T) {
 			query:  "y",
 			expect: testNodes,
 		},
-		//{
-		// Matches first test node
-		// @todo: doesn't work because 2 is treated as a string
-		//	query:  "x=2",
-		// expect: testNodes[:1],
-		//},
 		{
 			// First test node has x=2, so this matches 2nd and 3rd test nodes
 			query:  "x>2",

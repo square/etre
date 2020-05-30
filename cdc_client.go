@@ -129,7 +129,6 @@ func (c *cdcClient) Start(startTime time.Time) (<-chan CDCEvent, error) {
 	start := map[string]interface{}{
 		"control": "start",
 		"startTs": startTs,
-		// @todo: checkpoint
 	}
 	c.debug("sending start")
 	if err := c.send(start); err != nil {
@@ -284,8 +283,6 @@ func (c *cdcClient) control(msg map[string]interface{}, now time.Time) error {
 		// API is letting us know that something on its end broke it's closing
 		// the connection. This is the last data it sends.
 		return fmt.Errorf("API error: %s", msg["error"].(string))
-	case "checkpoint":
-		// @todo
 	case "ping":
 		// Ping from API
 		v, ok := msg["srcTs"]

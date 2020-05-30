@@ -73,7 +73,6 @@ func NewAPI(appCtx app.Context) *API {
 		metricsFactory:           appCtx.MetricsFactory,
 		metricsStore:             appCtx.MetricsStore,
 		systemMetrics:            appCtx.SystemMetrics,
-		defaultClientVersion:     appCtx.Config.Server.DefaultClientVersion,
 		queryTimeout:             queryTimeout,
 		queryLatencySLA:          queryLatencySLA,
 		queryProfSampleRate:      int(appCtx.Config.Metrics.QueryProfileSampleRate * 100),

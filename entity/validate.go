@@ -61,6 +61,18 @@ func (v validator) EntityType(entityType string) error {
 func (v validator) Entities(entities []etre.Entity, op byte) error {
 	for i, e := range entities {
 		for label, val := range e {
+			if label == "" {
+				return ValidationError{
+					Err:  fmt.Errorf("empty string label (entity index %d)", i),
+					Type: "empty-string-label",
+				}
+			}
+			if strings.IndexAny(label, " \t") != -1 {
+				return ValidationError{
+					Err:  fmt.Errorf("label cannot have whitesspace: '%s' (entity index %d)", label, i),
+					Type: "label-has-whitespace",
+				}
+			}
 			switch op {
 			case VALIDATE_ON_CREATE:
 				// User cannot set these metalabels on create
@@ -91,6 +103,9 @@ func (v validator) Entities(entities []etre.Entity, op byte) error {
 			// some float numbers and integer numbers, we cast all floats to ints. This
 			// means that floats with non-zero decimal values, such as 3.14 (type float),
 			// will get truncated to 3 (type int).
+			if val == nil {
+				continue
+			}
 			if reflect.TypeOf(val).Kind() == reflect.Float64 {
 				entities[i][label] = int(val.(float64))
 			} else {
@@ -125,6 +140,5 @@ func (v validator) DeleteLabel(label string) error {
 			Type: "cannot-delete-metalabel",
 		}
 	}
-	// @todo: don't deleting identifying labels
 	return nil
 }

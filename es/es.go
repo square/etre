@@ -280,15 +280,33 @@ func Run(ctx app.Context) {
 		}
 
 		patch := etre.Entity{}
-		for _, kv := range ctx.Patches {
+		for i, kv := range ctx.Patches {
 			p := strings.SplitN(kv, "=", 2)
-			if len(p) != 2 {
-				fmt.Fprintf(os.Stderr, "Invalid patch: %s: split on = yielded %d parts, expected 2\n", patch, len(p))
-				os.Exit(1)
+			etre.Debug("patch %d: '%s': %#v", i, kv, p)
+			if len(p) > 0 {
+				if ctx.Options.Strict {
+					if strings.IndexAny(p[0], " \t") != -1 {
+						printAndExit(fmt.Errorf("Invalid patch: %s: label has whitespace", kv), ctx)
+					}
+				} else {
+					p[0] = strings.TrimSpace(p[0])
+				}
+				if p[0] == "" {
+					printAndExit(fmt.Errorf("Invalid patch: %s: empty label", kv), ctx)
+				}
 			}
-			patch[p[0]] = p[1]
+			switch len(p) {
+			case 0:
+				printAndExit(fmt.Errorf("Invalid patch: %s: split on = yielded 0 parts, expected 1 or 2", kv), ctx)
+			case 1:
+				patch[p[0]] = nil
+			case 2:
+				patch[p[0]] = p[1]
+			default:
+				printAndExit(fmt.Errorf("Invalid patch: %s: split on = yielded %d parts, expected 2", kv, len(p)), ctx)
+			}
 		}
-		etre.Debug("patch: %+v", patch)
+		etre.Debug("patch: %#v", patch)
 
 		wr, err := ec.UpdateOne(ctx.EntityId, patch)
 		found, err := writeResult(ctx, set, wr, err, "update")

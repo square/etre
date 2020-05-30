@@ -199,13 +199,12 @@ type CDCConfig struct {
 }
 
 type ChangeStreamConfig struct {
-	// The buffer size that a streamer has when consuming from the poller. If the
-	// poller fills the buffer up then the streamer will error out since it won't
-	// be able to catch up to the poller anymore.
-	BufferSize uint `yaml:"buffer_size"`
-
-	// The amount of time that the poller will sleep between polls, in milliseconds.
 	MaxClients uint `yaml:"max_clients"`
+
+	// BufferSize is the number of etre.CDCEvent to buffer per-client. If the
+	// buffer fills because the client is slow to receive events, the server
+	// drops the client.
+	BufferSize uint `yaml:"buffer_size"`
 }
 
 type ServerConfig struct {
@@ -213,9 +212,6 @@ type ServerConfig struct {
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
 	TLSCA   string `yaml:"tls_ca"`
-
-	// If client does not set X-Etre-Version, default to this version.
-	DefaultClientVersion string `yaml:"default_client_version"`
 }
 
 type SecurityConfig struct {

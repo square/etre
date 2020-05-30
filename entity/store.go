@@ -1,7 +1,5 @@
 // Copyright 2017-2020, Square, Inc.
 
-// Package entity is a connector to execute CRUD commands for a single entity and
-// many entities on a DB instance.
 package entity
 
 import (
@@ -222,7 +220,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 		cp := cdcPartial{
 			op:  "u",
 			id:  orig["_id"].(primitive.ObjectID),
-			rev: orig["_rev"].(int64) + 1,
+			rev: orig.Rev() + 1,
 			old: &old,
 			new: &patch,
 		}
@@ -268,7 +266,7 @@ func (s store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) 
 			id:  old["_id"].(primitive.ObjectID),
 			old: &old,
 			new: nil,
-			rev: old["_rev"].(int64) + 1, // because we have old rev
+			rev: old.Rev() + 1,
 		}
 		if err := s.cdcWrite(old, wo, ce); err != nil {
 			return deleted, err
@@ -304,7 +302,7 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 		id:  old["_id"].(primitive.ObjectID),
 		new: nil, // not on delete label
 		old: &old,
-		rev: old["_rev"].(int64) + 1, // because we have old rev
+		rev: old.Rev() + 1,
 	}
 	if err := s.cdcWrite(etre.Entity{}, wo, cp); err != nil {
 		return old, err

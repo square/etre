@@ -5,6 +5,7 @@ package changestream
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -134,8 +135,9 @@ func (s *ServerStream) Start(sinceTs int64) <-chan etre.CDCEvent {
 			if r := recover(); r != nil {
 				etre.Debug("PANIC: stream: %v", r)
 				s.runMux.Lock()
-				// @todo stack trace
-				s.err = fmt.Errorf("ServerStream.stream panic: %v", r)
+				b := make([]byte, 4096)
+				n := runtime.Stack(b, false)
+				s.err = fmt.Errorf("PANIC: ServerStream.stream(): %s\n%s\n", r, string(b[0:n]))
 				s.runMux.Unlock()
 			}
 			s.Stop()
