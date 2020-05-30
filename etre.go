@@ -1,4 +1,4 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 // Package etre provides API clients and low-level primitive data types.
 package etre
@@ -7,17 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path"
+	"runtime"
 	"sort"
 )
 
 const (
+	VERSION                  = "0.11.0"
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
-	VERSION                  = "0.9.11"
+	META_LABEL_REV           = "_rev"
 	CDC_WRITE_TIMEOUT int    = 5 // seconds
-	VERSION_HEADER           = "X-Etre-Version"
-	TRACE_HEADER             = "X-Etre-Trace"
+
+	VERSION_HEADER       = "X-Etre-Version"
+	TRACE_HEADER         = "X-Etre-Trace"
+	QUERY_TIMEOUT_HEADER = "X-Etre-Query-Timeout"
 )
 
 var (
@@ -30,6 +36,7 @@ var (
 	ErrBadData        = errors.New("data from CDC feed is not event or control")
 	ErrCallerBlocked  = errors.New("caller blocked")
 	ErrEntityNotFound = errors.New("entity not found")
+	ErrClientTimeout  = errors.New("client timeout")
 )
 
 // Entity represents a single Etre entity. The caller is responsible for knowing
@@ -51,6 +58,26 @@ func (e Entity) Id() string {
 
 func (e Entity) Type() string {
 	return e[META_LABEL_TYPE].(string)
+}
+
+func (e Entity) Rev() int64 {
+	// See "Some other useful marshalling mappings are:" at https://pkg.go.dev/go.mongodb.org/mongo-driver/bson?tab=doc
+	// TL;DR: only int32 and int64 map 1:1 Go:BSON. Before v0.11, we used int
+	// but that is magical in BSON: "int marshals to a BSON int32 if the value
+	// is between math.MinInt32 and math.MaxInt32, inclusive, and a BSON int64
+	// otherwise." As of v0.11 _rev is int64 everywhere, but for backwards-compat
+	// we check for int and int32.
+	v := e[META_LABEL_REV]
+	switch v.(type) {
+	case int64:
+		return v.(int64)
+	case int32:
+		return int64(v.(int32))
+	case int:
+		return int64(v.(int))
+	}
+	panic(fmt.Sprintf("entity %s has invalid _rev data type: %T; expected int64 (or int/int32 before v0.11)",
+		e.Id(), v))
 }
 
 // Has returns true of the entity has the label, regardless of its value.
@@ -147,10 +174,9 @@ func (wr WriteResult) IsZero() bool {
 
 // Write represents the successful write of one entity.
 type Write struct {
-	Id    string `json:"id"`              // internal _id of entity (all write ops)
-	URI   string `json:"uri,omitempty"`   // fully-qualified address of new entity (insert)
-	Diff  Entity `json:"diff,omitempty"`  // previous entity label values (update)
-	Error string `json:"error,omitempty"` // v0.8 backward-compatibility
+	EntityId string `json:"entityId"`       // internal _id of entity (all write ops)
+	URI      string `json:"uri,omitempty"`  // fully-qualified address of new entity (insert)
+	Diff     Entity `json:"diff,omitempty"` // previous entity label values (update)
 }
 
 // Error is the standard response for all handled errors. Client errors (HTTP 400
@@ -180,13 +206,14 @@ func (e Error) Error() string {
 }
 
 type CDCEvent struct {
-	EventId    string  `json:"eventId" bson:"eventId"`
-	EntityId   string  `json:"entityId" bson:"entityId"`     // _id of entity
-	EntityType string  `json:"entityType" bson:"entityType"` // user-defined
-	Rev        uint    `json:"rev" bson:"rev"`               // entity revision as of this op, 0 on insert
-	Ts         int64   `json:"ts" bson:"ts"`                 // Unix nanoseconds
-	User       string  `json:"user" bson:"user"`
-	Op         string  `json:"op" bson:"op"`                       // i=insert, u=update, d=delete
+	Id     string `json:"eventId" bson:"_id,omitempty"`
+	Ts     int64  `json:"ts" bson:"ts"` // Unix nanoseconds
+	Op     string `json:"op" bson:"op"` // i=insert, u=update, d=delete
+	Caller string `json:"user" bson:"caller"`
+
+	EntityId   string  `json:"entityId" bson:"entityId"`           // _id of entity
+	EntityType string  `json:"entityType" bson:"entityType"`       // user-defined
+	EntityRev  int64   `json:"rev" bson:"entityRev"`               // entity revision as of this op, 0 on insert
 	Old        *Entity `json:"old,omitempty" bson:"old,omitempty"` // old values of affected labels, null on insert
 	New        *Entity `json:"new,omitempty" bson:"new,omitempty"` // new values of affected labels, null on delete
 
@@ -206,11 +233,16 @@ type Latency struct {
 	RTT  int64 // client -> server -> client
 }
 
-var Debug = false
+var (
+	DebugEnabled = false
+	debugLog     = log.New(os.Stderr, "DEBUG ", log.LstdFlags|log.Lmicroseconds)
+)
 
-func debug(fmt string, v ...interface{}) {
-	if !Debug {
+func Debug(msg string, v ...interface{}) {
+	if !DebugEnabled {
 		return
 	}
-	log.Printf(fmt, v...)
+	_, file, line, _ := runtime.Caller(1)
+	msg = fmt.Sprintf("%s:%d %s", path.Base(file), line, msg)
+	debugLog.Printf(msg, v...)
 }

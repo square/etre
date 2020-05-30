@@ -1,4 +1,4 @@
-// Copyright 2019, Square, Inc.
+// Copyright 2019-2020, Square, Inc.
 
 package mock
 
@@ -7,6 +7,8 @@ import (
 
 	"github.com/square/etre/auth"
 )
+
+var _ auth.Plugin = AuthPlugin{}
 
 type AuthPlugin struct {
 	AuthenticateFunc func(*http.Request) (auth.Caller, error)
@@ -17,7 +19,7 @@ func (a AuthPlugin) Authenticate(req *http.Request) (auth.Caller, error) {
 	if a.AuthenticateFunc != nil {
 		return a.AuthenticateFunc(req)
 	}
-	return auth.Caller{}, nil
+	return auth.Caller{Name: "test", MetricGroups: []string{"test"}}, nil
 }
 
 func (a AuthPlugin) Authorize(c auth.Caller, ac auth.Action) error {

@@ -1,4 +1,4 @@
-// Copyright 2019, Square, Inc.
+// Copyright 2019-2020, Square, Inc.
 
 // Package app provides app context and extensions: hooks and plugins.
 package app
@@ -9,6 +9,7 @@ import (
 
 	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc"
+	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
@@ -24,7 +25,8 @@ type Context struct {
 	EntityStore     entity.Store
 	EntityValidator entity.Validator
 	CDCStore        cdc.Store
-	FeedFactory     cdc.FeedFactory
+	ChangesServer   changestream.Server
+	StreamerFactory changestream.StreamerFactory
 	MetricsStore    metrics.Store
 	MetricsFactory  metrics.Factory
 	SystemMetrics   metrics.Metrics
@@ -84,8 +86,10 @@ func Defaults() Context {
 }
 
 func LoadConfig(ctx Context) (config.Config, error) {
-	// No -config file specified, so try a default file if it exists
+	var cfg config.Config
+	var err error
 	if ctx.ConfigFile == "" {
+		// No -config file specified, so try a default file if it exists
 		switch os.Getenv("ENVIRONMENT") {
 		case "staging":
 			ctx.ConfigFile = "config/staging.yaml"
@@ -96,11 +100,20 @@ func LoadConfig(ctx Context) (config.Config, error) {
 		}
 		if !exists(ctx.ConfigFile) {
 			log.Printf("No -config file and %s does not exist; using built-in defaults", ctx.ConfigFile)
-			return config.Default(), nil
+			cfg = config.Default()
+		}
+	} else {
+		log.Printf("Loading -config file %s", ctx.ConfigFile)
+		cfg, err = config.Load(ctx.ConfigFile)
+		if err != nil {
+			return cfg, err
 		}
 	}
-	log.Printf("Loading -config file %s", ctx.ConfigFile)
-	return config.Load(ctx.ConfigFile)
+
+	// Fill in missing CDC.Datasource values from main .Datasource
+	cfg.CDC.Datasource = cfg.CDC.Datasource.WithDefaults(cfg.Datasource)
+
+	return cfg, nil
 }
 
 func exists(file string) bool {

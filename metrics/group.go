@@ -1,4 +1,4 @@
-// Copyright 2018-2019, Square, Inc.
+// Copyright 2018-2020, Square, Inc.
 
 package metrics
 
@@ -36,37 +36,37 @@ func NewGroup(groupNames []string, store Store) Metrics {
 	}
 }
 
-func (mg Group) EntityType(entityType string) {
-	for _, m := range mg.groups {
+func (gm Group) EntityType(entityType string) {
+	for _, m := range gm.groups {
 		m.EntityType(entityType)
 	}
 }
 
-func (mg Group) Inc(mn byte, n int64) {
-	for _, m := range mg.groups {
+func (gm Group) Inc(mn byte, n int64) {
+	for _, m := range gm.groups {
 		m.Inc(mn, n)
 	}
 }
 
-func (mg Group) IncLabel(mn byte, label string) {
-	for _, m := range mg.groups {
+func (gm Group) IncLabel(mn byte, label string) {
+	for _, m := range gm.groups {
 		m.IncLabel(mn, label)
 	}
 }
 
-func (mg Group) Val(mn byte, n int64) {
-	for _, m := range mg.groups {
+func (gm Group) Val(mn byte, n int64) {
+	for _, m := range gm.groups {
 		m.Val(mn, n)
 	}
 }
 
-func (mg Group) Trace(trace map[string]string) {
-	for _, m := range mg.groups {
+func (gm Group) Trace(trace map[string]string) {
+	for _, m := range gm.groups {
 		m.Trace(trace)
 	}
 }
 
-func (mg Group) Report(reset bool) etre.Metrics {
+func (gm Group) Report(reset bool) etre.Metrics {
 	panic("do not call groupMetrics.Group.Report() directly")
 }
 
@@ -109,30 +109,31 @@ type entityMetrics struct {
 }
 
 type queryMetrics struct {
-	Query       *gm.Counter
-	Read        *gm.Counter
-	ReadQuery   *gm.Counter
-	ReadId      *gm.Counter
-	ReadMatch   *gm.Histogram
-	ReadLabels  *gm.Counter
-	Write       *gm.Counter
-	CreateOne   *gm.Counter
-	CreateMany  *gm.Counter
-	CreateBulk  *gm.Histogram
-	UpdateId    *gm.Counter
-	UpdateQuery *gm.Counter
-	UpdateBulk  *gm.Histogram
-	DeleteId    *gm.Counter
-	DeleteQuery *gm.Counter
-	DeleteBulk  *gm.Histogram
-	DeleteLabel *gm.Counter
-	SetOp       *gm.Counter
-	Labels      *gm.Histogram
-	Latency     *gm.Histogram
-	MissSLA     *gm.Counter
-	Created     *gm.Counter
-	Updated     *gm.Counter
-	Deleted     *gm.Counter
+	Query        *gm.Counter
+	Read         *gm.Counter
+	ReadQuery    *gm.Counter
+	ReadId       *gm.Counter
+	ReadMatch    *gm.Histogram
+	ReadLabels   *gm.Counter
+	Write        *gm.Counter
+	CreateOne    *gm.Counter
+	CreateMany   *gm.Counter
+	CreateBulk   *gm.Histogram
+	UpdateId     *gm.Counter
+	UpdateQuery  *gm.Counter
+	UpdateBulk   *gm.Histogram
+	DeleteId     *gm.Counter
+	DeleteQuery  *gm.Counter
+	DeleteBulk   *gm.Histogram
+	DeleteLabel  *gm.Counter
+	SetOp        *gm.Counter
+	Labels       *gm.Histogram
+	Latency      *gm.Histogram
+	MissSLA      *gm.Counter
+	Created      *gm.Counter
+	Updated      *gm.Counter
+	Deleted      *gm.Counter
+	QueryTimeout *gm.Counter
 }
 
 type labelMetrics struct {
@@ -224,6 +225,7 @@ func (m *groupMetrics) Report(reset bool) etre.Metrics {
 		er.Query.Created = em.query.Created.Count()
 		er.Query.Updated = em.query.Updated.Count()
 		er.Query.Deleted = em.query.Deleted.Count()
+		er.Query.QueryTimeout = em.query.QueryTimeout.Count()
 
 		// Histograms
 		qr.ReadMatch_min, qr.ReadMatch_max, qr.ReadMatch_avg, qr.ReadMatch_med = minMaxAvgMed(em.query.ReadMatch, reset)
@@ -315,30 +317,31 @@ func (m *groupEntityMetrics) EntityType(entityType string) {
 	// First metrics for this entity type
 	m.entity[entityType] = &entityMetrics{
 		query: &queryMetrics{
-			Query:       gm.NewCounter(),
-			Read:        gm.NewCounter(),
-			ReadQuery:   gm.NewCounter(),
-			ReadId:      gm.NewCounter(),
-			ReadMatch:   gm.NewHistogram(medConfig),
-			ReadLabels:  gm.NewCounter(),
-			Write:       gm.NewCounter(),
-			CreateOne:   gm.NewCounter(),
-			CreateMany:  gm.NewCounter(),
-			CreateBulk:  gm.NewHistogram(medConfig),
-			UpdateId:    gm.NewCounter(),
-			UpdateQuery: gm.NewCounter(),
-			UpdateBulk:  gm.NewHistogram(medConfig),
-			DeleteId:    gm.NewCounter(),
-			DeleteQuery: gm.NewCounter(),
-			DeleteBulk:  gm.NewHistogram(medConfig),
-			DeleteLabel: gm.NewCounter(),
-			SetOp:       gm.NewCounter(),
-			Created:     gm.NewCounter(),
-			Updated:     gm.NewCounter(),
-			Deleted:     gm.NewCounter(),
-			Labels:      gm.NewHistogram(medConfig),
-			Latency:     gm.NewHistogram(latencyConfig),
-			MissSLA:     gm.NewCounter(),
+			Query:        gm.NewCounter(),
+			Read:         gm.NewCounter(),
+			ReadQuery:    gm.NewCounter(),
+			ReadId:       gm.NewCounter(),
+			ReadMatch:    gm.NewHistogram(medConfig),
+			ReadLabels:   gm.NewCounter(),
+			Write:        gm.NewCounter(),
+			CreateOne:    gm.NewCounter(),
+			CreateMany:   gm.NewCounter(),
+			CreateBulk:   gm.NewHistogram(medConfig),
+			UpdateId:     gm.NewCounter(),
+			UpdateQuery:  gm.NewCounter(),
+			UpdateBulk:   gm.NewHistogram(medConfig),
+			DeleteId:     gm.NewCounter(),
+			DeleteQuery:  gm.NewCounter(),
+			DeleteBulk:   gm.NewHistogram(medConfig),
+			DeleteLabel:  gm.NewCounter(),
+			SetOp:        gm.NewCounter(),
+			Created:      gm.NewCounter(),
+			Updated:      gm.NewCounter(),
+			Deleted:      gm.NewCounter(),
+			Labels:       gm.NewHistogram(medConfig),
+			Latency:      gm.NewHistogram(latencyConfig),
+			MissSLA:      gm.NewCounter(),
+			QueryTimeout: gm.NewCounter(),
 		},
 		label: map[string]*labelMetrics{},
 		trace: map[string]map[string]*gm.Counter{},
@@ -392,6 +395,8 @@ func (m *groupEntityMetrics) Inc(mn byte, n int64) {
 		m.em.query.Updated.Add(n)
 	case Deleted:
 		m.em.query.Deleted.Add(n)
+	case QueryTimeout:
+		m.em.query.QueryTimeout.Add(n)
 	// CDC
 	case CDCClients:
 		m.cdc.Clients.Add(n)
@@ -414,6 +419,7 @@ func (m *groupEntityMetrics) Inc(mn byte, n int64) {
 }
 
 func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
+	m.Lock()
 	lm := m.em.label[label]
 	if lm == nil {
 		lm = &labelMetrics{
@@ -423,6 +429,7 @@ func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
 		}
 		m.em.label[label] = lm
 	}
+	m.Unlock()
 	switch mn {
 	case LabelRead:
 		lm.Read.Add(1)

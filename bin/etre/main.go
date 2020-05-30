@@ -1,4 +1,4 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 package main
 
@@ -20,10 +20,10 @@ func main() {
 	flag.Parse()
 	s := server.NewServer(app.Defaults())
 	if err := s.Boot(configFile); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error starting: %s", err)
 	}
 	if err := s.Run(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error running: %s", err)
 	}
 	log.Println("Etre has stopped")
 }

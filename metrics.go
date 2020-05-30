@@ -214,6 +214,12 @@ type MetricsQueryReport struct {
 	// MissSLA counter is the number of queries with LatencyMs greater than
 	// the configured query latency SLA (config.metrics.query_latency_sla).
 	MissSLA int64 `json:"miss-sla"`
+
+	// QueryTimeout counter is the number of queries which took too  long
+	// to execute and were cancelled. The default query timeout is set by
+	// server config datasource.query.query_timeout, or by client header
+	// X-Etre-Query-Timeout. QueryTimeout and MissSLA are independent.
+	QueryTimeout int64 `json:"query-timeout"`
 }
 
 type MetricsLabelReport struct {

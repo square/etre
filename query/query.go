@@ -1,4 +1,4 @@
-// Copyright 2017, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 // Package query is a wrapper for Kubernetes Labels Selector (KLS). Wrapping
 // KLS allows us to expose a simpler struct to other packages in this project.
@@ -10,9 +10,6 @@ package query
 
 import (
 	"strconv"
-
-	"github.com/globalsign/mgo/bson"
-	"github.com/square/etre/kls"
 )
 
 // Query is a list of predicates.
@@ -32,7 +29,7 @@ type Predicate struct {
 func Translate(labelSelectors string) (Query, error) {
 	query := Query{}
 
-	req, err := kls.Parse(labelSelectors)
+	req, err := Parse(labelSelectors)
 	if err != nil {
 		return query, err
 	}
@@ -56,7 +53,6 @@ func Translate(labelSelectors string) (Query, error) {
 // and audit log package.
 func translateValues(operator string, values []string) interface{} {
 	var value interface{}
-
 	switch operator {
 	case "in", "notin":
 		// Values set must be non-empty.
@@ -68,23 +64,7 @@ func translateValues(operator string, values []string) interface{} {
 		// Values set must contain only one value, which was interpreted as an integer, so convert from string to integer
 		value, _ = strconv.Atoi(values[0])
 	case "exists", "notexists":
-		// Values set must be empty
-		value = []string{}
+		// No values
 	}
-
 	return value
-}
-
-// IdEqual returns a Query for "_id=N".
-func IdEqual(id string) Query {
-	// _id is not a valid field name to pass to Translate, so manually create a query object
-	return Query{
-		Predicates: []Predicate{
-			Predicate{
-				Label:    "_id",
-				Operator: "=",
-				Value:    bson.ObjectIdHex(id),
-			},
-		},
-	}
 }

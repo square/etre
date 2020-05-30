@@ -5,7 +5,6 @@ package app
 
 import (
 	"io"
-	"log"
 
 	"github.com/square/etre"
 	"github.com/square/etre/es/config"
@@ -46,13 +45,4 @@ type Hooks struct {
 	BeforeDelete      func(ctx *Context) error
 	BeforeUpdate      func(cxt *Context) error
 	WriteResult       func(Context, etre.WriteResult, error)
-}
-
-func init() {
-	log.SetPrefix("DEBUG ")
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
-}
-
-func Debug(fmt string, v ...interface{}) {
-	log.Printf(fmt, v...)
 }

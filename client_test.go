@@ -1,3 +1,5 @@
+// Copyright 2017-2020, Square, Inc.
+
 package etre_test
 
 import (
@@ -167,75 +169,6 @@ func TestQueryOK(t *testing.T) {
 	}
 }
 
-func TestQueryLongOK(t *testing.T) {
-	setup(t)
-
-	// Set global vars used by httptest.Server
-	respData = []etre.Entity{
-		{
-			"_id":      "abc",
-			"hostname": "localhost",
-		},
-	}
-
-	ec := etre.NewEntityClient("node", ts.URL, httpClient)
-
-	// A very long query that returns status code 200 and respData
-	query := "this query is fake and just needs to be greater than 2,000 characters long" +
-		"in order to trigger the client automatically switching from endpoint GET /entities," +
-		"which we think is canonical and logical because that endpoint intuitively feels" +
-		"like it would fetch entities and so we made it do just that, to endpoint POST /query" +
-		"which, taking the query--this very long and wordy query--by way of POST data instead" +
-		"of URL query parameter bypasses the roughly 2,000 character limit for a URL." +
-		"Despite how long this fake query already is, as of here we are only just over 500" +
-		"characters. So... yeah. Let's just pretend a cat crawled up on the keyboard and" +
-		"lied down to take a nap, thereby randomly pressing keys, resulting in djkdlf;a " +
-		"jkfd;a jkfdl;afdsa jklfdakljdfa  fdjkal;fd ajk;fd39pura; jf0-2ir;lsdj fjdk fda093 " +
-		"u9025;lkj fds03292jkl;sa 903[2fjklseaui9032jakl;fd ;309rjoiajfkle;jro3palk;f3u09 " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"................................................................................ " +
-		"(that's where its nose rested on the '.' key). OK, that's long enough. Your dog " +
-		"is scratching at the door and wants to be let back in the house."
-	got, err := ec.Query(query, etre.QueryFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify call and response
-	if gotMethod != "POST" {
-		t.Errorf("got method %s, expected POST", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/query/node"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if gotQuery != "" {
-		t.Errorf("got query %s, expected none", gotQuery)
-	}
-	if gotBody == nil {
-		t.Errorf("no body, expected the query as POST data")
-	} else {
-		if string(gotBody) != query {
-			t.Errorf("got query in body '%s', expected the long query", string(gotBody))
-		}
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
-}
-
 func TestQueryNoResults(t *testing.T) {
 	// Same test as TestQueryOK but no results to make sure client handles
 	// status code 200 but an empty list.
@@ -312,8 +245,8 @@ func TestInsertOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 			},
 		},
 	}
@@ -517,8 +450,8 @@ func TestUpdateOneOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -559,8 +492,8 @@ func TestDeleteOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -602,8 +535,8 @@ func TestDeleteWithSet(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -656,8 +589,8 @@ func TestDeleteOneOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -690,8 +623,8 @@ func TestDeleteOneWithSet(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -762,8 +695,8 @@ func TestDeleteLabelOK(t *testing.T) {
 	respData = etre.WriteResult{
 		Writes: []etre.Write{
 			{
-				Id:  "abc",
-				URI: "http://localhost/entity/abc",
+				EntityId: "abc",
+				URI:      "http://localhost/entity/abc",
 				Diff: map[string]interface{}{
 					"foo": "foo",
 				},
@@ -887,12 +820,12 @@ func TestCDCClient(t *testing.T) {
 	// First, let's send the client a CDC event and make sure it sends via the
 	// events chan it returned from Start()
 	sentEvent := etre.CDCEvent{
-		EventId:    "xyz",
+		Id:         "xyz",
+		Ts:         1001,
+		Op:         "i", // insert
+		Caller:     "ryan",
 		EntityId:   "abc",
 		EntityType: "node",
-		Ts:         1001,
-		User:       "ryan",
-		Op:         "i", // insert
 		Old:        nil,
 		New: &etre.Entity{
 			"_id": "abc",

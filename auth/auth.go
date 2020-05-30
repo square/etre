@@ -1,4 +1,4 @@
-// Copyright 2018-2019, Square, Inc.
+// Copyright 2018-2020, Square, Inc.
 
 // Package auth provides team-based authentication and authorization.
 package auth
@@ -7,9 +7,9 @@ import (
 	"net/http"
 )
 
-const (
-	DEFAULT_CALLER_NAME  = "etre"
-	DEFAULT_METRIC_GROUP = "etre"
+var (
+	DefaultCallerName  = ""
+	DefaultMetricGroup = "etre"
 )
 
 type ACL struct {
@@ -75,8 +75,8 @@ func (a AllowAll) Authenticate(*http.Request) (Caller, error) {
 	// Return a new caller each time because the auth manager might set
 	// Trace if the client passed trace values via X-Etre-Trace header
 	caller := Caller{
-		Name:         DEFAULT_CALLER_NAME,
-		MetricGroups: []string{DEFAULT_METRIC_GROUP},
+		Name:         DefaultCallerName,
+		MetricGroups: []string{DefaultMetricGroup},
 	}
 	return caller, nil
 }

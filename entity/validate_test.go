@@ -11,7 +11,7 @@ import (
 
 var validate = entity.NewValidator(entityTypes)
 
-func TestValidateEntities(t *testing.T) {
+func TestValidateCreateEntitiesOK(t *testing.T) {
 	// All ok
 	entities := []etre.Entity{
 		etre.Entity{"x": 0},
@@ -23,10 +23,109 @@ func TestValidateEntities(t *testing.T) {
 	}
 }
 
-func TestValidateWriteOp(t *testing.T) {
+func TestValidateCreateEntitiesErrorsMetalabels(t *testing.T) {
+	invalid := []etre.Entity{
+		etre.Entity{"a": "b", "_id": "59f10d2a5669fc79103a1111"}, // _id not allowed
+		etre.Entity{"a": "b", "_type": "node"},                   // _type not allowed
+		etre.Entity{"a": "b", "_rev": int64(0)},                  // _rev not allowed
+	}
+
+	for _, e := range invalid {
+		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_CREATE)
+		if err == nil {
+			t.Errorf("no error creating entity, expected one: %+v", e)
+		}
+		ve, ok := err.(entity.ValidationError)
+		if !ok {
+			t.Errorf("error is type %T, expected entity.ValidationError", err)
+		} else if ve.Type != "cannot-set-metalabel" {
+			t.Errorf("entity.ValidationError.Type = %s, expected cannot-set-metalabel", ve.Type)
+		}
+	}
+
+	for _, e := range invalid {
+		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_UPDATE)
+		if err == nil {
+			t.Errorf("no error creating entity, expected one: %+v", e)
+		}
+		ve, ok := err.(entity.ValidationError)
+		if !ok {
+			t.Errorf("error is type %T, expected entity.ValidationError", err)
+		} else if ve.Type != "cannot-change-metalabel" {
+			t.Errorf("entity.ValidationError.Type = %s, expected cannot-change-metalabel", ve.Type)
+		}
+	}
+}
+
+func TestValidateCreateEntitiesErrorsWhitespace(t *testing.T) {
+	invalid := []etre.Entity{
+		etre.Entity{" ": "b"},   // label can't be space
+		etre.Entity{" a": "b"},  // label can't have space
+		etre.Entity{" a ": "b"}, // label can't have space
+		etre.Entity{"a ": "b"},  // label can't have space
+	}
+
+	for _, e := range invalid {
+		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_CREATE)
+		if err == nil {
+			t.Errorf("no error creating entity, expected one: %+v", e)
+		}
+		ve, ok := err.(entity.ValidationError)
+		if !ok {
+			t.Errorf("error is type %T, expected entity.ValidationError", err)
+		} else if ve.Type != "label-has-whitespace" {
+			t.Errorf("entity.ValidationError.Type = %s, expected label-has-whitespace", ve.Type)
+		}
+	}
+
+	for _, e := range invalid {
+		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_UPDATE)
+		if err == nil {
+			t.Errorf("no error creating entity, expected one: %+v", e)
+		}
+		ve, ok := err.(entity.ValidationError)
+		if !ok {
+			t.Errorf("error is type %T, expected entity.ValidationError", err)
+		} else if ve.Type != "label-has-whitespace" {
+			t.Errorf("entity.ValidationError.Type = %s, expected label-has-whitespace", ve.Type)
+		}
+	}
+
+	invalid = []etre.Entity{
+		etre.Entity{"": "b"}, // label can't be empty string
+	}
+
+	for _, e := range invalid {
+		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_CREATE)
+		if err == nil {
+			t.Errorf("no error creating entity, expected one: %+v", e)
+		}
+		ve, ok := err.(entity.ValidationError)
+		if !ok {
+			t.Errorf("error is type %T, expected entity.ValidationError", err)
+		} else if ve.Type != "empty-string-label" {
+			t.Errorf("entity.ValidationError.Type = %s, expected empty-string-label", ve.Type)
+		}
+	}
+
+	for _, e := range invalid {
+		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_UPDATE)
+		if err == nil {
+			t.Errorf("no error creating entity, expected one: %+v", e)
+		}
+		ve, ok := err.(entity.ValidationError)
+		if !ok {
+			t.Errorf("error is type %T, expected entity.ValidationError", err)
+		} else if ve.Type != "empty-string-label" {
+			t.Errorf("entity.ValidationError.Type = %s, expected cannot-change-metalabel", ve.Type)
+		}
+	}
+}
+
+func TestValidateWriteOpOK(t *testing.T) {
 	wo := entity.WriteOp{
 		EntityType: "grue",
-		User:       "dn",
+		Caller:     "dn",
 	}
 	err := validate.WriteOp(wo)
 	if err == nil {

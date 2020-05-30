@@ -1,4 +1,4 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2020, Square, Inc.
 
 package etre
 
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -71,6 +72,8 @@ type EntityClientConfig struct {
 	Retry        uint          // optional retry count on network or API error
 	RetryWait    time.Duration // optional wait time between retries
 	RetryLogging bool          // log error on retry to stderr
+	QueryTimeout time.Duration // timeout passed to API via etre.QUERY_TIMEOUT_HEADER
+	Debug        bool
 }
 
 // EntityClients represents type-specific entity clients keyed on user-defined const
@@ -100,6 +103,7 @@ type entityClient struct {
 	retry            uint
 	retryWait        time.Duration
 	retryLogging     bool
+	queryTimeout     time.Duration
 }
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
@@ -117,6 +121,7 @@ func NewEntityClient(entityType, addr string, httpClient *http.Client) EntityCli
 }
 
 func NewEntityClientWithConfig(c EntityClientConfig) EntityClient {
+	DebugEnabled = c.Debug
 	return entityClient{
 		entityType:   c.EntityType,
 		addr:         c.Addr,
@@ -124,6 +129,7 @@ func NewEntityClientWithConfig(c EntityClientConfig) EntityClient {
 		retry:        c.Retry,
 		retryWait:    c.RetryWait,
 		retryLogging: c.RetryLogging,
+		queryTimeout: c.QueryTimeout,
 	}
 }
 
@@ -144,48 +150,32 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	if query == "" {
 		return nil, ErrNoQuery
 	}
+	Debug("query='%s', filter=%+v", query, filter)
 
-	// Queries typically use "GET <path>?query=<query>", but sometimes URLs >2k
-	// don't work (dependent on http implementation). So if it's short enough,
-	// use GET, else use POST with the unescaped query.
-	var (
-		method string
-		path   string
-		data   []byte
-	)
-	if len(query) < 2000 {
-		method = "GET"
-		path = "/entities/" + c.entityType + "?query=" + url.QueryEscape(query) // always escape the query
-		if len(filter.ReturnLabels) > 0 {
-			rl := strings.Join(filter.ReturnLabels, ",")
-			path += "&labels=" + rl
-		}
-		if filter.Distinct {
-			path += "&distinct"
-		}
-	} else {
-		// _DO NOT ESCAPE QUERY!_ It's not sent via URL, so no escaping needed.
-		// @todo: support QueryFilter
-		method = "POST"
-		path = "/query/" + c.entityType
-		data = []byte(query)
+	path := "/entities/" + c.entityType + "?query=" + url.QueryEscape(query) // always escape the query
+	if len(filter.ReturnLabels) > 0 {
+		rl := strings.Join(filter.ReturnLabels, ",")
+		path += "&labels=" + rl
+	}
+	if filter.Distinct {
+		path += "&distinct"
 	}
 
 	var entities []Entity
-	err := c.apiRetry(func() error {
-		resp, bytes, err := c.do(method, path, data)
+	err := c.apiRetry(func() (bool, error) {
+		resp, bytes, err := c.do("GET", path, nil)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return apiError(resp, bytes)
+			return readError(resp, bytes)
 		}
 		if len(bytes) > 0 {
 			if err := json.Unmarshal(bytes, &entities); err != nil {
-				return err
+				return false, err
 			}
 		}
-		return nil
+		return true, nil
 	})
 	return entities, err
 }
@@ -203,6 +193,7 @@ func (c entityClient) Update(query string, patch Entity) (WriteResult, error) {
 	if query == "" {
 		return WriteResult{}, ErrNoQuery
 	}
+	Debug("query='%s', patch=%+v", query, patch)
 	query = url.QueryEscape(query) // always escape the query
 	if len(patch) == 0 {
 		return WriteResult{}, ErrNoEntity
@@ -216,6 +207,7 @@ func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
+	Debug("_id=%s, patch=%+v", id, patch)
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
 	wr, err := c.write(patch, 1, "PUT", "/entity/"+c.entityType+"/"+id)
@@ -229,6 +221,7 @@ func (c entityClient) Delete(query string) (WriteResult, error) {
 	if query == "" {
 		return WriteResult{}, ErrNoQuery
 	}
+	Debug("query='%s'", query)
 	query = url.QueryEscape(query) // always escape the query
 	return c.write(nil, -1, "DELETE", "/entities/"+c.entityType+"?query="+query)
 }
@@ -237,6 +230,7 @@ func (c entityClient) DeleteOne(id string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
+	Debug("_id=%s", id)
 	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
@@ -250,18 +244,18 @@ func (c entityClient) Labels(id string) ([]string, error) {
 	}
 
 	var labels []string
-	err := c.apiRetry(func() error {
+	err := c.apiRetry(func() (bool, error) {
 		resp, bytes, err := c.do("GET", "/entity/"+c.entityType+"/"+id+"/labels", nil)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return apiError(resp, bytes)
+			return readError(resp, bytes)
 		}
 		if err := json.Unmarshal(bytes, &labels); err != nil {
-			return err
+			return false, err
 		}
-		return nil
+		return true, nil
 	})
 	return labels, err
 }
@@ -273,6 +267,7 @@ func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) 
 	if label == "" {
 		return WriteResult{}, ErrNoLabel
 	}
+	Debug("_id=%s, label=%s", id, label)
 	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
 	if err != nil {
 		return WriteResult{}, err
@@ -312,26 +307,35 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 		}
 	}
 
-	err = c.apiRetry(func() error {
+	err = c.apiRetry(func() (bool, error) {
 		// Do low-level HTTP request. An erorr here is probably network not API error.
 		resp, bytes, err := c.do(method, endpoint, bytes)
 		if err != nil {
-			return err
+			return false, err
 		}
+
+		done := resp.StatusCode >= 400 && resp.StatusCode < 500
 
 		// On write, API should return an etre.WriteResult, but if API crashes
 		// there won't be response data
 		if len(bytes) == 0 {
-			return fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
+			return done, fmt.Errorf("Server error: HTTP status %d, no response (check API logs)", resp.StatusCode)
 		}
 		wr = WriteResult{} // outer scope, reset on retry
 		if err := json.Unmarshal(bytes, &wr); err != nil {
-			return fmt.Errorf("json.Unmarshal: %s", err)
+			return done, fmt.Errorf("json.Unmarshal: %s", err)
+		}
+		Debug("write result: %+v", wr)
+		if resp.StatusCode == http.StatusNotFound {
+			return done, ErrEntityNotFound
 		}
 		if wr.IsZero() && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-			return fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
+			if resp.StatusCode >= 500 {
+				return done, fmt.Errorf("Server error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
+			}
+			return done, fmt.Errorf("Client error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
 		}
-		return nil
+		return true, nil
 	})
 	return wr, err
 }
@@ -356,19 +360,26 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 		req, err = http.NewRequest(method, url, nil)
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("http.NewRequest: %s", err)
+		return nil, nil, fmt.Errorf("http.NewRequest: %s: %s", url, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(VERSION_HEADER, VERSION)
+	req.Header.Set(QUERY_TIMEOUT_HEADER, c.queryTimeout.String())
 	if c.traceHeaderValue != "" {
 		req.Header.Set(TRACE_HEADER, c.traceHeaderValue)
 	}
 
 	// Send request
+	Debug("request: %+v", req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		Debug("httpClient.Do() error: %v", err)
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			return nil, nil, ErrClientTimeout
+		}
 		return nil, nil, fmt.Errorf("http.Client.Do: %s", err)
 	}
+	Debug("response: %+v", resp)
 
 	// Read API response
 	defer resp.Body.Close()
@@ -384,37 +395,41 @@ func (c entityClient) url(endpoint string) string {
 	return c.addr + API_ROOT + endpoint
 }
 
-func apiError(resp *http.Response, bytes []byte) error {
-	// Handle known response codes, can ignore response data
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		return ErrEntityNotFound
+func readError(resp *http.Response, bytes []byte) (bool, error) {
+	done := resp.StatusCode >= 400 && resp.StatusCode < 500
+
+	if resp.StatusCode == http.StatusNotFound {
+		return done, ErrEntityNotFound
 	}
 
 	// No response data from API, it crashed or had unhandled error
 	if len(bytes) == 0 {
-		return fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
+		return done, fmt.Errorf("Server error: HTTP status %d, no response (check API logs)", resp.StatusCode)
 	}
 
 	// Response data should be an etre.Error
 	var errResp Error
 	if err := json.Unmarshal(bytes, &errResp); err != nil {
-		return fmt.Errorf("API error: HTTP status %d, cannot decode response (%s): %s", resp.StatusCode, err, string(bytes))
+		return done, fmt.Errorf("Server error: HTTP status %d, cannot decode response (%s): %s", resp.StatusCode, err, string(bytes))
 	}
 	if errResp.Type == "" || errResp.Message == "" {
-		return fmt.Errorf("API error: HTTP status %d, unknown response: %s", resp.StatusCode, string(bytes))
+		return done, fmt.Errorf("Server error: HTTP status %d, unknown response: %s", resp.StatusCode, string(bytes))
 	}
 	if resp.StatusCode >= 500 {
-		return fmt.Errorf("API error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
+		return done, fmt.Errorf("Server error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 	}
-	return fmt.Errorf("error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
+	return done, fmt.Errorf("Client error: %s: %s (HTTP staeus %d)", errResp.Type, errResp.Message, resp.StatusCode)
 }
 
-func (c entityClient) apiRetry(f func() error) error {
+func (c entityClient) apiRetry(f func() (bool, error)) error {
 	tries := 1 + c.retry
 	var err error
+	var done bool
 	for tryNo := uint(1); tryNo <= tries; tryNo++ {
-		err = f()
+		done, err = f()
+		if done {
+			return err
+		}
 		if err == nil {
 			return nil // success
 		}

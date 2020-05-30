@@ -20,7 +20,7 @@ func TestAllowAll(t *testing.T) {
 		t.Error(err)
 	}
 	expectCaller := auth.Caller{
-		Name:         "etre",
+		Name:         "",
 		MetricGroups: []string{"etre"},
 	}
 	if diffs := deep.Equal(caller, expectCaller); diffs != nil {
@@ -244,7 +244,7 @@ func TestTraceHeader(t *testing.T) {
 	req, _ := http.NewRequest("GET", "http://example.com", nil)
 	req.Header.Set(etre.TRACE_HEADER, "app=foo,host=bar")
 	expectCaller := auth.Caller{
-		Name:         "etre",
+		Name:         "",
 		MetricGroups: []string{"etre"},
 		Trace: map[string]string{
 			"app":  "foo",

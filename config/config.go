@@ -12,25 +12,27 @@ import (
 )
 
 const (
-	DEFAULT_ADDR                           = "127.0.0.1:8050"
+	DEFAULT_ADDR                           = "127.0.0.1:32084"
 	DEFAULT_DATASOURCE_URL                 = "mongodb://localhost:27017"
 	DEFAULT_DB                             = "etre_dev"
-	DEFAULT_DB_TIMEOUT                     = 5
-	DEFAULT_CDC_COLLECTION                 = "" // disabled
-	DEFAULT_CDC_DELAY_COLLECTION           = "cdc_delay"
-	DEFAULT_CDC_WRITE_RETRY_COUNT          = 3
-	DEFAULT_CDC_WRITE_RETRY_WAIT           = 50
+	DEFAULT_DB_CONNECT_TIMEOUT             = "5s"
+	DEFAULT_DB_QUERY_TIMEOUT               = "2s"
+	DEFAULT_DB_MIN_CONN                    = 10
+	DEFAULT_DB_MAX_CONN                    = 1000
+	DEFAULT_CDC_WRITE_RETRY_COUNT          = 2
+	DEFAULT_CDC_WRITE_RETRY_WAIT           = 2
 	DEFAULT_CDC_FALLBACK_FILE              = "/tmp/etre-cdc.json"
-	DEFAULT_CDC_STATIC_DELAY               = -1 // if negative, system will use a dynamic delayer
-	DEFAULT_FEED_BUFFER_SIZE               = 100
-	DEFAULT_FEED_POLL_INTERVAL             = 2000
+	DEFAULT_CHANGESTREAM_BUFFER_SIZE       = 100
+	DEFAULT_CHANGESTREAM_MAX_CLIENTS       = 100
 	DEFAULT_ENTITY_TYPE                    = "host"
 	DEFAULT_QUERY_LATENCY_SLA              = "1s"
 	DEFAULT_QUERY_PROFILE_SAMPLE_RATE      = 0.2
 	DEFAULT_QUERY_PROFILE_REPORT_THRESHOLD = "500ms"
 )
 
-var reservedNames = []string{"entity", "entities"}
+const CDC_COLLECTION = "cdc"
+
+var reservedNames = []string{"entity", "entities", "cdc", "etre"}
 
 func Default() Config {
 	return Config{
@@ -41,23 +43,24 @@ func Default() Config {
 			Addr: DEFAULT_ADDR,
 		},
 		Datasource: DatasourceConfig{
-			URL:      DEFAULT_DATASOURCE_URL,
-			Database: DEFAULT_DB,
-			Timeout:  DEFAULT_DB_TIMEOUT,
+			URL:            DEFAULT_DATASOURCE_URL,
+			Database:       DEFAULT_DB,
+			ConnectTimeout: DEFAULT_DB_CONNECT_TIMEOUT,
+			QueryTimeout:   DEFAULT_DB_QUERY_TIMEOUT,
+			MinConnections: DEFAULT_DB_MIN_CONN,
+			MaxConnections: DEFAULT_DB_MAX_CONN,
 		},
 		CDC: CDCConfig{
-			Collection:      DEFAULT_CDC_COLLECTION,
+			Datasource:      DatasourceConfig{}, // default to Config.Datasource
 			FallbackFile:    DEFAULT_CDC_FALLBACK_FILE,
 			WriteRetryCount: DEFAULT_CDC_WRITE_RETRY_COUNT,
 			WriteRetryWait:  DEFAULT_CDC_WRITE_RETRY_WAIT,
-			DelayCollection: DEFAULT_CDC_DELAY_COLLECTION,
-			StaticDelay:     DEFAULT_CDC_STATIC_DELAY,
+			ChangeStream: ChangeStreamConfig{
+				MaxClients: DEFAULT_CHANGESTREAM_MAX_CLIENTS,
+				BufferSize: DEFAULT_CHANGESTREAM_BUFFER_SIZE,
+			},
 		},
-		Feed: FeedConfig{
-			StreamerBufferSize: DEFAULT_FEED_BUFFER_SIZE,
-			PollInterval:       DEFAULT_FEED_POLL_INTERVAL,
-		},
-		ACL: ACLConfig{},
+		Security: SecurityConfig{},
 		Metrics: MetricsConfig{
 			QueryLatencySLA:             DEFAULT_QUERY_LATENCY_SLA,
 			QueryProfileSampleRate:      DEFAULT_QUERY_PROFILE_SAMPLE_RATE,
@@ -71,33 +74,33 @@ func Load(file string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
 		// err includes file name, e.g. "read config file: open <file>: no such file or directory"
 		return Config{}, fmt.Errorf("cannot read config file: %s", err)
 	}
-
-	config := Default()
+	var config Config
 	if err := yaml.Unmarshal(bytes, &config); err != nil {
 		return Config{}, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
 	}
+	return config, nil
+}
 
+func Validate(config Config) error {
 	if len(config.Entity.Types) == 0 {
-		return Config{}, fmt.Errorf("invalid config: no entity types specified in %s", file)
+		return fmt.Errorf("no entity types specified")
 	}
 
-	// Ensure no entityType name is a reserved word
 	for _, t := range config.Entity.Types {
 		for _, r := range reservedNames {
 			if t != r {
 				continue
 			}
-			return Config{}, fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
+			return fmt.Errorf("entity type %s is a reserved word: %s", t, strings.Join(reservedNames, ","))
 		}
 	}
 
-	return config, nil
+	return nil
 }
 
 type Config struct {
@@ -105,15 +108,17 @@ type Config struct {
 	Datasource DatasourceConfig `yaml:"datasource"`
 	Entity     EntityConfig     `yaml:"entity"`
 	CDC        CDCConfig        `yaml:"cdc"`
-	Feed       FeedConfig       `yaml:"feed"`
-	ACL        ACLConfig        `yaml:"acl"`
+	Security   SecurityConfig   `yaml: "security"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
 }
 
 type DatasourceConfig struct {
-	URL      string `yaml:"url"`
-	Database string `yaml:"database"`
-	Timeout  int    `yaml:"timeout"`
+	URL            string `yaml:"url"`
+	Database       string `yaml:"database"`
+	ConnectTimeout string `yaml:"connect_timeout"`
+	QueryTimeout   string `yaml:"query_timeout"`
+	MinConnections uint64 `yaml:"min_connections"`
+	MaxConnections uint64 `yaml:"max_connections"`
 
 	// Certs
 	TLSCert string `yaml:"tls_cert"`
@@ -127,13 +132,60 @@ type DatasourceConfig struct {
 	Mechanism string `yaml:"mechanism"`
 }
 
+func (c DatasourceConfig) WithDefaults(d DatasourceConfig) DatasourceConfig {
+	if c.URL == "" {
+		c.URL = d.URL
+	}
+	if c.Database == "" {
+		c.Database = d.Database
+	}
+	if c.ConnectTimeout == "" {
+		c.ConnectTimeout = d.ConnectTimeout
+	}
+	if c.QueryTimeout == "" {
+		c.QueryTimeout = d.QueryTimeout
+	}
+	if c.MinConnections == 0 {
+		c.MinConnections = d.MinConnections
+	}
+	if c.MaxConnections == 0 {
+		c.MaxConnections = d.MaxConnections
+	}
+
+	if c.TLSCert == "" {
+		c.TLSCert = d.TLSCert
+	}
+	if c.TLSKey == "" {
+		c.TLSKey = d.TLSKey
+	}
+	if c.TLSCA == "" {
+		c.TLSCA = d.TLSCA
+	}
+
+	if c.Username == "" {
+		c.Username = d.Username
+	}
+	if c.Password == "" {
+		c.Password = d.Password
+	}
+	if c.Source == "" {
+		c.Source = d.Source
+	}
+	if c.Mechanism == "" {
+		c.Mechanism = d.Mechanism
+	}
+	return c
+}
+
 type EntityConfig struct {
 	Types []string `yaml:"types"`
 }
 
 type CDCConfig struct {
-	// The collection that CDC events are stored in.
-	Collection string `yaml:"collection"`
+	Disabled bool `yaml:"disabled"`
+
+	Datasource DatasourceConfig `yaml:"datasource"`
+
 	// If set, CDC events will attempt to be written to this file if they cannot
 	// be written to mongo.
 	FallbackFile string `yaml:"fallback_file"`
@@ -142,21 +194,17 @@ type CDCConfig struct {
 	// Wait time in milliseconds between write retry events.
 	WriteRetryWait int `yaml:"write_retry_wait"` // milliseconds
 	// The collection that delays are stored in.
-	DelayCollection string `yaml:"delay_collection"`
-	// If this value is positive, the delayer will always return a max timestamp
-	// that is time.Now() minus this config value. If this value is negative,
-	// the delayer will return a max timestamp that dynamically changes
-	// depending on the active API calls into Etre. Units in milliseconds.
-	StaticDelay int `yaml:"static_delay"`
+
+	ChangeStream ChangeStreamConfig `yaml:"change_stream"`
 }
 
-type FeedConfig struct {
-	// The buffer size that a streamer has when consuming from the poller. If the
-	// poller fills the buffer up then the streamer will error out since it won't
-	// be able to catch up to the poller anymore.
-	StreamerBufferSize int `yaml:"streamer_buffer_size"`
-	// The amount of time that the poller will sleep between polls, in milliseconds.
-	PollInterval int `yaml:"poll_interval"`
+type ChangeStreamConfig struct {
+	MaxClients uint `yaml:"max_clients"`
+
+	// BufferSize is the number of etre.CDCEvent to buffer per-client. If the
+	// buffer fills because the client is slow to receive events, the server
+	// drops the client.
+	BufferSize uint `yaml:"buffer_size"`
 }
 
 type ServerConfig struct {
@@ -164,17 +212,14 @@ type ServerConfig struct {
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
 	TLSCA   string `yaml:"tls_ca"`
-
-	// If client does not set X-Etre-Version, default to this version.
-	DefaultClientVersion string `yaml:"default_client_version"`
 }
 
-type ACLConfig struct {
-	Roles []ACL `yaml:"roles"`
+type SecurityConfig struct {
+	ACL []ACL `yaml:"acl"`
 }
 
 type ACL struct {
-	Name              string   `yaml:"name"`
+	Role              string   `yaml:"role"`
 	Admin             bool     `yaml:"admin"`
 	Read              []string `yaml:"read"`
 	Write             []string `yaml:"write"`
