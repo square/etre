@@ -319,7 +319,7 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 		// On write, API should return an etre.WriteResult, but if API crashes
 		// there won't be response data
 		if len(bytes) == 0 {
-			return done, fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
+			return done, fmt.Errorf("Server error: HTTP status %d, no response (check API logs)", resp.StatusCode)
 		}
 		wr = WriteResult{} // outer scope, reset on retry
 		if err := json.Unmarshal(bytes, &wr); err != nil {
@@ -330,7 +330,10 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 			return done, ErrEntityNotFound
 		}
 		if wr.IsZero() && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-			return done, fmt.Errorf("API error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
+			if resp.StatusCode >= 500 {
+				return done, fmt.Errorf("Server error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
+			}
+			return done, fmt.Errorf("Client error: HTTP status %d, response: '%s'", resp.StatusCode, string(bytes))
 		}
 		return true, nil
 	})
@@ -401,21 +404,21 @@ func readError(resp *http.Response, bytes []byte) (bool, error) {
 
 	// No response data from API, it crashed or had unhandled error
 	if len(bytes) == 0 {
-		return done, fmt.Errorf("API error: HTTP status %d, no response (check API logs)", resp.StatusCode)
+		return done, fmt.Errorf("Server error: HTTP status %d, no response (check API logs)", resp.StatusCode)
 	}
 
 	// Response data should be an etre.Error
 	var errResp Error
 	if err := json.Unmarshal(bytes, &errResp); err != nil {
-		return done, fmt.Errorf("API error: HTTP status %d, cannot decode response (%s): %s", resp.StatusCode, err, string(bytes))
+		return done, fmt.Errorf("Server error: HTTP status %d, cannot decode response (%s): %s", resp.StatusCode, err, string(bytes))
 	}
 	if errResp.Type == "" || errResp.Message == "" {
-		return done, fmt.Errorf("API error: HTTP status %d, unknown response: %s", resp.StatusCode, string(bytes))
+		return done, fmt.Errorf("Server error: HTTP status %d, unknown response: %s", resp.StatusCode, string(bytes))
 	}
 	if resp.StatusCode >= 500 {
-		return done, fmt.Errorf("API error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
+		return done, fmt.Errorf("Server error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 	}
-	return done, fmt.Errorf("error: %s: %s (HTTP staeus %d)", errResp.Type, errResp.Message, resp.StatusCode)
+	return done, fmt.Errorf("Client error: %s: %s (HTTP staeus %d)", errResp.Type, errResp.Message, resp.StatusCode)
 }
 
 func (c entityClient) apiRetry(f func() (bool, error)) error {
