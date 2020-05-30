@@ -114,7 +114,8 @@ func (c *cdcClient) Start(startTime time.Time) (<-chan CDCEvent, error) {
 		if resp != nil {
 			defer resp.Body.Close()
 			body, _ := ioutil.ReadAll(resp.Body)
-			return nil, apiError(resp, body)
+			_, err = readError(resp, body)
+			return nil, err
 		}
 		return nil, fmt.Errorf("websocket.DefaultDialer.Dial(%s): %s", u.String(), err)
 	}
