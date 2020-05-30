@@ -81,7 +81,12 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 		for _, label := range f.ReturnLabels {
 			p[label] = 1
 		}
-		p["_id"] = 0
+		// Only include _id if explicitly set in f.ReturnLabels. If not,
+		// ok is false and we must explicitly exlude it because MongoDB
+		// returns it by default.
+		if _, ok := p["_id"]; !ok {
+			p["_id"] = 0
+		}
 	}
 
 	opts := options.Find().SetProjection(p)

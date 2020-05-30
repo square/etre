@@ -227,6 +227,24 @@ func TestReadEntitiesFilterReturnLabels(t *testing.T) {
 	}
 }
 
+func TestReadEntitiesFilterReturnMetalabels(t *testing.T) {
+	store := setup(t, &mock.CDCStore{})
+	q, err := query.Translate("y=a")
+	if err != nil {
+		t.Fatalf("cannot translate '%s': %s", q, err)
+	}
+	actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{ReturnLabels: []string{"_id", "_type", "_rev", "y"}})
+	if err != nil {
+		t.Fatalf("store.ReadEntities error on '%s': %s", q, err)
+	}
+	expect := []etre.Entity{
+		{"_id": testNodes[0]["_id"], "_type": entityType, "_rev": int64(0), "y": "a"},
+	}
+	if diff := deep.Equal(actual, expect); diff != nil {
+		t.Error(diff)
+	}
+}
+
 // --------------------------------------------------------------------------
 // Create
 // --------------------------------------------------------------------------
