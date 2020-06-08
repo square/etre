@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -43,10 +44,13 @@ type CDCClient interface {
 
 // Internal implementation of CDCClient over a websocket.
 type cdcClient struct {
-	addr       string
-	tlsConfig  *tls.Config
-	bufferSize int
-	dbg        bool
+	addr          string
+	httpClient    *http.Client
+	httpTransport *http.Transport
+	headers       http.Header
+	tlsConfig     *tls.Config
+	bufferSize    int
+	dbg           bool
 	// --
 	*sync.Mutex             // guard function calls
 	wsMutex     *sync.Mutex // guard ws send/write
@@ -56,6 +60,17 @@ type cdcClient struct {
 	started     bool         // Start called and successful
 	stopped     bool         // Stop called
 	pingChan    chan Latency // for Ping
+}
+
+type CDCConfig struct {
+	Addr       string
+	BufferSize int
+	Debug      bool
+
+	TLSConfig       *tls.Config
+	HTTPClient      *http.Client
+	HTTPTransport   *http.Transport
+	RequiredHeaders http.Header
 }
 
 // NewCDCClient creates a CDC feed consumer on the given websocket address.
@@ -85,6 +100,36 @@ func NewCDCClient(addr string, tlsConfig *tls.Config, bufferSize int, debug bool
 	return c
 }
 
+func NewCDCClientWithConfig(config CDCConfig) CDCClient {
+	addr := config.Addr + API_ROOT + "/changes"
+	c := &cdcClient{
+		addr:          addr,
+		httpClient:    config.HTTPClient,
+		httpTransport: config.HTTPTransport,
+		headers:       config.RequiredHeaders,
+		tlsConfig:     config.TLSConfig,
+		bufferSize:    config.BufferSize,
+		dbg:           config.Debug,
+		// --
+		Mutex:    &sync.Mutex{},
+		wsMutex:  &sync.Mutex{},
+		pingChan: make(chan Latency, 1),
+	}
+	c.debug("addr: %s", addr)
+	return c
+}
+
+func (c *cdcClient) connect(u *url.URL) (*websocket.Conn, *http.Response, error) {
+	dialer := &websocket.Dialer{
+		TLSClientConfig: c.tlsConfig,
+	}
+	if c.httpTransport != nil {
+		dialer.NetDial = c.httpTransport.Dial
+		dialer.NetDialContext = c.httpTransport.DialContext
+	}
+	return dialer.Dial(u.String(), c.headers)
+}
+
 func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 	c.debug("Start: call")
 	defer c.debug("Start: return")
@@ -103,10 +148,7 @@ func (c *cdcClient) Start(startTs time.Time) (<-chan CDCEvent, error) {
 		return nil, err
 	}
 	c.debug("connecting to %s", c.addr)
-	dialer := &websocket.Dialer{
-		TLSClientConfig: c.tlsConfig,
-	}
-	conn, resp, err := dialer.Dial(u.String(), nil)
+	conn, resp, err := c.connect(u)
 	if err != nil {
 		if resp != nil {
 			defer resp.Body.Close()

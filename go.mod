@@ -8,7 +8,7 @@ require (
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
 	github.com/go-test/deep v1.0.5
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef
-	github.com/gorilla/websocket v1.2.0
+	github.com/gorilla/websocket v1.4.2
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/gommon v0.2.2-0.20180613044413-d6898124de91 // indirect
 	github.com/mattn/go-colorable v0.0.9 // indirect
