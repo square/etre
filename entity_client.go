@@ -364,7 +364,9 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(VERSION_HEADER, VERSION)
-	req.Header.Set(QUERY_TIMEOUT_HEADER, c.queryTimeout.String())
+	if c.queryTimeout > 0 {
+		req.Header.Set(QUERY_TIMEOUT_HEADER, c.queryTimeout.String())
+	}
 	if c.traceHeaderValue != "" {
 		req.Header.Set(TRACE_HEADER, c.traceHeaderValue)
 	}
