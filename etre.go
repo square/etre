@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	VERSION                  = "0.11.0"
+	VERSION                  = "0.11.1"
 	API_ROOT          string = "/api/v1"
 	META_LABEL_ID            = "_id"
 	META_LABEL_TYPE          = "_type"
