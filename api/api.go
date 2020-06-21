@@ -115,6 +115,9 @@ func NewAPI(appCtx app.Context) *API {
 	// Called before every route/controller
 	router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			api.systemMetrics.Inc(metrics.Query, 1)
+			api.systemMetrics.Inc(metrics.Load, 1)
+
 			entityType := c.Param("type")
 			if entityType != "" {
 				c.Set("t0", time.Now()) // query start time
@@ -128,8 +131,6 @@ func NewAPI(appCtx app.Context) *API {
 				inst = app.NopInstrument
 			}
 			c.Set("inst", inst)
-
-			api.systemMetrics.Inc(metrics.Query, 1)
 
 			// Only these HTTP methods are writes. Be careful: method != "GET" doesn't
 			// work because of "HEAD", "OPTIONS", etc.
@@ -338,8 +339,18 @@ func NewAPI(appCtx app.Context) *API {
 	// /////////////////////////////////////////////////////////////////////
 	router.GET("/changes", api.changesHandler)
 
+	api.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if err := next(c); err != nil {
+				c.Error(err)
+			}
+			api.systemMetrics.Inc(metrics.Load, -1)
+			return nil
+		}
+	})
+
 	// Called after every route/controller (even if 404)
-	api.echo.Use((func(next echo.HandlerFunc) echo.HandlerFunc {
+	api.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if err := next(c); err != nil {
 				c.Error(err)
@@ -395,7 +406,7 @@ func NewAPI(appCtx app.Context) *API {
 
 			return nil
 		}
-	}))
+	})
 
 	return api
 }
