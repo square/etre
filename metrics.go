@@ -23,6 +23,13 @@ type MetricsSystemReport struct {
 	// at the start of the HTTP request before authentication, validation, etc.
 	Query int64 `json:"query"`
 
+	// Load gauge is the current number of running queries.
+	Load int64 `json:"load"`
+
+	// Error counter is the grand total number of errors. This counts every
+	// error regardless of type: auth, client, database, timeout, internal, etc.
+	Error int64 `json:"error"`
+
 	// AuthenticationFailed counter is the number of authentication failures.
 	// The API returns HTTP status 401 (unauthorized). If the caller fails to
 	// authenticate, only Query and AuthenticationFailed are incremented.

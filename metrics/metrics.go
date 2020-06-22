@@ -56,6 +56,8 @@ const (
 	AuthorizationFailed              // counter
 	InvalidEntityType                // counter
 	QueryTimeout                     // counter
+	Load                             // gauge   (system)
+	Error                            // counter (system)
 )
 
 // Metrics abstracts how metrics are stored and sampled.
