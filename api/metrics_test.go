@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/go-test/deep"
+
 	"github.com/square/etre"
 	"github.com/square/etre/api"
 	"github.com/square/etre/app"
@@ -126,3 +128,36 @@ func TestMetricsInvalidEntityType(t *testing.T) {
 	}
 }
 */
+
+func TestMetricsBadRoute(t *testing.T) {
+	// Test that metrics, especially Load, are correct when route is 404 and not
+	// under /api/v1/ route group. This addresses a bug where Load could be negative
+	// because the post-route hook is called that did Load -= 1 but the pre-route
+	// hook that did Load += 1 was never called because the route wasn't under that
+	// route group.
+	server := setup(t, defaultConfig, mock.EntityStore{})
+	defer server.ts.Close()
+
+	etreurl := server.url + "/api" // bad route, not under route group
+	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statusCode != http.StatusNotFound {
+		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
+	}
+
+	// -- Metrics -----------------------------------------------------------
+	expectMetrics := []mock.MetricMethodArgs{}
+	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
+		t.Logf("   got: %+v", server.metricsrec.Called)
+		t.Logf("expect: %+v", expectMetrics)
+		t.Error(diffs)
+	}
+	if diffs := deep.Equal(server.sysmetrics.Called, expectMetrics); diffs != nil {
+		t.Logf("   got: %+v", server.sysmetrics.Called)
+		t.Logf("expect: %+v", expectMetrics)
+		t.Error(diffs)
+	}
+
+}

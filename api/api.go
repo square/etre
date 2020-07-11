@@ -120,6 +120,7 @@ func NewAPI(appCtx app.Context) *API {
 		return func(c echo.Context) error {
 			api.systemMetrics.Inc(metrics.Query, 1)
 			api.systemMetrics.Inc(metrics.Load, 1)
+			c.Set("load", true)
 
 			entityType := c.Param("type")
 			if entityType != "" {
@@ -347,7 +348,9 @@ func NewAPI(appCtx app.Context) *API {
 			if err := next(c); err != nil {
 				c.Error(err)
 			}
-			api.systemMetrics.Inc(metrics.Load, -1)
+			if c.Get("load") != nil {
+				api.systemMetrics.Inc(metrics.Load, -1)
+			}
 			return nil
 		}
 	})
