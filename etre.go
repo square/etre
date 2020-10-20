@@ -102,7 +102,16 @@ func (e Entity) Set() Set {
 		set.Op = e["_setOp"].(string)
 	}
 	if _, ok := e["_setSize"]; ok {
-		set.Size = e["_setSize"].(int)
+		var size int
+		switch e["_setSize"].(type) {
+		case int64:
+			size = int(e["_setSize"].(int64))
+		case int32:
+			size = int(e["_setSize"].(int32))
+		case int:
+			size = e["_setSize"].(int)
+		}
+		set.Size = size
 	}
 	return set
 }
