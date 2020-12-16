@@ -465,6 +465,7 @@ func (m *groupEntityMetrics) Val(mn byte, n int64) {
 }
 
 func (m *groupEntityMetrics) Trace(trace map[string]string) {
+	m.Lock()
 	for traceMetric, traceValue := range trace {
 		traceValues, ok := m.em.trace[traceMetric]
 		if !ok {
@@ -478,4 +479,5 @@ func (m *groupEntityMetrics) Trace(trace map[string]string) {
 		}
 		cnt.Add(1)
 	}
+	m.Unlock()
 }
