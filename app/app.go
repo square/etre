@@ -1,9 +1,10 @@
-// Copyright 2019-2020, Square, Inc.
+// Copyright 2019-2021, Square, Inc.
 
 // Package app provides app context and extensions: hooks and plugins.
 package app
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -86,39 +87,25 @@ func Defaults() Context {
 }
 
 func LoadConfig(ctx Context) (config.Config, error) {
-	var cfg config.Config
-	var err error
+	cfg := config.Default()
+
+	// Return default config is no config file specified
 	if ctx.ConfigFile == "" {
-		// No -config file specified, so try a default file if it exists
-		switch os.Getenv("ENVIRONMENT") {
-		case "staging":
-			ctx.ConfigFile = "config/staging.yaml"
-		case "production":
-			ctx.ConfigFile = "config/production.yaml"
-		default:
-			ctx.ConfigFile = "config/development.yaml"
-		}
-		if !exists(ctx.ConfigFile) {
-			log.Printf("No -config file and %s does not exist; using built-in defaults", ctx.ConfigFile)
-			cfg = config.Default()
-		}
-	} else {
-		log.Printf("Loading -config file %s", ctx.ConfigFile)
-		cfg, err = config.Load(ctx.ConfigFile)
-		if err != nil {
-			return cfg, err
-		}
+		log.Printf("No config file specified; using built-in defaults")
+		return cfg, nil
 	}
 
-	// Fill in missing CDC.Datasource values from main .Datasource
-	cfg.CDC.Datasource = cfg.CDC.Datasource.WithDefaults(cfg.Datasource)
+	// Config file must exist
+	if _, err := os.Stat(ctx.ConfigFile); err != nil {
+		return config.Config{}, fmt.Errorf("config file %s does not exist", ctx.ConfigFile)
+	}
+
+	// Load config file on top of default config. Values in file overwrite defaults.
+	log.Printf("Loading config file %s", ctx.ConfigFile)
+	cfg, err := config.Load(ctx.ConfigFile, config.Default())
+	if err != nil {
+		return cfg, err
+	}
 
 	return cfg, nil
-}
-
-func exists(file string) bool {
-	if _, err := os.Stat(file); err != nil {
-		return false
-	}
-	return true
 }
