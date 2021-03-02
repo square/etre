@@ -1,4 +1,4 @@
-// Copyright 2017-2019, Square, Inc.
+// Copyright 2017-2021, Square, Inc.
 
 package config
 
@@ -51,7 +51,14 @@ func Default() Config {
 			MaxConnections: DEFAULT_DB_MAX_CONN,
 		},
 		CDC: CDCConfig{
-			Datasource:      DatasourceConfig{}, // default to Config.Datasource
+			Datasource: DatasourceConfig{
+				URL:            DEFAULT_DATASOURCE_URL,
+				Database:       DEFAULT_DB,
+				ConnectTimeout: DEFAULT_DB_CONNECT_TIMEOUT,
+				QueryTimeout:   DEFAULT_DB_QUERY_TIMEOUT,
+				MinConnections: DEFAULT_DB_MIN_CONN,
+				MaxConnections: DEFAULT_DB_MAX_CONN,
+			},
 			FallbackFile:    DEFAULT_CDC_FALLBACK_FILE,
 			WriteRetryCount: DEFAULT_CDC_WRITE_RETRY_COUNT,
 			WriteRetryWait:  DEFAULT_CDC_WRITE_RETRY_WAIT,
@@ -69,7 +76,10 @@ func Default() Config {
 	}
 }
 
-func Load(file string) (Config, error) {
+// Load reads config file into base config. file is YAML with Config structure.
+// base is usually a Default() config. Values in file config overwrite base config.
+// Returns a new Config representing file applied to base.
+func Load(file string, base Config) (Config, error) {
 	file, err := filepath.Abs(file)
 	if err != nil {
 		return Config{}, err
@@ -79,18 +89,16 @@ func Load(file string) (Config, error) {
 		// err includes file name, e.g. "read config file: open <file>: no such file or directory"
 		return Config{}, fmt.Errorf("cannot read config file: %s", err)
 	}
-	var config Config
-	if err := yaml.Unmarshal(bytes, &config); err != nil {
+	if err := yaml.Unmarshal(bytes, &base); err != nil {
 		return Config{}, fmt.Errorf("cannot decode YAML in %s: %s", file, err)
 	}
-	return config, nil
+	return base, nil
 }
 
 func Validate(config Config) error {
 	if len(config.Entity.Types) == 0 {
 		return fmt.Errorf("no entity types specified")
 	}
-
 	for _, t := range config.Entity.Types {
 		for _, r := range reservedNames {
 			if t != r {
@@ -108,8 +116,14 @@ type Config struct {
 	Datasource DatasourceConfig `yaml:"datasource"`
 	Entity     EntityConfig     `yaml:"entity"`
 	CDC        CDCConfig        `yaml:"cdc"`
-	Security   SecurityConfig   `yaml: "security"`
+	Security   SecurityConfig   `yaml:"security"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
+}
+
+func Redact(c Config) Config {
+	c.Datasource.Password = "<redacted>"
+	c.CDC.Datasource.Password = "<redacted>"
+	return c
 }
 
 type DatasourceConfig struct {

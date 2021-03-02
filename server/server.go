@@ -51,7 +51,7 @@ func (s *Server) Boot(configFile string) error {
 		return fmt.Errorf("invalid config: %s", err)
 	}
 	s.appCtx.Config = cfg
-	log.Printf("Config: %+v", s.appCtx.Config)
+	log.Printf("Config: %+v", config.Redact(s.appCtx.Config))
 
 	// //////////////////////////////////////////////////////////////////////
 	// CDC Store and Change Stream
@@ -62,7 +62,7 @@ func (s *Server) Boot(configFile string) error {
 		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, config.CDC_COLLECTION)
 		cdcClient, err := db.Connect(cfg.CDC.Datasource)
 		if err != nil {
-			return err
+			return fmt.Errorf("cannot connect to CDC datasource: %s", err)
 		}
 		s.cdcDbClient = cdcClient
 		cdcColl := cdcClient.Database(cfg.Datasource.Database).Collection(config.CDC_COLLECTION)
@@ -91,7 +91,7 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	mainClient, err := db.Connect(cfg.Datasource)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot connect to main datasource: %s", err)
 	}
 	s.mainDbClient = mainClient
 	coll := make(map[string]*mongo.Collection, len(cfg.Entity.Types))
@@ -130,13 +130,15 @@ func (s *Server) Boot(configFile string) error {
 }
 
 func (s *Server) Run() error {
+	cdcEnabled := !s.appCtx.Config.CDC.Disabled
+
 	// Verify we can connect to the db.
 	mainDbDoneChan := make(chan struct{})
 	log.Printf("Connecting to main database: %s", s.appCtx.Config.Datasource.URL)
 	go s.connectToDatasource(s.appCtx.Config.Datasource, s.mainDbClient, mainDbDoneChan)
 
 	var cdcDbDoneChan chan struct{}
-	if !s.appCtx.Config.CDC.Disabled {
+	if cdcEnabled {
 		log.Printf("Connecting to CDC database: %s", s.appCtx.Config.CDC.Datasource.URL)
 		cdcDbDoneChan = make(chan struct{})
 		go s.connectToDatasource(s.appCtx.Config.CDC.Datasource, s.cdcDbClient, cdcDbDoneChan)
@@ -167,14 +169,16 @@ DB_CONN_WAIT:
 	}
 	notifyTimeout.Stop()
 
-	go func() {
-		for {
-			if err := s.appCtx.ChangesServer.Run(); err != nil {
-				log.Printf("ERROR: change stream server: %s", err)
+	if cdcEnabled {
+		go func() {
+			for {
+				if err := s.appCtx.ChangesServer.Run(); err != nil {
+					log.Printf("ERROR: change stream server: %s", err)
+				}
+				time.Sleep(100 * time.Millisecond)
 			}
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
+		}()
+	}
 
 	// Run the API - this will block until the API is stopped (or encounters
 	// some fatal error). If the RunAPI hook has been provided, call that instead

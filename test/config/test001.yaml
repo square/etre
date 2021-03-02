@@ -1,0 +1,10 @@
+server:
+  addr: 10.0.0.1:1234
+datasource:
+  url: mongodb://10.0.0.2:4567
+  database: test_db
+entity:
+  types:
+    - test
+metrics:
+  query_latency_sla: "10ms"

@@ -1,11 +1,11 @@
 module github.com/square/etre
 
-go 1.13
+go 1.15
 
 require (
 	github.com/alexflint/go-arg v1.3.0
 	github.com/daniel-nichter/go-metrics v1.0.0
-	github.com/go-test/deep v1.0.5
+	github.com/go-test/deep v1.0.7
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 	github.com/gorilla/websocket v1.4.2
 	github.com/labstack/echo v3.3.10+incompatible
