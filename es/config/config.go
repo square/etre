@@ -102,7 +102,7 @@ func Help() {
 		"         Query: es [options] entity[.label,...] query\n"+
 		" Update Entity: es [options] --update entity id patches\n"+
 		" Delete Entity: es [options] --delete entity id\n\n"+
-		"  Delete Label: es [options] --delete-label label entity id\n"+
+		"  Delete Label: es [options] --delete-label entity id label\n"+
 		" Watch Changes: es [options] --watch cdc\n\n"+
 		"Args:\n"+
 		"  entity     Valid entity type (Etre API config.entity.types)\n"+
