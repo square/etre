@@ -16,13 +16,16 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo"
+	echo "github.com/labstack/echo/v4"
+	echoSwagger "github.com/swaggo/echo-swagger"
+
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/square/etre"
 	"github.com/square/etre/app"
 	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc/changestream"
+	"github.com/square/etre/docs"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -56,7 +59,13 @@ type API struct {
 
 var reVersion = regexp.MustCompile(`^v?(\d+\.\d+)`)
 
-// NewAPI makes a new API.
+// NewAPI godoc
+// @title Etre API
+// @version 1
+// @description Etre is an entity API for managing primitive entities with labels.
+// @contact.url https://github.com/square/etre
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0
 func NewAPI(appCtx app.Context) *API {
 	queryLatencySLA, _ := time.ParseDuration(appCtx.Config.Metrics.QueryLatencySLA)
 	queryProfReportThreshold, _ := time.ParseDuration(appCtx.Config.Metrics.QueryProfileReportThreshold)
@@ -343,6 +352,13 @@ func NewAPI(appCtx app.Context) *API {
 	// /////////////////////////////////////////////////////////////////////
 	router.GET("/changes", api.changesHandler)
 
+	// /////////////////////////////////////////////////////////////////////
+	// OpenAPI docs
+	// /////////////////////////////////////////////////////////////////////
+	docs.SwaggerInfo.BasePath = etre.API_ROOT
+	api.echo.GET("/apidocs/*", echoSwagger.WrapHandler)
+
+
 	api.echo.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if err := next(c); err != nil {
@@ -452,6 +468,22 @@ func (api *API) Stop() error {
 // Query
 // //////////////////////////////////////////////////////////////////////////
 
+// getEntitiesHandler godoc
+// @Summary Query a set of entities
+// @Description Query entities of a type specified by the :type endpoint.
+// @Description Returns a set of entities matching the labels in the `query` query parameter.
+// @Description All labels of each entity are returned, unless specific labels are specified in the `labels` query parameter.
+// @Description The result set is reduced to distinct values if the request includes the `distinct` query parameter (requires `lables` name a single label).
+// @Description If the query is longer than 2000 characters, use the POST /query endpoint (to be implemented).
+// @ID getEntitiesHandler
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param query query string true "Selector"
+// @Param labels query string false "Comma-separated list of labels to return"
+// @Param distinct query boolean false "Reduce results to one per distinct value"
+// @Success 200 {array} etre.Entity "OK"
+// @Failure 400,404 {object} etre.Error
+// @Router /entities/:type [get]
 func (api *API) getEntitiesHandler(c echo.Context) error {
 	inst := c.Get("inst").(app.Instrument)
 	inst.Start("handler")
@@ -504,13 +536,29 @@ func (api *API) getEntitiesHandler(c echo.Context) error {
 // Bulk Write
 // //////////////////////////////////////////////////////////////////////////
 
+// postEntitiesHandler godoc
+// @Summary Create entities in bulk
+// @Description Given JSON payload, create new entities of the given :type.
+// @Description Some meta-labels are filled in by Etre, e.g. `_id`.
+// @Description Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+// @ID postEntitiesHandler
+// @Accept json
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 201 {array} string "List of new entity id's"
+// @Failure 400 {object} etre.Error
+// @Router /entities/:type [post]
 func (api *API) postEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.CreateMany, 1)
 
 	// Read new entities, incr metrics, and validate
 	var entities []etre.Entity
-	if err := c.Bind(&entities); err != nil {
+	// the simple Bind() method panics if it is given an anonymous interface
+	if err := (&echo.DefaultBinder{}).BindBody(c, &entities); err != nil {
 		return c.JSON(api.WriteResult(c, nil, ErrInvalidContent))
 	}
 	if len(entities) == 0 {
@@ -528,6 +576,22 @@ func (api *API) postEntitiesHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, ids, err))
 }
 
+// putEntitiesHandler godoc
+// @Summary Update matching entities in bulk
+// @Description Given JSON payload, update labels in matching entities of the given :type.
+// @Description Applies update to the set of entities matching the labels in the `query` query parameter.
+// @Description Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+// @ID putEntitiesHandler
+// @Accept json
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param query query string true "Selector"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 200 {array} etre.Entity "Set of matching entities after update applied."
+// @Failure 400 {object} etre.Error
+// @Router /entities/:type [put]
 func (api *API) putEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.UpdateQuery, 1)
@@ -544,7 +608,8 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 
 	// Read and validate patch entity
 	var patch etre.Entity
-	if err := c.Bind(&patch); err != nil {
+	// the simple Bind() method panics if it is given an anonymous interface
+	if err := (&echo.DefaultBinder{}).BindBody(c, &patch); err != nil {
 		return c.JSON(api.WriteResult(c, nil, ErrInvalidContent))
 	}
 	if len(patch) == 0 {
@@ -572,6 +637,19 @@ func (api *API) putEntitiesHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
+// deleteEntitiesHandler godoc
+// @Summary Remove matching entities in bulk
+// @Description Deletes the set of entities of the given :type, matching the labels in the `query` query parameter.
+// @ID deleteEntitiesHandler
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param query query string true "Selector"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 200 {array} etre.Entity "OK"
+// @Failure 400 {object} etre.Error
+// @Router /entities/:type [delete]
 func (api *API) deleteEntitiesHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.DeleteQuery, 1)
@@ -601,10 +679,21 @@ func (api *API) deleteEntitiesHandler(c echo.Context) error {
 }
 
 // //////////////////////////////////////////////////////////////////////////
-// Single Enitity
+// Single Entity
 // //////////////////////////////////////////////////////////////////////////
 
-// Get one entity by _id
+// getEntityHandler godoc
+// @Summary Get one entity by id
+// @Description Return one entity of the given :type, identified by the path parameter :id.
+// @Description All labels of each entity are returned, unless specific labels are specified in the `labels` query parameter.
+// @ID getEntityHandler
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param id path string true "Entity ID"
+// @Param labels query string false "Comma-separated list of labels to return"
+// @Success 200 {object} etre.Entity "OK"
+// @Failure 400,404 {object} etre.Error
+// @Router /entity/:type/:id [get]
 func (api *API) getEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.ReadId, 1)
@@ -635,7 +724,17 @@ func (api *API) getEntityHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, entities[0])
 }
 
-// Getting all labels for a single entity.
+// getLabelsHandler godoc
+// @Summary Return the labels for a single entity.
+// @Description Return an array of label names used by a single entity of the given :type, identified by the path parameter :id.
+// @Description The values of these labels are not returned.
+// @ID getLabelsHandler
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param id path string true "Entity ID"
+// @Success 200 {array} string "OK"
+// @Failure 400,404 {object} etre.Error
+// @Router /entity/:type/:id/labels [get]
 func (api *API) getLabelsHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.ReadLabels, 1)
@@ -662,14 +761,29 @@ func (api *API) getLabelsHandler(c echo.Context) error {
 // Single entity writes
 // --------------------------------------------------------------------------
 
-// Create one entity
+// postEntityHandler godoc
+// @Summary Create one entity
+// @Description Given JSON payload, create one new entity of the given :type.
+// @Description Some meta-labels are filled in by Etre, e.g. `_id`.
+// @Description Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+// @ID postEntityHandler
+// @Accept json
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 201 {array} string "List of new entity id's"
+// @Failure 400,404 {object} etre.Error
+// @Router /entity/:type [post]
 func (api *API) postEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.CreateOne, 1)
 
 	// Read and validate new entity
 	var newEntity etre.Entity
-	if err := c.Bind(&newEntity); err != nil {
+	// the simple Bind() method panics if it is given an anonymous interface
+	if err := (&echo.DefaultBinder{}).BindBody(c, &newEntity); err != nil {
 		return c.JSON(api.WriteResult(c, nil, ErrInvalidContent))
 	}
 	if len(newEntity) == 0 {
@@ -690,7 +804,21 @@ func (api *API) postEntityHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, ids, err))
 }
 
-// Patch one entity by _id
+// putEntityHandler godoc
+// @Summary Patch one entity by _id
+// @Description Given JSON payload, update labels in the entity of the given :type and :id.
+// @Description Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+// @ID putEntityHandler
+// @Accept json
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param id path string true "Entity ID"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 200 {array} etre.Entity "Entity after update applied."
+// @Failure 400,404 {object} etre.Error
+// @Router /entity/:type/:id [put]
 func (api *API) putEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.UpdateId, 1)
@@ -704,7 +832,7 @@ func (api *API) putEntityHandler(c echo.Context) error {
 
 	// Read and validate patch entity
 	var patch etre.Entity
-	if err := c.Bind(&patch); err != nil {
+	if err := (&echo.DefaultBinder{}).BindBody(c, &patch); err != nil {
 		return c.JSON(api.WriteResult(c, nil, ErrInvalidContent))
 	}
 	if len(patch) == 0 {
@@ -733,7 +861,20 @@ func (api *API) putEntityHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
-// Delete one entity by _id
+// deleteEntityHandler godoc
+// @Summary Delete one entity
+// @Summary Remove entity of the given :type and matching the :id parameter.
+// @Description Deletes the set of entities matching the labels in the `query` query parameter.
+// @ID deleteEntityHandler
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param id path string true "Entity ID"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 200 {array} etre.Entity "Set of deleted entities."
+// @Failure 400,404 {object} etre.Error
+// @Router /entity/:type/:id [delete]
 func (api *API) deleteEntityHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.DeleteId, 1)
@@ -759,7 +900,20 @@ func (api *API) deleteEntityHandler(c echo.Context) error {
 	return c.JSON(api.WriteResult(c, entities, err))
 }
 
-// Delete one label from one entity by _id
+// deleteLabelHandler godoc
+// @Summary Delete a label from one entity
+// @Description Remove one label from one entity of the given :type and matching the :id parameter.
+// @ID deleteLabelHandler
+// @Produce json
+// @Param type path string true "Entity type"
+// @Param id path string true "Entity ID"
+// @Param label path string true "Label name"
+// @Param setOp query string false "SetOp"
+// @Param setId query string false "SetId"
+// @Param setSize query int false "SetSize"
+// @Success 200 {object} etre.Entity "Entity after the label is deleted."
+// @Failure 400,404 {object} etre.Error
+// @Router /entity/:type/:id/labels/:label [delete]
 func (api *API) deleteLabelHandler(c echo.Context) error {
 	gm := c.Get("gm").(metrics.Metrics)
 	gm.Inc(metrics.DeleteLabel, 1)
@@ -793,10 +947,21 @@ func (api *API) deleteLabelHandler(c echo.Context) error {
 // Metrics and status
 // --------------------------------------------------------------------------
 
+// metricsHandler godoc
+// @Summary Report calling metrics for Etre
+// @Description Reports a summary of how Etre was called by different groups.
+// @Description System Report includes a counter of queries, a `load` which is the number of currently executing queries, and counters of errors and failed authentications.
+// @Description Group Reports are made for each user-defined group, which correspond to authentication types.
+// @Description Group Reports have sub-reports for request failures, query traffic per entity type, and CDC activity.
+// @ID metricsHandler
+// @Produce json
+// @Param reset query string no "If 'yes' or 'true' then reset metrics to zero."
+// @Success 200 {object} etre.Metrics "OK"
+// @Router /metrics [get]
 func (api *API) metricsHandler(c echo.Context) error {
 	// If &reset={true|false}, reset histogram samples
 	reset := false
-	switch strings.ToLower(c.Param("reset")) {
+	switch strings.ToLower(c.QueryParam("reset")) {
 	case "yes", "true":
 		reset = true
 	}
@@ -831,6 +996,12 @@ func (api *API) metricsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, all)
 }
 
+// statusHandler godoc
+// @Summary Report service status
+// @Description Report if the service is up, and what version of the Etre service.
+// @ID statusHandler
+// @Success 200 {string} string "returns a map[string]string"
+// @Router /status [get]
 func (api *API) statusHandler(c echo.Context) error {
 	status := map[string]string{
 		"ok":      "yes",
@@ -848,6 +1019,12 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
+// changesHandler godoc
+// @Summary Starts a websocket response.
+// @Description Starts streaming changes from the Etre CDC on a websocket interface.
+// @Description See Etre documentation for details about consuming the changes stream.
+// @ID changesHandler
+// @Router /changes [get]
 func (api *API) changesHandler(c echo.Context) error {
 	if api.cdcDisabled {
 		return api.readError(c, ErrCDCDisabled)
