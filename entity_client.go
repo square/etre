@@ -420,7 +420,7 @@ func readError(resp *http.Response, bytes []byte) (bool, error) {
 	if resp.StatusCode >= 500 {
 		return done, fmt.Errorf("Server error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 	}
-	return done, fmt.Errorf("Client error: %s: %s (HTTP staeus %d)", errResp.Type, errResp.Message, resp.StatusCode)
+	return done, fmt.Errorf("Client error: %s: %s (HTTP status %d)", errResp.Type, errResp.Message, resp.StatusCode)
 }
 
 func (c entityClient) apiRetry(f func() (bool, error)) error {
