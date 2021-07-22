@@ -12,7 +12,6 @@ require (
 	github.com/labstack/echo/v4 v4.2.2
 	github.com/swaggo/echo-swagger v1.1.0
 	github.com/swaggo/swag v1.7.0
-	github.com/xdg/stringprep v1.0.0 // indirect
-	go.mongodb.org/mongo-driver v1.4.2
+	go.mongodb.org/mongo-driver v1.5.1
 	gopkg.in/yaml.v2 v2.4.0
 )
