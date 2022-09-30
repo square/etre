@@ -9,7 +9,7 @@ require (
 	github.com/go-test/deep v1.0.7
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 	github.com/gorilla/websocket v1.4.2
-	github.com/labstack/echo/v4 v4.2.2
+	github.com/labstack/echo/v4 v4.9.0
 	github.com/swaggo/echo-swagger v1.1.0
 	github.com/swaggo/swag v1.7.0
 	github.com/xdg/stringprep v1.0.0 // indirect
