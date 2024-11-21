@@ -308,6 +308,18 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 		new[k] = v
 	}
 	delete(new, label)
+	// We need to increment "_rev" by one, but the type needs to match
+	// what it was on "old"
+	switch old["_rev"].(type) {
+	case int:
+		new["_rev"] = old["_rev"].(int) + 1
+	case int32:
+		new["_rev"] = old["_rev"].(int32) + 1
+	case int64:
+		new["_rev"] = old["_rev"].(int64) + 1
+	default:
+		new["_rev"] = old.Rev() + 1
+	}
 
 	cp := cdcPartial{
 		op:  "u",
