@@ -344,6 +344,11 @@ func TestV09DeleteLabel(t *testing.T) {
 		gotEvents[i].Ts = 0
 	}
 	id1, _ := v09testNodes[0]["_id"].(primitive.ObjectID)
+	expectedEventNew := etre.Entity{
+		"_id":   v09testNodes[0]["_id"],
+		"_type": v09testNodes[0]["_type"],
+		"_rev":  e["_rev"],
+	}
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -352,6 +357,7 @@ func TestV09DeleteLabel(t *testing.T) {
 			Caller:     username,
 			Op:         "u",
 			Old:        &expectOld,
+			New:        &expectedEventNew,
 		},
 	}
 	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {

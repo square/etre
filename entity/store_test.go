@@ -50,19 +50,17 @@ func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 		t.Fatal(err)
 	}
 
-	// First time, create unique index on "x"
-	if coll == nil {
-		iv := nodesColl.Indexes()
-		if _, err := iv.DropAll(context.TODO()); err != nil {
-			t.Fatal(err)
-		}
-		idx := mongo.IndexModel{
-			Keys:    bson.D{{"x", 1}},
-			Options: options.Index().SetUnique(true),
-		}
-		if _, err := iv.CreateOne(context.TODO(), idx); err != nil {
-			t.Fatal(err)
-		}
+	// Create unique index on "x"
+	iv := nodesColl.Indexes()
+	if _, err := iv.DropAll(context.TODO()); err != nil {
+		t.Fatal(err)
+	}
+	idx := mongo.IndexModel{
+		Keys:    bson.D{{"x", 1}},
+		Options: options.Index().SetUnique(true),
+	}
+	if _, err := iv.CreateOne(context.TODO(), idx); err != nil {
+		t.Fatal(err)
 	}
 
 	testNodes = []etre.Entity{
@@ -831,6 +829,11 @@ func TestDeleteLabel(t *testing.T) {
 		gotEvents[i].Ts = 0
 	}
 	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
+	expectedEventNew := etre.Entity{
+		"_id":   testNodes[0]["_id"],
+		"_type": testNodes[0]["_type"],
+		"_rev":  e["_rev"],
+	}
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -839,6 +842,7 @@ func TestDeleteLabel(t *testing.T) {
 			Caller:     username,
 			Op:         "u",
 			Old:        &expectOld,
+			New:        &expectedEventNew,
 		},
 	}
 	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {

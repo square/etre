@@ -163,11 +163,10 @@ func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, err
 // entities were supposed to be updated and 3 are ok and the 4th fails, a slice
 // with 3 updated entities and an error will be returned.
 //
-//   q, _ := query.Translate("y=foo")
-//   update := db.Entity{"y": "bar"}
+//	q, _ := query.Translate("y=foo")
+//	update := db.Entity{"y": "bar"}
 //
-//   diffs, err := c.UpdateEntities(q, update)
-//
+//	diffs, err := c.UpdateEntities(q, update)
 func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 	c, ok := s.coll[wo.EntityType]
 	if !ok {
@@ -302,10 +301,30 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 	if err != nil {
 		return nil, s.dbError(err, "db-update")
 	}
+
+	// Make the new Entity by copying the old and deleting the label
+	new := etre.Entity{}
+	for k, v := range old {
+		new[k] = v
+	}
+	delete(new, label)
+	// We need to increment "_rev" by one, but the type needs to match
+	// what it was on "old"
+	switch old["_rev"].(type) {
+	case int:
+		new["_rev"] = old["_rev"].(int) + 1
+	case int32:
+		new["_rev"] = old["_rev"].(int32) + 1
+	case int64:
+		new["_rev"] = old["_rev"].(int64) + 1
+	default:
+		new["_rev"] = old.Rev() + 1
+	}
+
 	cp := cdcPartial{
 		op:  "u",
 		id:  old["_id"].(primitive.ObjectID),
-		new: nil, // not on delete label
+		new: &new,
 		old: &old,
 		rev: old.Rev() + 1,
 	}
