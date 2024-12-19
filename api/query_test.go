@@ -13,6 +13,7 @@ import (
 	"github.com/go-test/deep"
 
 	"github.com/square/etre"
+	"github.com/square/etre/api"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -316,9 +317,7 @@ func TestQueryErrorsNoEntityType(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
 	}
 
-	expectError := etre.Error{
-		Message: "Not Found",
-	}
+	expectError := api.ErrEndpointNotFound
 	if diffs := deep.Equal(gotError, expectError); diffs != nil {
 		t.Error(diffs)
 	}

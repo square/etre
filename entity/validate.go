@@ -60,6 +60,16 @@ func (v validator) EntityType(entityType string) error {
 // Valid returns nils if all the entities are valid.
 func (v validator) Entities(entities []etre.Entity, op byte) error {
 	for i, e := range entities {
+
+		// Cannot use {} (empty entity) to patch or create because empty entities
+		// aren't allowed. Maybe caller means to delete the entity?
+		if len(e) == 0 && (op == VALIDATE_ON_UPDATE || op == VALIDATE_ON_CREATE) {
+			return ValidationError{
+				Err:  fmt.Errorf("entity at index %d is empty (no labels); empty entities are not allowed on create or patch", i),
+				Type: "empty-entity",
+			}
+		}
+
 		for label, val := range e {
 			if label == "" {
 				return ValidationError{

@@ -24,3 +24,6 @@ coverage.out
 bin/etre/etre
 es/bin/bin
 es/bin/es
+
+bin/etre/config.yaml
+es/bin/*.sh

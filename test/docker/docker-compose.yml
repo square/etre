@@ -1,0 +1,30 @@
+name: etre
+
+services:
+  mongo1:
+    image: mongo:5.0
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - 27017:27017
+    healthcheck:
+      # https://medium.com/workleap/the-only-local-mongodb-replica-set-with-docker-compose-guide-youll-ever-need-2f0b74dd8384
+      test: "echo \"try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo1:27017'}]}) }\" | mongosh --port 27017 --quiet"
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+    #environment:
+    #  MONGO_INITDB_ROOT_USERNAME: root
+    #  MONGO_INITDB_ROOT_PASSWORD: test
+
+# mongo-express:
+#   image: mongo-express
+#   restart: always
+#   ports:
+#     - 8081:8081
+#   environment:
+#     ME_CONFIG_MONGODB_ADMINUSERNAME: root
+#     ME_CONFIG_MONGODB_ADMINPASSWORD: test
+#     ME_CONFIG_MONGODB_URL: mongodb://root:test@mongo:27017/
+#     ME_CONFIG_BASICAUTH: false

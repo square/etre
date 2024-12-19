@@ -53,7 +53,9 @@ func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	// Create unique index on "x"
 	iv := nodesColl.Indexes()
 	if _, err := iv.DropAll(context.TODO()); err != nil {
-		t.Fatal(err)
+		// Don't error; Mongo returns an error if the namespace doesn't exist,
+		// which is what we want, so it's not an error in this context
+		t.Log(err)
 	}
 	idx := mongo.IndexModel{
 		Keys:    bson.D{{"x", 1}},

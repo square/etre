@@ -65,3 +65,9 @@ var ErrInvalidContent = etre.Error{
 	Type:       "invalid-content",
 	HTTPStatus: http.StatusBadRequest,
 }
+
+var ErrEndpointNotFound = etre.Error{
+	Message:    "API endpoint not found",
+	Type:       "endpoint-not-found",
+	HTTPStatus: http.StatusNotFound,
+}
