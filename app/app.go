@@ -12,6 +12,7 @@ import (
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/config"
+	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 )
@@ -67,6 +68,7 @@ type Hooks struct {
 // and custom system of authentication and authorization.
 type Plugins struct {
 	Auth auth.Plugin
+	DB   db.Plugin
 }
 
 // Defaults returns a Context with default (built-in) hooks and plugins.
@@ -82,6 +84,7 @@ func Defaults() Context {
 		},
 		Plugins: Plugins{
 			Auth: auth.AllowAll{},
+			DB:   db.Default{},
 		},
 	}
 }

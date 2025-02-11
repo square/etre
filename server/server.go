@@ -17,7 +17,6 @@ import (
 	"github.com/square/etre/cdc"
 	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/config"
-	"github.com/square/etre/db"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 )
@@ -60,7 +59,7 @@ func (s *Server) Boot(configFile string) error {
 		log.Println("CDC and change feeds are disabled because cdc.disabled=true in config")
 	} else {
 		log.Printf("CDC enabled on %s.%s\n", cfg.Datasource.Database, config.CDC_COLLECTION)
-		cdcClient, err := db.Connect(cfg.CDC.Datasource)
+		cdcClient, err := s.appCtx.Plugins.DB.Connect(cfg.CDC.Datasource)
 		if err != nil {
 			return fmt.Errorf("cannot connect to CDC datasource: %s", err)
 		}
@@ -89,7 +88,7 @@ func (s *Server) Boot(configFile string) error {
 	// //////////////////////////////////////////////////////////////////////
 	// Entity Store and Validator
 	// //////////////////////////////////////////////////////////////////////
-	mainClient, err := db.Connect(cfg.Datasource)
+	mainClient, err := s.appCtx.Plugins.DB.Connect(cfg.Datasource)
 	if err != nil {
 		return fmt.Errorf("cannot connect to main datasource: %s", err)
 	}

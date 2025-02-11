@@ -19,6 +19,9 @@
 # Ignore the venor directory
 vendor/
 
+# Ignore IDE settings directory
+.idea/
+
 tags
 coverage.out
 bin/etre/etre

@@ -16,7 +16,15 @@ import (
 	"github.com/square/etre/config"
 )
 
-func Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
+// Plugin is the db plugin. Implement this interface to enable custom db connections.
+type Plugin interface {
+	// Connect returns a mongo.Client connected to the database.
+	Connect(cfg config.DatasourceConfig) (*mongo.Client, error)
+}
+
+type Default struct{}
+
+func (d Default) Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
 	tlsConfig, err := loadTLS(cfg)
 	if err != nil {
 		return nil, err
