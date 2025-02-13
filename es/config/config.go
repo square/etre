@@ -43,6 +43,7 @@ type Options struct {
 	Help         bool
 	JSON         bool   `arg:"env:ES_JSON" yaml:"json"`
 	IFS          string `arg:"env" yaml:"ifs"`
+	Insert       bool
 	Labels       bool   `arg:"env:ES_LABELS" yaml:"labels"`
 	Old          bool   `arg:"env:ES_OLD" yaml:"old"`
 	QueryTimeout string `arg:"--query-timeout,env:ES_QUERY_TIMEOUT" yaml:"query_timeout"`
@@ -64,9 +65,8 @@ type Options struct {
 // labels, and query predicates. The caller is expected to copy and use the embedded
 // structs separately, like:
 //
-//   var o config.Options = cmdLine.Options
-//   for i, arg := range cmdline.Args {
-//
+//	var o config.Options = cmdLine.Options
+//	for i, arg := range cmdline.Args {
 type CommandLine struct {
 	Options
 	Args []string `arg:"positional"`
@@ -100,6 +100,7 @@ func ParseCommandLine(def Options) CommandLine {
 func Help() {
 	fmt.Printf("Usage:\n"+
 		"         Query: es [options] entity[.label,...] query\n"+
+		" Insert Entity: es [options] --insert entity patches\n"+
 		" Update Entity: es [options] --update entity id patches\n"+
 		" Delete Entity: es [options] --delete entity id\n\n"+
 		"  Delete Label: es [options] --delete-label entity id label\n"+

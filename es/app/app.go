@@ -42,6 +42,7 @@ type Hooks struct {
 	AfterParseOptions func(*config.Options)
 	BeforeQuery       func(*Context) error
 	AfterQuery        func(Context, []etre.Entity, error)
+	BeforeInsert      func(cxt *Context) error
 	BeforeDelete      func(ctx *Context) error
 	BeforeUpdate      func(cxt *Context) error
 	WriteResult       func(Context, etre.WriteResult, error)

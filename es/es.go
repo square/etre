@@ -81,9 +81,12 @@ func Run(ctx app.Context) {
 	if cmdLine.Options.Update {
 		writeOptions++
 	}
+	if cmdLine.Options.Insert {
+		writeOptions++
+	}
 	if writeOptions > 1 {
 		config.Help()
-		fmt.Fprintf(os.Stderr, "--update, --delete, and --delete-label are mutually exclusive\n")
+		fmt.Fprintf(os.Stderr, "--insert, --update, --delete, and --delete-label are mutually exclusive\n")
 		os.Exit(1)
 	}
 
@@ -115,6 +118,12 @@ func Run(ctx app.Context) {
 		if len(cmdLine.Args) < 3 {
 			config.Help()
 			fmt.Fprintf(os.Stderr, "Not enough arguments for --update: entity, id, and patches are required\n")
+			os.Exit(1)
+		}
+	} else if cmdLine.Options.Insert { // --insert
+		if len(cmdLine.Args) < 2 {
+			config.Help()
+			fmt.Fprintf(os.Stderr, "Not enough arguments for --insert: entity and patches are required\n")
 			os.Exit(1)
 		}
 	} else if cmdLine.Options.Watch { // --watch
@@ -266,6 +275,36 @@ func Run(ctx app.Context) {
 	ec = ec.WithTrace(trace)
 
 	// //////////////////////////////////////////////////////////////////////
+	// Insert and exit, if --insert
+	// //////////////////////////////////////////////////////////////////////
+
+	if o.Insert {
+		// cmdLine.Args validated above
+		ctx.Patches = cmdLine.Args[1:]
+
+		if ctx.Hooks.BeforeInsert != nil {
+			etre.Debug("calling hook BeforeInsert")
+			err = ctx.Hooks.BeforeInsert(&ctx)
+			if err != nil {
+				printAndExit(fmt.Errorf("BeforeInsert hook failed: %s", err), ctx)
+			}
+		}
+
+		patch, err := parsePatches(ctx)
+		if err != nil {
+			printAndExit(err, ctx)
+		}
+
+		wr, err := ec.Insert([]etre.Entity{patch})
+		_, err = writeResult(ctx, set, wr, err, "insert")
+		if err != nil {
+			printAndExit(err, ctx)
+		}
+		fmt.Printf("OK, inserted %s %s\n", ctx.EntityType, wr.Writes[0].EntityId)
+		return
+	}
+
+	// //////////////////////////////////////////////////////////////////////
 	// Update and exit, if --update
 	// //////////////////////////////////////////////////////////////////////
 
@@ -276,37 +315,16 @@ func Run(ctx app.Context) {
 
 		if ctx.Hooks.BeforeUpdate != nil {
 			etre.Debug("calling hook BeforeUpdate")
-			ctx.Hooks.BeforeUpdate(&ctx)
+			err = ctx.Hooks.BeforeUpdate(&ctx)
+			if err != nil {
+				printAndExit(fmt.Errorf("BeforeUpdate hook failed: %s", err), ctx)
+			}
 		}
 
-		patch := etre.Entity{}
-		for i, kv := range ctx.Patches {
-			p := strings.SplitN(kv, "=", 2)
-			etre.Debug("patch %d: '%s': %#v", i, kv, p)
-			if len(p) > 0 {
-				if ctx.Options.Strict {
-					if strings.IndexAny(p[0], " \t") != -1 {
-						printAndExit(fmt.Errorf("Invalid patch: %s: label has whitespace", kv), ctx)
-					}
-				} else {
-					p[0] = strings.TrimSpace(p[0])
-				}
-				if p[0] == "" {
-					printAndExit(fmt.Errorf("Invalid patch: %s: empty label", kv), ctx)
-				}
-			}
-			switch len(p) {
-			case 0:
-				printAndExit(fmt.Errorf("Invalid patch: %s: split on = yielded 0 parts, expected 1 or 2", kv), ctx)
-			case 1:
-				patch[p[0]] = nil
-			case 2:
-				patch[p[0]] = p[1]
-			default:
-				printAndExit(fmt.Errorf("Invalid patch: %s: split on = yielded %d parts, expected 2", kv, len(p)), ctx)
-			}
+		patch, err := parsePatches(ctx)
+		if err != nil {
+			printAndExit(err, ctx)
 		}
-		etre.Debug("patch: %#v", patch)
 
 		wr, err := ec.UpdateOne(ctx.EntityId, patch)
 		found, err := writeResult(ctx, set, wr, err, "update")
@@ -331,7 +349,10 @@ func Run(ctx app.Context) {
 
 		if ctx.Hooks.BeforeDelete != nil {
 			etre.Debug("calling hook BeforeDelete")
-			ctx.Hooks.BeforeDelete(&ctx)
+			err = ctx.Hooks.BeforeDelete(&ctx)
+			if err != nil {
+				printAndExit(fmt.Errorf("BeforeDelete hook failed: %s", err), ctx)
+			}
 		}
 
 		wr, err := ec.DeleteOne(ctx.EntityId)
@@ -526,4 +547,38 @@ func printAndExit(err error, ctx app.Context) {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 	}
 	os.Exit(1)
+}
+
+func parsePatches(ctx app.Context) (etre.Entity, error) {
+	patch := etre.Entity{}
+
+	for i, kv := range ctx.Patches {
+		p := strings.SplitN(kv, "=", 2)
+		etre.Debug("patch %d: '%s': %#v", i, kv, p)
+		if len(p) > 0 {
+			if ctx.Options.Strict {
+				if strings.IndexAny(p[0], " \t") != -1 {
+					return patch, fmt.Errorf("Invalid patch: %s: label has whitespace", kv)
+				}
+			} else {
+				p[0] = strings.TrimSpace(p[0])
+			}
+			if p[0] == "" {
+				return patch, fmt.Errorf("Invalid patch: %s: empty label", kv)
+			}
+		}
+		switch len(p) {
+		case 0:
+			return patch, fmt.Errorf("Invalid patch: %s: split on = yielded 0 parts, expected 1 or 2", kv)
+		case 1:
+			patch[p[0]] = nil
+		case 2:
+			patch[p[0]] = p[1]
+		default:
+			return patch, fmt.Errorf("Invalid patch: %s: split on = yielded %d parts, expected 2", kv, len(p))
+		}
+	}
+	etre.Debug("patch: %#v", patch)
+
+	return patch, nil
 }
