@@ -28,7 +28,7 @@ cd test/docker
 docker compose up
 ```
 
-This is not a replica set, so currently the default Etre config won't connect properly with the Docker container.
+This is a single-node replica set, so currently the default Etre config won't connect properly with the Docker container.
 Instead, put this config in `bin/etre/config.yaml`:
 
 ```yaml

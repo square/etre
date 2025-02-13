@@ -139,7 +139,7 @@ func NewAPI(appCtx app.Context) *API {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		err := ErrEndpointNotFound
-		write := r.Method == "PUT" || r.Method == "POST" || r.Method == "DELETE"
+		write := isWriteRequest(r.Method)
 		if write {
 			wr := etre.WriteResult{Error: &err}
 			json.NewEncoder(w).Encode(wr)
@@ -176,9 +176,7 @@ func (api *API) Stop() error {
 
 func (api *API) requestWrapper(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only these HTTP methods are writes. Be careful: method != "GET" doesn't
-		// work because of "HEAD", "OPTIONS", etc.
-		write := r.Method == "PUT" || r.Method == "POST" || r.Method == "DELETE"
+		write := isWriteRequest(r.Method)
 		cdc := strings.HasSuffix(r.URL.String(), "/changes")
 
 		// Etre request context passed to endpoint handler
@@ -1288,4 +1286,10 @@ func parseQuery(r *http.Request) (query.Query, error) {
 		return q, ErrInvalidQuery.New("invalid query: %s", err)
 	}
 	return q, nil
+}
+
+func isWriteRequest(method string) bool {
+	// Only these HTTP methods are writes
+	// method != "GET" doesn't work because of "HEAD", "OPTIONS", etc.
+	return method == "PUT" || method == "POST" || method == "DELETE"
 }
