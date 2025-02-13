@@ -21,7 +21,7 @@ func TestDefaultPlugins(t *testing.T) {
 	require.NoErrorf(t, err, "Error stopping: %s", err)
 }
 
-// TestDefaultPlugins tests server boot with a DB plugin
+// TestDBPlugin tests server boot with a DB plugin
 func TestDBPlugin(t *testing.T) {
 	counter := 0
 	dbp := &mock.DBPlugin{
@@ -40,7 +40,7 @@ func TestDBPlugin(t *testing.T) {
 
 	// Check that the DB plugin was called twice: once for the main DB and once for the CDC DB.
 	if counter != 2 {
-		t.Errorf("Expected DB plugin to be called once, but got %d", counter)
+		t.Errorf("Expected DB plugin to be called twice, but got %d", counter)
 	}
 
 	// Stop the server
