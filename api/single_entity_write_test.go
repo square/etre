@@ -682,7 +682,7 @@ func TestPutEntityErrors(t *testing.T) {
 	if gotWR.Error == nil {
 		t.Errorf("WriteResult.Error is nil, expected error message")
 	} else if gotWR.Error.Type != "empty-entity" {
-		t.Errorf("WriteResult.Error.Type = %s, expected no-content", gotWR.Error.Type)
+		t.Errorf("WriteResult.Error.Type = %s, expected empty-entity", gotWR.Error.Type)
 	}
 	if len(gotWR.Writes) != 0 {
 		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
