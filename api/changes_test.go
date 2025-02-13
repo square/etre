@@ -12,7 +12,6 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc/changestream"
-	//"github.com/square/etre/metrics"
 	"github.com/square/etre/test/mock"
 )
 

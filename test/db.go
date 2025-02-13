@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	url      = "localhost:27017"
+	url      = "localhost:27017/?replicaSet=rs0&directConnection=true"
 	database = "etre_test"
 	username = "root"
 )

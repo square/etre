@@ -21,43 +21,43 @@ var (
 // "undefined: metrics.Reed". Implementations of Metrics must ensure that
 // metric X = etre.MetricReport.X.
 const (
-	Query                byte = iota // counter (group and system)
-	SetOp                            // counter
-	Labels                           // histogram
-	LatencyMs                        // histogram
-	MissSLA                          // counter
-	Read                             // counter
-	ReadQuery                        // counter
-	ReadId                           // counter
-	ReadMatch                        // histogram
-	ReadLabels                       // counter
-	Write                            // counter
-	CreateOne                        // counter
-	CreateMany                       // counter
-	CreateBulk                       // histogram
-	UpdateId                         // counter
-	UpdateQuery                      // counter
-	UpdateBulk                       // histogram
-	DeleteId                         // counter
-	DeleteQuery                      // counter
-	DeleteBulk                       // histogram
-	DeleteLabel                      // counter
-	LabelRead                        // counter (per-label)
-	LabelUpdate                      // counter (per-label)
-	LabelDelete                      // counter (per-label)
-	DbError                          // counter (global)
-	APIError                         // counter (global)
-	ClientError                      // counter (global)
-	CDCClients                       // counter (global)
-	Created                          // counter
-	Updated                          // counter
-	Deleted                          // counter
-	AuthenticationFailed             // counter (system)
-	AuthorizationFailed              // counter
-	InvalidEntityType                // counter
-	QueryTimeout                     // counter
-	Load                             // gauge   (system)
-	Error                            // counter (system)
+	Query                byte = iota // 00. counter (group and system)
+	SetOp                            // 01. counter
+	Labels                           // 02. histogram
+	LatencyMs                        // 03. histogram
+	MissSLA                          // 04. counter
+	Read                             // 05. counter
+	ReadQuery                        // 06. counter
+	ReadId                           // 07. counter
+	ReadMatch                        // 08. histogram
+	ReadLabels                       // 09. counter
+	Write                            // 10. counter
+	CreateOne                        // 11. counter
+	CreateMany                       // 12. counter
+	CreateBulk                       // 13. histogram
+	UpdateId                         // 14. counter
+	UpdateQuery                      // 15. counter
+	UpdateBulk                       // 16. histogram
+	DeleteId                         // 17. counter
+	DeleteQuery                      // 18. counter
+	DeleteBulk                       // 19. histogram
+	DeleteLabel                      // 20. counter
+	LabelRead                        // 21. counter (per-label)
+	LabelUpdate                      // 22. counter (per-label)
+	LabelDelete                      // 23. counter (per-label)
+	DbError                          // 24. counter (global)
+	APIError                         // 25. counter (global)
+	ClientError                      // 26. counter (global)
+	CDCClients                       // 27. counter (global)
+	Created                          // 28. counter
+	Updated                          // 29. counter
+	Deleted                          // 30. counter
+	AuthenticationFailed             // 31. counter (system)
+	AuthorizationFailed              // 32. counter
+	InvalidEntityType                // 33. counter
+	QueryTimeout                     // 34. counter
+	Load                             // 35. gauge   (system)
+	Error                            // 36. counter (system)
 )
 
 // Metrics abstracts how metrics are stored and sampled.

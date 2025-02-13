@@ -11,6 +11,7 @@ import (
 	"github.com/go-test/deep"
 
 	"github.com/square/etre"
+	"github.com/square/etre/api"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -215,7 +216,7 @@ func TestGetEntityErrors(t *testing.T) {
 		{Method: "EntityType", StringVal: entityType},
 		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
 		{Method: "Inc", Metric: metrics.Read, IntVal: 1},
-		{Method: "Inc", Metric: metrics.ReadId, IntVal: 1},
+		// {Method: "Inc", Metric: metrics.ReadId, IntVal: 1}, // metric not incremented because handler not called
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1}, // error
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
@@ -240,7 +241,7 @@ func TestGetEntityErrors(t *testing.T) {
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
 	}
-	expectError = etre.Error{Message: "Not Found"} // from API framework (Echo)
+	expectError = api.ErrEndpointNotFound
 	if diffs := deep.Equal(gotError, expectError); diffs != nil {
 		t.Error(diffs)
 	}

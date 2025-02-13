@@ -11,6 +11,7 @@ import (
 	"github.com/go-test/deep"
 
 	"github.com/square/etre"
+	"github.com/square/etre/api"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -234,8 +235,8 @@ func TestPostEntityErrors(t *testing.T) {
 	}
 	if gotWR.Error == nil {
 		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "no-content" {
-		t.Errorf("WriteResult.Error.Type = %s, expected no-content", gotWR.Error.Type)
+	} else if gotWR.Error.Type != "empty-entity" {
+		t.Errorf("WriteResult.Error.Type = %s, expected empty-entity", gotWR.Error.Type)
 	}
 	if created == true {
 		t.Error("CreateEntities called, expected no call due to error")
@@ -524,8 +525,7 @@ func TestPutEntityErrors(t *testing.T) {
 	// ----------------------------------------------------------------------
 
 	// This causea a 404 from the API framework because there's no route for
-	// this path, so there's also no WriteResult because there's no handler
-	// to call.
+	// this path
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/"
 
 	var gotWR etre.WriteResult
@@ -538,8 +538,8 @@ func TestPutEntityErrors(t *testing.T) {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
 	}
 
-	if gotWR.Error != nil {
-		t.Errorf("WriteResult.Error is set, expected no WriteResult: %+v", gotWR.Error)
+	if diffs := deep.Equal(*gotWR.Error, api.ErrEndpointNotFound); diffs != nil {
+		t.Errorf("got Error %+v, expected api.ErrEndpointNotFound %+v; diffs: %+v", gotWR.Error, api.ErrEndpointNotFound, diffs)
 	}
 	if len(gotWR.Writes) != 0 {
 		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
@@ -592,7 +592,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "EntityType", StringVal: entityType},
 		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
 		{Method: "Inc", Metric: metrics.Write, IntVal: 1},
-		{Method: "Inc", Metric: metrics.UpdateId, IntVal: 1},
+		// {Method: "Inc", Metric: metrics.UpdateId, IntVal: 1}, // not incremented because handler not called
 		//{Method: "IncLabel", Metric: metrics.LabelUpdate, StringVal: "foo"}, // label in patch
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
@@ -681,8 +681,8 @@ func TestPutEntityErrors(t *testing.T) {
 
 	if gotWR.Error == nil {
 		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "no-content" {
-		t.Errorf("WriteResult.Error.Type = %s, expected no-content", gotWR.Error.Type)
+	} else if gotWR.Error.Type != "empty-entity" {
+		t.Errorf("WriteResult.Error.Type = %s, expected empty-entity", gotWR.Error.Type)
 	}
 	if len(gotWR.Writes) != 0 {
 		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
