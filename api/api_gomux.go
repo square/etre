@@ -4,6 +4,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -494,7 +495,16 @@ func (api *API) getEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	rc.gm.Val(metrics.ReadMatch, int64(len(entities)))
 
 	// Success: return matching entities (possibly empty list)
-	json.NewEncoder(w).Encode(entities)
+	if len(entities) > 0 && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		// use gzip compression if we have data to send back and the client accepts gzip
+		w.Header().Set("Content-Encoding", "gzip")
+		gzw := gzip.NewWriter(w)
+		defer gzw.Close()
+		json.NewEncoder(gzw).Encode(entities)
+	} else {
+		// no compression
+		json.NewEncoder(w).Encode(entities)
+	}
 }
 
 // //////////////////////////////////////////////////////////////////////////
