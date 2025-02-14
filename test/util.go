@@ -42,6 +42,10 @@ func MakeHTTPRequest(httpVerb, url string, payload []byte, respStruct interface{
 		if err := json.Unmarshal(body, &respStruct); err != nil {
 			return statusCode, fmt.Errorf("Can't decode response body: %s: %s", err, string(body))
 		}
+		// Any time we get a JSON response, we should be getting application/json content type
+		if len(res.Header["Content-Type"]) != 1 || res.Header["Content-Type"][0] != "application/json" {
+			return statusCode, fmt.Errorf("server returned incorrect Content-Type: %s", res.Header["Content-Type"])
+		}
 	}
 
 	statusCode = res.StatusCode
