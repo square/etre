@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre/config"
@@ -60,9 +61,7 @@ func TestLoadEmpty(t *testing.T) {
 	cfg := config.Default()
 	got, err := config.Load("../test/config/empty.yaml", cfg)
 	require.NoError(t, err)
-	if diff := deep.Equal(got, config.Default()); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, cfg, got)
 }
 
 func TestLoadTest001(t *testing.T) {
@@ -75,10 +74,7 @@ func TestLoadTest001(t *testing.T) {
 	expect.Datasource.Database = "test_db"
 	expect.Entity.Types = []string{"test"}
 	expect.Metrics.QueryLatencySLA = "10ms"
-
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, got)
 }
 
 func TestLoadTest002(t *testing.T) {
@@ -87,8 +83,5 @@ func TestLoadTest002(t *testing.T) {
 
 	expect := config.Default()
 	expect.CDC.Disabled = true // testing this
-
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, got)
 }
