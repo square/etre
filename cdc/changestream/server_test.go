@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -33,7 +33,6 @@ func setup(t *testing.T) {
 		var err error
 		client, coll, err = test.DbCollections(entityTypes)
 		require.NoError(t, err)
-
 		store = cdc.NewStore(coll["cdc"], "", cdc.NoRetryPolicy)
 	}
 
@@ -72,10 +71,7 @@ func TestServer(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for change stream channel")
 	}
-
-	if diff := deep.Equal(gotEvent, events1[0]); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, events1[0], gotEvent)
 
 	server.Close("c1")
 	select {

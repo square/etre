@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
@@ -72,9 +72,7 @@ func TestStreamNow(t *testing.T) {
 		Running:  true,
 		InSync:   true,
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 
 	// Server sends 1 event (real MongoDBServer would do this when MongoDB change stream
 	// pushes a raw event). It should be sent immediately to client on streamChan.
@@ -84,16 +82,11 @@ func TestStreamNow(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timeout waiting for event on streamChan")
 	}
-
-	if diff := deep.Equal(gotEvent, events1[0]); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, events1[0], gotEvent)
 
 	// Status should be unchanged
 	gotStatus = stream.Status()
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 
 	// Stop the streamer and check the status
 	stream.Stop()
@@ -103,9 +96,7 @@ func TestStreamNow(t *testing.T) {
 		Running:  false, // this changes to false after calling Stop
 		InSync:   true,
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 
 	// Stop is idempotent
 	stream.Stop()
@@ -115,9 +106,7 @@ func TestStreamNow(t *testing.T) {
 		Running:  false, // this changes to false after calling Stop
 		InSync:   true,
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 }
 
 func TestStreamBacklogNoNewEvents(t *testing.T) {
@@ -161,17 +150,13 @@ func TestStreamBacklogNoNewEvents(t *testing.T) {
 	// That value is nondeterministic, but it must be < when the test start (nowTs).
 	// Also, for the baclog we order by Ts ascending because, internally, the steamer
 	// uses an etre.RevOrder to handle out of order events.
-	if gotFilter.UntilTs < nowTs {
-		t.Errorf("got cdc.Filter.UntilTs = %d, expected >= %d", gotFilter.UntilTs, nowTs)
-	}
+	assert.Greater(t, gotFilter.UntilTs, nowTs)
 	gotFilter.UntilTs = 0
 	expectFilter := cdc.Filter{
 		SinceTs: 100,
 		Order:   cdc.ByTsAsc{},
 	}
-	if diff := deep.Equal(gotFilter, expectFilter); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectFilter, gotFilter)
 
 	// Since we didn't send any current events on serverChan, the internal buff
 	// is zero-length which makes shiftToCurrent() return immediately and backlog()
@@ -190,9 +175,7 @@ func TestStreamBacklogNoNewEvents(t *testing.T) {
 		InSync:      true,
 		BufferUsage: []int{changestream.ServerBufferSize, 0, 0},
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 }
 
 func TestStreamBacklogNewEvents(t *testing.T) {
@@ -282,10 +265,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 		InSync:      true,
 		BufferUsage: []int{changestream.ServerBufferSize, 1, 1},
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Logf("%+v", gotStatus)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 
 	// Get all events sent to client which should be backlog + newEvent
 	gotEvents := []etre.CDCEvent{}
@@ -296,9 +276,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 	expectEvents := make([]etre.CDCEvent, len(events1)+1)
 	copy(expectEvents, events1)
 	expectEvents[len(expectEvents)-1] = newEvent
-	if diff := deep.Equal(gotEvents, expectEvents); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvents, gotEvents)
 
 	// Stop the streamer and check the status. This is important becuase the backlog
 	// starts and coordinates several goroutines, so Stop() shouldn't hang waiting for
@@ -311,9 +289,7 @@ func TestStreamBacklogNewEvents(t *testing.T) {
 		InSync:      true,
 		BufferUsage: []int{changestream.ServerBufferSize, 1, 1},
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 }
 
 func TestStreamBacklogNewOverlappingEvents(t *testing.T) {
@@ -381,9 +357,7 @@ func TestStreamBacklogNewOverlappingEvents(t *testing.T) {
 		e := <-streamChan
 		gotEvents = append(gotEvents, e)
 	}
-	if diff := deep.Equal(gotEvents, events1); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, events1, gotEvents)
 }
 
 func TestStreamNewEventsOutOfOrder(t *testing.T) {
@@ -429,9 +403,7 @@ func TestStreamNewEventsOutOfOrder(t *testing.T) {
 			break
 		}
 	}
-	if diff := deep.Equal(gotEvents, events1); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, events1, gotEvents)
 }
 
 func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
@@ -492,16 +464,11 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 		BufferUsage:        []int{changestream.ServerBufferSize, 0, 0},
 		ServerClosedStream: true,
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 
 	// Error() should return changestream.ErrServerClosedStream
 	err := stream.Error()
-	if err != changestream.ErrServerClosedStream {
-		t.Errorf("got error '%s', expected '%s' (changestream.ErrServerClosedStream)",
-			err, changestream.ErrServerClosedStream)
-	}
+	assert.Equal(t, changestream.ErrServerClosedStream, err)
 }
 
 func TestStreamServerClosedStreamDuringSync(t *testing.T) {
@@ -539,14 +506,9 @@ func TestStreamServerClosedStreamDuringSync(t *testing.T) {
 		InSync:             true,
 		ServerClosedStream: true,
 	}
-	if diff := deep.Equal(gotStatus, expectStatus); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStatus, gotStatus)
 
 	// changestream.ErrServerClosedStream should be reported
 	err := stream.Error()
-	if err != changestream.ErrServerClosedStream {
-		t.Errorf("got error '%s', expected '%s' (changestream.ErrServerClosedStream)",
-			err, changestream.ErrServerClosedStream)
-	}
+	assert.Equal(t, changestream.ErrServerClosedStream, err)
 }

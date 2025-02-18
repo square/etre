@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
@@ -110,17 +110,11 @@ func TestClientWebsocketPingFromClient(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	if pong["control"] != "pong" {
-		t.Errorf("wrong control reply '%s', expected 'pong'", pong["control"])
-	}
+	assert.Equal(t, "pong", pong["control"])
 	dstTs, ok := pong["dstTs"]
-	if !ok {
-		t.Fatal("dstTs not set in ping reply, expected a UnixNano value")
-	}
+	require.True(t, ok, "dstTs not set in ping reply, expected a UnixNano value")
 	n := int64(dstTs.(float64)) // JSON numbers are floats, so convert to that first, then to int64
-	if n <= srcTs.UnixNano() {
-		t.Errorf("got ts %d <= sent ts %d, expected it to be greater", n, srcTs.UnixNano())
-	}
+	assert.True(t, n > srcTs.UnixNano(), "dstTs %d <= srcTs %d, expected it to be greater", n, srcTs.UnixNano())
 }
 
 func TestClientWebsocketPingToClient(t *testing.T) {
@@ -154,17 +148,11 @@ func TestClientWebsocketPingToClient(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	if msg["control"] != "ping" {
-		t.Errorf("wrong control '%s', expected 'ping'", msg["control"])
-	}
+	assert.Equal(t, "ping", msg["control"])
 	srcTs, ok := msg["srcTs"]
-	if !ok {
-		t.Fatal("srcTs not set in ping message, expected a UnixNano value")
-	}
+	require.True(t, ok, "srcTs not set in ping message, expected a UnixNano value")
 	n := int64(srcTs.(float64)) // JSON numbers are floats, so convert to that first, then to int64
-	if n <= startTs {
-		t.Errorf("srcTs %d <= startTs %d, expected it to be greater", n, startTs)
-	}
+	assert.True(t, n > startTs, "srcTs %d <= startTs %d, expected it to be greater", n, startTs)
 
 	// Reply with pong, setting dstTs (we're the dst, Client was the src)
 	dstTs := time.Now()
@@ -180,9 +168,7 @@ func TestClientWebsocketPingToClient(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for Client.Latency() to return")
 	}
-	if gotLag.RTT < 80 || gotLag.RTT > 120 {
-		t.Errorf("got RTT %d, expected between 80 and 120ms", gotLag.RTT)
-	}
+	assert.False(t, gotLag.RTT < 80 || gotLag.RTT > 120, "got RTT %d, expected between 80 and 120ms", gotLag.RTT)
 }
 
 func TestClientStreamer(t *testing.T) {
@@ -207,18 +193,13 @@ func TestClientStreamer(t *testing.T) {
 		"control": "start",
 		"startTs": startTs,
 	}
-	if err := clientConn.WriteJSON(start); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.WriteJSON(start)
+	require.NoError(t, err)
+
 	var ack map[string]interface{}
-	if err := clientConn.ReadJSON(&ack); err != nil {
-		t.Fatal(err)
-		return
-	}
-	if ack["control"] != "start" {
-		t.Errorf("wrong control reply '%s', expected 'start'", ack["control"])
-	}
+	err = clientConn.ReadJSON(&ack)
+	require.NoError(t, err)
+	assert.Equal(t, "start", ack["control"])
 	if e, ok := ack["error"]; ok {
 		if e != "" {
 			t.Errorf("got an error in the ack respons of '%s', expected no error", e)
@@ -245,21 +226,16 @@ func TestClientStreamer(t *testing.T) {
 		}
 		gotEvents = append(gotEvents, recvdEvent)
 	}
-	if diff := deep.Equal(gotEvents, events); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, events, gotEvents)
 
 	// Client <- Streamer is one way, so when something happens in Streamer,
 	// it closes the chan it returned to Client (eventsChan) to signal to the
 	// Client to shut down.
 	close(eventsChan)
 	var errControl map[string]interface{}
-	if err := clientConn.ReadJSON(&errControl); err != nil {
-		t.Fatal(err)
-	}
-	if errControl["control"] != "error" {
-		t.Errorf("wrong control reply '%s', expected 'error'", errControl["control"])
-	}
+	err = clientConn.ReadJSON(&errControl)
+	require.NoError(t, err)
+	assert.Equal(t, "error", errControl["control"])
 
 	// Wait for server/wsHandler to return, then check err from Client.Run().
 	// It should be ErrWebsocketClosed because closing the stream chan (eventsChan)
@@ -268,9 +244,7 @@ func TestClientStreamer(t *testing.T) {
 	server.Lock()
 	gotErr := server.err
 	server.Unlock()
-	if gotErr != changestream.ErrWebsocketClosed {
-		t.Errorf("got error %T, expected ErrWebsocketClosed", gotErr)
-	}
+	assert.Equal(t, changestream.ErrWebsocketClosed, gotErr)
 }
 
 func TestClientInvalidMessageType(t *testing.T) {
@@ -291,18 +265,14 @@ func TestClientInvalidMessageType(t *testing.T) {
 
 	// Messages are supposed to be map[string]interface{}, so []int is invalid
 	invalidMessage := []int{1, 2, 3}
-	if err := clientConn.WriteJSON(invalidMessage); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.WriteJSON(invalidMessage)
+	require.NoError(t, err)
 
 	var errControl map[string]interface{}
 	if err := clientConn.ReadJSON(&errControl); err != nil {
 		t.Fatal(err)
 	}
-	if errControl["control"] != "error" {
-		t.Errorf("wrong control reply '%s', expected 'error'", errControl["control"])
-	}
+	assert.Equal(t, "error", errControl["control"])
 }
 
 func TestClientInvalidMessageContent(t *testing.T) {
@@ -326,18 +296,13 @@ func TestClientInvalidMessageContent(t *testing.T) {
 	ping := map[string]interface{}{
 		"srcTs": time.Now().UnixNano(),
 	}
-	if err := clientConn.WriteJSON(ping); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.WriteJSON(ping)
+	require.NoError(t, err)
 
 	var errControl map[string]interface{}
-	if err := clientConn.ReadJSON(&errControl); err != nil {
-		t.Fatal(err)
-	}
-	if errControl["control"] != "error" {
-		t.Errorf("wrong control reply '%s', expected 'error'", errControl["control"])
-	}
+	err = clientConn.ReadJSON(&errControl)
+	require.NoError(t, err)
+	assert.Equal(t, "error", errControl["control"])
 }
 
 func TestClientClose(t *testing.T) {
@@ -361,18 +326,13 @@ func TestClientClose(t *testing.T) {
 		"control": "start",
 		"startTs": startTs,
 	}
-	if err := clientConn.WriteJSON(start); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.WriteJSON(start)
+	require.NoError(t, err)
+
 	var ack map[string]interface{}
-	if err := clientConn.ReadJSON(&ack); err != nil {
-		t.Fatal(err)
-		return
-	}
-	if ack["control"] != "start" {
-		t.Fatalf("wrong control reply '%s', expected 'start'", ack["control"])
-	}
+	err = clientConn.ReadJSON(&ack)
+	require.NoError(t, err)
+	assert.Equal(t, "start", ack["control"])
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -382,7 +342,6 @@ func TestClientClose(t *testing.T) {
 	server.Lock()
 	gotErr := server.err
 	server.Unlock()
-	if gotErr == nil || gotErr == changestream.ErrWebsocketClosed {
-		t.Errorf("error nil or changestream.ErrWebsocketClosed, expected websocket.CloseError or other")
-	}
+	require.Error(t, gotErr)
+	assert.NotEqual(t, changestream.ErrWebsocketClosed.Error(), gotErr.Error())
 }
