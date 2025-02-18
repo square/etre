@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/mongo"
 
@@ -40,9 +41,7 @@ func TestDBPlugin(t *testing.T) {
 	require.NoError(t, err, "Error booting server")
 
 	// Check that the DB plugin was called twice: once for the main DB and once for the CDC DB.
-	if counter != 2 {
-		t.Errorf("Expected DB plugin to be called twice, but got %d", counter)
-	}
+	assert.Equal(t, 2, counter, "Expected DB plugin to be called twice")
 
 	// Stop the server
 	err = s.Stop()
