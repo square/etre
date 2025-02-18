@@ -4,6 +4,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -137,6 +138,7 @@ func NewAPI(appCtx app.Context) *API {
 	mux.Handle("GET /apidocs/", httpSwagger.Handler())
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		err := ErrEndpointNotFound
 		write := isWriteRequest(r.Method)
@@ -176,6 +178,7 @@ func (api *API) Stop() error {
 
 func (api *API) requestWrapper(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		write := isWriteRequest(r.Method)
 		cdc := strings.HasSuffix(r.URL.String(), "/changes")
 
@@ -492,7 +495,16 @@ func (api *API) getEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	rc.gm.Val(metrics.ReadMatch, int64(len(entities)))
 
 	// Success: return matching entities (possibly empty list)
-	json.NewEncoder(w).Encode(entities)
+	if len(entities) > 0 && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		// use gzip compression if we have data to send back and the client accepts gzip
+		w.Header().Set("Content-Encoding", "gzip")
+		gzw := gzip.NewWriter(w)
+		defer gzw.Close()
+		json.NewEncoder(gzw).Encode(entities)
+	} else {
+		// no compression
+		json.NewEncoder(w).Encode(entities)
+	}
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -981,6 +993,7 @@ func (api *API) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	// plugin can specify zero or more groups.
 	groups := api.metricsStore.Names()
 	if len(groups) == 0 { // no user-defined metric groups
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(all)
 		return
 	}
@@ -999,7 +1012,7 @@ func (api *API) metricsHandler(w http.ResponseWriter, r *http.Request) {
 		r.Groups[0].Group = name
 		all.Groups[i] = r.Groups[0]
 	}
-
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(all)
 }
 
@@ -1014,6 +1027,7 @@ func (api *API) statusHandler(w http.ResponseWriter, r *http.Request) {
 		"ok":      "yes",
 		"version": etre.VERSION,
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
 

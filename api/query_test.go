@@ -411,3 +411,41 @@ func TestQueryErrorsTimeout(t *testing.T) {
 		t.Error(diffs)
 	}
 }
+
+func TestResponseCompression(t *testing.T) {
+	// Stand up the server
+	store := mock.EntityStore{
+		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+			return testEntitiesWithObjectIDs, nil
+		},
+	}
+	server := setup(t, defaultConfig, store)
+	defer server.ts.Close()
+
+	// Make the http request.
+	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType +
+		"?query=" + url.QueryEscape("foo=bar")
+	req, err := http.NewRequest("GET", etreurl, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the request
+	// Note that the http client automatically enables gzip, so we don't have to set the "Accept-Encoding" header.
+	res, err := http.DefaultClient.Do(req)
+	defer res.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The http client strips the "Content-Encoding" header so we can't check it directly.
+	// Instead, we have to check the "Uncompressed" flag, which will be *true* if the content came back compressed and was decompressed by the http client.
+	if !res.Uncompressed {
+		t.Errorf("response was not compressed, expected it to be")
+	}
+
+	// Make sure content type is correct
+	if res.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("response Content-Type = %s, expected application/json", res.Header.Get("Content-Type"))
+	}
+}
