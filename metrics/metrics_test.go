@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/square/etre"
 	"github.com/square/etre/metrics"
 )
@@ -174,10 +176,7 @@ func TestEntityMetrics(t *testing.T) {
 		},
 	}
 	gotReport := em.Report(true)
-	if diff := deep.Equal(gotReport, expectReport); diff != nil {
-		dump(gotReport, t)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectReport, gotReport)
 }
 
 func TestMultipleEntityMetrics(t *testing.T) {
@@ -226,10 +225,7 @@ func TestMultipleEntityMetrics(t *testing.T) {
 		},
 	}
 	gotReport := em.Report(true)
-	if diff := deep.Equal(gotReport, expectReport); diff != nil {
-		dump(gotReport, t)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectReport, gotReport)
 }
 
 func TestSharedEntityMetrics(t *testing.T) {
@@ -288,15 +284,9 @@ func TestSharedEntityMetrics(t *testing.T) {
 		},
 	}
 	gotReport := em1.Report(false)
-	if diff := deep.Equal(gotReport, expectReport); diff != nil {
-		dump(gotReport, t)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectReport, gotReport)
 	gotReport = em2.Report(false)
-	if diff := deep.Equal(gotReport, expectReport); diff != nil {
-		dump(gotReport, t)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectReport, gotReport)
 }
 
 func TestMemoryStore(t *testing.T) {
@@ -328,35 +318,23 @@ func TestMemoryStore(t *testing.T) {
 		},
 	}
 	gotReport := em.Report(true)
-	if diff := deep.Equal(gotReport, expectReport); diff != nil {
-		dump(gotReport, t)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectReport, gotReport)
 
 	s := metrics.NewMemoryStore()
 
 	// New store, shouldn't have the metrics yet
-	if m := s.Get("test"); m != nil {
-		t.Errorf("Get(test) returned non-nil, expected nil")
-	}
+	m := s.Get("test")
+	assert.Nil(t, m)
 
 	// Store, re-fetch, and ensure it has same values by checking reprot
-	if err := s.Add(gm, "test"); err != nil {
-		t.Error(err)
-	}
+	err := s.Add(gm, "test")
+	require.NoError(t, err)
 	gm2 := s.Get("test")
-	if gm2 == nil {
-		t.Fatal("Get(test) returned nil, expected Metrics")
-	}
+	assert.NotNil(t, gm2, "Get(test) returned nil, expected Metrics")
 	gotReport = gm2.Report(true)
-	if diff := deep.Equal(gotReport, expectReport); diff != nil {
-		dump(gotReport, t)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectReport, gotReport)
 
 	gotNames := s.Names()
 	expectNames := []string{"test"}
-	if diff := deep.Equal(gotNames, expectNames); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectNames, gotNames)
 }
