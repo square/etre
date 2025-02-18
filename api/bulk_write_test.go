@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/entity"
@@ -42,17 +43,13 @@ func TestPostEntitiesOK(t *testing.T) {
 	// On create, entities can't have metalabels, so we can't use testEntities
 	entities := []etre.Entity{{"a": "1"}, {"b": "2"}}
 	payload, err := json.Marshal(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	var gotWR etre.WriteResult
 	url := server.url + etre.API_ROOT + "/entities/" + entityType
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusCreated {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusCreated, gotWR)
@@ -115,16 +112,12 @@ func TestPostEntitiesErrors(t *testing.T) {
 	// On create, entities can't have metalabels, sou use testEntities
 	// which have all the metalabels. This should cause an error.
 	payload, err := json.Marshal(testEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", url, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -169,16 +162,13 @@ func TestPostEntitiesErrors(t *testing.T) {
 	entities := []etre.Entity{entity1, entity2}
 
 	payload, err = json.Marshal(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", url, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
 	}
@@ -216,15 +206,13 @@ func TestPostEntitiesErrors(t *testing.T) {
 	// Arrays are not supported values types, so this should cause a similar error
 	entities = []etre.Entity{}
 	payload, err = json.Marshal(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", url, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
 	}
@@ -264,9 +252,8 @@ func TestPostEntitiesErrors(t *testing.T) {
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", url, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
 	}
@@ -327,9 +314,7 @@ func TestPutEntitiesOK(t *testing.T) {
 	// Set foo=bar on all matching entities (metrics +1 update on "foo")
 	patch := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Match entities with a=b (metrics +1 read on "a")
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType +
@@ -338,9 +323,7 @@ func TestPutEntitiesOK(t *testing.T) {
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusOK {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusOK, gotWR)
@@ -421,16 +404,12 @@ func TestPutEntitiesErrors(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType // missing ?query=...
 	patch := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -469,9 +448,7 @@ func TestPutEntitiesErrors(t *testing.T) {
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -512,16 +489,12 @@ func TestPutEntitiesErrors(t *testing.T) {
 
 	patch = etre.Entity{"foo": "bar"}
 	payload, err = json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -559,18 +532,14 @@ func TestPutEntitiesErrors(t *testing.T) {
 
 	patch = etre.Entity{}
 	payload, err = json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	etreurl = server.url + etre.API_ROOT + "/entities/" + entityType +
 		"?query=" + url.QueryEscape("a=b")
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -608,17 +577,13 @@ func TestPutEntitiesErrors(t *testing.T) {
 
 	patch = etre.Entity{"_type": "newType"} // can't change metalabels
 	payload, err = json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	etreurl = server.url + etre.API_ROOT + "/entities/" + entityType +
 		"?query=" + url.QueryEscape("a=b")
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -675,9 +640,7 @@ func TestDeleteEntitiesOK(t *testing.T) {
 	// Set foo=bar on all matching entities (metrics +1 update on "foo")
 	patch := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Match entities with a=b (metrics +1 read on "a")
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType +
@@ -686,9 +649,7 @@ func TestDeleteEntitiesOK(t *testing.T) {
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusOK {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusOK, gotWR)
@@ -764,16 +725,12 @@ func TestDeleteEntitiesErrors(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType // missing ?query=...
 	patch := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -812,9 +769,7 @@ func TestDeleteEntitiesErrors(t *testing.T) {
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("DELETE", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -855,16 +810,12 @@ func TestDeleteEntitiesErrors(t *testing.T) {
 
 	patch = etre.Entity{"foo": "bar"}
 	payload, err = json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("DELETE", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)

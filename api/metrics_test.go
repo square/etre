@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -43,9 +44,8 @@ func setupWithMetrics(t *testing.T, cfg config.Config, store mock.EntityStore) *
 	server.ts = httptest.NewServer(server.api)
 
 	u, err := url.Parse(server.ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	server.url = fmt.Sprintf("http://%s", u.Host)
 
 	return server
@@ -64,9 +64,8 @@ func TestMetricsGet(t *testing.T) {
 
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType + "?query=x"
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -75,9 +74,7 @@ func TestMetricsGet(t *testing.T) {
 	etreurl = server.url + etre.API_ROOT + "/metrics"
 	var gotMetrics etre.Metrics
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotMetrics)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusOK {
 		t.Errorf("got HTTP status = %d, expected %d", statusCode, http.StatusOK)
@@ -99,9 +96,8 @@ func TestMetricsInvalidEntityType(t *testing.T) {
 	url := defaultServer.URL + etre.API_ROOT + "/entity/bad-type/" + seedId0
 	var actual etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
@@ -140,9 +136,8 @@ func TestMetricsBadRoute(t *testing.T) {
 
 	etreurl := server.url + "/api" // bad route, not under route group
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
 	}

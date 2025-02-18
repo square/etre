@@ -14,6 +14,9 @@ import (
 
 	"github.com/go-test/deep"
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/square/etre"
 )
 
@@ -152,9 +155,7 @@ func TestQueryOK(t *testing.T) {
 	query := "x=y"
 	expectQuery := "query=" + query
 	got, err := ec.Query(query, etre.QueryFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
 	expectPath := etre.API_ROOT + "/entities/node"
@@ -180,9 +181,8 @@ func TestQueryNoResults(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if diff := deep.Equal(got, respData); diff != nil {
 		t.Error(diff)
 	}
@@ -201,15 +201,12 @@ func TestQueryHandledError(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
-	if err == nil {
-		t.Error("err is nil, expected an error")
-	}
+	require.Error(t, err)
+
 	if !strings.Contains(err.Error(), respError.Message) {
 		t.Errorf("error message does not contain '%s': '%s'", respError.Message, err)
 	}
-	if got != nil {
-		t.Errorf("got entities, expected nil: %v", got)
-	}
+	assert.Nil(t, got)
 }
 
 func TestQueryUnhandledError(t *testing.T) {
@@ -223,9 +220,7 @@ func TestQueryUnhandledError(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
-	if err == nil {
-		t.Fatal("err is nil, expected an error")
-	}
+	require.Error(t, err)
 	if !strings.Contains(err.Error(), "no response") {
 		t.Errorf("error does not contain 'no response': '%s'", err)
 	}
@@ -262,9 +257,7 @@ func TestInsertOK(t *testing.T) {
 		},
 	}
 	got, err := ec.Insert(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
 	if gotMethod != "POST" {
@@ -300,9 +293,8 @@ func TestInsertAPIError(t *testing.T) {
 		},
 	}
 	got, err := ec.Insert(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
 		t.Error(diff)
 	}
@@ -320,9 +312,8 @@ func TestInsertUnhandledError(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	entities := []etre.Entity{{"foo": "bar"}}
 	wr, err := ec.Insert(entities)
-	if err == nil {
-		t.Fatal(err)
-	}
+	require.Error(t, err)
+
 	if !strings.Contains(err.Error(), "no response") {
 		t.Errorf("error does not contain 'no response': '%s'", err)
 	}
@@ -374,9 +365,7 @@ func TestUpdateOK(t *testing.T) {
 		"foo": "bar", // patch foo:foo -> for:bar
 	}
 	got, err := ec.Update("foo=bar", entity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
 	if gotMethod != "PUT" {
@@ -407,9 +396,7 @@ func TestUpdateAPIError(t *testing.T) {
 		"foo": "bar",
 	}
 	got, err := ec.Update("foo=bar", entity)
-	if err == nil {
-		t.Fatal("err is nil, expected an error")
-	}
+	require.Error(t, err)
 
 	// The etre.Error.Message should bubble up
 	if !strings.Contains(err.Error(), respError.Message) {
@@ -465,9 +452,7 @@ func TestUpdateOneOK(t *testing.T) {
 		"foo": "bar", // patch foo:foo -> for:bar
 	}
 	got, err := ec.UpdateOne("abc", entity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if gotMethod != "PUT" {
 		t.Errorf("got method %s, expected PUT", gotMethod)
@@ -507,9 +492,7 @@ func TestDeleteOK(t *testing.T) {
 	// Normal delete that returns status code 200 and a write result
 	query := "foo=bar"
 	got, err := ec.Delete(query)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
 	if gotMethod != "DELETE" {
@@ -557,9 +540,7 @@ func TestDeleteWithSet(t *testing.T) {
 	// Normal delete that returns status code 200 and a write result
 	query := "foo=bar"
 	got, err := ec.Delete(query)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
 	if gotMethod != "DELETE" {
@@ -601,9 +582,8 @@ func TestDeleteOneOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.DeleteOne("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if gotMethod != "DELETE" {
 		t.Errorf("got method %s, expected DELETE", gotMethod)
 	}
@@ -642,9 +622,7 @@ func TestDeleteOneWithSet(t *testing.T) {
 	ec = ec.WithSet(set)
 
 	got, err := ec.DeleteOne("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if gotMethod != "DELETE" {
 		t.Errorf("got method %s, expected DELETE", gotMethod)
 	}
@@ -674,9 +652,7 @@ func TestLabelsOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.Labels("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if gotMethod != "GET" {
 		t.Errorf("got method %s, expected GET", gotMethod)
 	}
@@ -707,9 +683,7 @@ func TestDeleteLabelOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.DeleteLabel("abc", "foo")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if gotMethod != "DELETE" {
 		t.Errorf("got method %s, expected DELETE", gotMethod)
@@ -745,19 +719,12 @@ func TestCDCClient(t *testing.T) {
 		var upgrader = websocket.Upgrader{}
 		var err error
 		wsConn, err = upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Fatal(err)
-			return
-		}
+		require.NoError(t, err)
 		defer wsConn.Close()
-		if err := wsConn.ReadJSON(&gotStart); err != nil {
-			t.Fatal(err)
-			return
-		}
-		if err := wsConn.WriteJSON(startAck); err != nil {
-			t.Fatal(err)
-			return
-		}
+		err = wsConn.ReadJSON(&gotStart)
+		require.NoError(t, err)
+		err = wsConn.WriteJSON(startAck)
+		require.NoError(t, err)
 		connChan <- true
 		<-connChan
 	}
@@ -772,9 +739,7 @@ func TestCDCClient(t *testing.T) {
 
 	startTs := time.Now()
 	events, err := ec.Start(startTs)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Wait for wsHandler ^ to do start sequence
 	select {
@@ -892,19 +857,13 @@ func TestCDCClient(t *testing.T) {
 		var err error
 
 		err = wsConn.ReadJSON(&ping)
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		require.NoError(t, err)
+
 		time.Sleep(101 * time.Millisecond)
 		ping["control"] = "pong"
 		ping["dstTs"] = time.Now().UnixNano()
-		t.Logf("%#v", ping)
 		err = wsConn.WriteJSON(ping)
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		require.NoError(t, err)
 
 		close(waitForPing)
 	}()
@@ -932,18 +891,13 @@ func TestCDCClient(t *testing.T) {
 		"error":   "fake error",
 	}
 	err = wsConn.WriteJSON(errorMsg)
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
+	require.NoError(t, err)
 
 	// Give client a few milliseconds to shutdown
 	time.Sleep(500 * time.Millisecond)
 	var rand map[string]interface{} // shouldn't read random data
 	err = wsConn.ReadJSON(&rand)
-	if err == nil {
-		t.Errorf("no error read, expected an error; read %#v", rand)
-	}
+	require.Error(t, err)
 
 	// The client should save the error ^ and return it
 	gotError := ec.Error().Error()

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -42,9 +43,8 @@ func TestGetEntityBasic(t *testing.T) {
 
 	var gotEntity etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -100,9 +100,8 @@ func TestGetEntityReturnLabels(t *testing.T) {
 
 	var gotEntity etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -147,9 +146,8 @@ func TestGetEntityNotFound(t *testing.T) {
 
 	var gotEntity etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
 	}
@@ -198,9 +196,8 @@ func TestGetEntityErrors(t *testing.T) {
 
 	gotError = etre.Error{}
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
@@ -234,9 +231,8 @@ func TestGetEntityErrors(t *testing.T) {
 
 	gotError = etre.Error{}
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	// This is 404 not 400 (bad request) because there's no endpoint for /entity/:type
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
@@ -267,9 +263,8 @@ func TestGetEntityErrors(t *testing.T) {
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 	gotError = etre.Error{}
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusServiceUnavailable {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusServiceUnavailable)
 	}
@@ -318,9 +313,8 @@ func TestGetEntityLabels(t *testing.T) {
 
 	var gotLabels []string
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotLabels)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}

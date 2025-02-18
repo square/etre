@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -35,17 +36,13 @@ func setup(t *testing.T, fallbackFile string, wrp cdc.RetryPolicy) cdc.Store {
 	if coll == nil {
 		var err error
 		client, coll, err = test.DbCollections(entityTypes)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 
 	// Reset the collection: delete all cdc events and insert the standard cdc events
 	cdcColl := coll[entityType]
 	_, err := cdcColl.DeleteMany(context.TODO(), bson.D{{}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// First time, create unique index on "x"
 	if coll == nil {
@@ -85,9 +82,7 @@ func TestRead(t *testing.T) {
 		Order:   cdc.ByEntityIdRevAsc{},
 	}
 	events, err := cdcs.Read(filter)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	actualIds := []string{}
 	for _, event := range events {
@@ -106,9 +101,7 @@ func TestRead(t *testing.T) {
 		Order:   cdc.ByEntityIdRevAsc{},
 	}
 	events, err = cdcs.Read(filter)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	actualIds = []string{}
 	for _, event := range events {
@@ -143,9 +136,7 @@ func TestWriteSuccess(t *testing.T) {
 	}
 
 	err := cdcs.Write(context.TODO(), event)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	// Get the event we just created.
 	filter := cdc.Filter{
@@ -153,9 +144,7 @@ func TestWriteSuccess(t *testing.T) {
 		UntilTs: 55,
 	}
 	actualEvents, err := cdcs.Read(filter)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	if len(actualEvents) != 1 {
 		t.Errorf("got back %d events, expected 1", len(actualEvents))
@@ -168,9 +157,7 @@ func TestWriteSuccess(t *testing.T) {
 
 func TestWriteFallbackFile(t *testing.T) {
 	fallbackFile, err := ioutil.TempFile("", "etre-cdc-test.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer os.Remove(fallbackFile.Name())
 
 	fallbackFile.Close()
@@ -180,16 +167,12 @@ func TestWriteFallbackFile(t *testing.T) {
 	// Write an event...
 	event := etre.CDCEvent{Id: "abc", EntityId: "e13", EntityRev: 7, Ts: 54}
 	err = cdcs.Write(context.TODO(), event)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	// Then write the same event which causes a duplice key error and triggers
 	// a write to the fallback file...
 	err = cdcs.Write(context.TODO(), event)
-	if err == nil {
-		t.Error("expected an error but did not get one")
-	}
+	require.Error(t, err)
 
 	bytes, err := ioutil.ReadFile(fallbackFile.Name())
 	var gotEvent etre.CDCEvent

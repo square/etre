@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -42,17 +43,13 @@ func TestPostEntityOK(t *testing.T) {
 
 	newEntity := etre.Entity{"host": "local"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusCreated {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusCreated)
@@ -114,17 +111,13 @@ func TestPostEntityDuplicate(t *testing.T) {
 
 	newEntity := etre.Entity{"host": "local"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusConflict {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusConflict)
@@ -171,17 +164,13 @@ func TestPostEntityErrors(t *testing.T) {
 	// ----------------------------------------------------------------------
 	newEntity := etre.Entity{"host": "local", "_id": testEntityIds[0]}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
@@ -220,16 +209,13 @@ func TestPostEntityErrors(t *testing.T) {
 
 	newEntity = etre.Entity{}
 	payload, err = json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
 	}
@@ -268,9 +254,8 @@ func TestPostEntityErrors(t *testing.T) {
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
 	}
@@ -326,17 +311,13 @@ func TestPutEntityOK(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
@@ -408,17 +389,13 @@ func TestPutEntityDuplicate(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusConflict {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusConflict)
@@ -462,17 +439,13 @@ func TestPutEntityNotFound(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
@@ -516,9 +489,7 @@ func TestPutEntityErrors(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// ----------------------------------------------------------------------
 	// Missing entity id (:id)
@@ -530,9 +501,7 @@ func TestPutEntityErrors(t *testing.T) {
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
@@ -566,9 +535,7 @@ func TestPutEntityErrors(t *testing.T) {
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
@@ -611,17 +578,13 @@ func TestPutEntityErrors(t *testing.T) {
 	// Patch can't have _id
 	newEntity = etre.Entity{"_id": testEntityIds[0], "foo": "bar"}
 	payload, err = json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
@@ -663,17 +626,13 @@ func TestPutEntityErrors(t *testing.T) {
 
 	newEntity = etre.Entity{}
 	payload, err = json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
@@ -718,9 +677,7 @@ func TestPutEntityErrors(t *testing.T) {
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
@@ -782,17 +739,13 @@ func TestDeleteEntityOK(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
@@ -869,9 +822,7 @@ func TestDeleteLabel(t *testing.T) {
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", etreurl, nil, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)

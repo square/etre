@@ -5,6 +5,9 @@ package entity_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/square/etre"
 	"github.com/square/etre/entity"
 )
@@ -18,9 +21,7 @@ func TestValidateCreateEntitiesOK(t *testing.T) {
 		etre.Entity{"y": 1},
 	}
 	err := validate.Entities(entities, entity.VALIDATE_ON_CREATE)
-	if err != nil {
-		t.Errorf("got err '%v', expected nil", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestValidateCreateEntitiesErrorsMetalabels(t *testing.T) {
@@ -32,9 +33,8 @@ func TestValidateCreateEntitiesErrorsMetalabels(t *testing.T) {
 
 	for _, e := range invalid {
 		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_CREATE)
-		if err == nil {
-			t.Errorf("no error creating entity, expected one: %+v", e)
-		}
+		assert.Errorf(t, err, "no error creating entity, expected one: %+v", e)
+
 		ve, ok := err.(entity.ValidationError)
 		if !ok {
 			t.Errorf("error is type %T, expected entity.ValidationError", err)
@@ -45,9 +45,8 @@ func TestValidateCreateEntitiesErrorsMetalabels(t *testing.T) {
 
 	for _, e := range invalid {
 		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_UPDATE)
-		if err == nil {
-			t.Errorf("no error creating entity, expected one: %+v", e)
-		}
+		require.Error(t, err, "no error creating entity, expected one: %+v", e)
+
 		ve, ok := err.(entity.ValidationError)
 		if !ok {
 			t.Errorf("error is type %T, expected entity.ValidationError", err)
@@ -67,9 +66,8 @@ func TestValidateCreateEntitiesErrorsWhitespace(t *testing.T) {
 
 	for _, e := range invalid {
 		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_CREATE)
-		if err == nil {
-			t.Errorf("no error creating entity, expected one: %+v", e)
-		}
+		require.Error(t, err, "no error creating entity, expected one: %+v", e)
+
 		ve, ok := err.(entity.ValidationError)
 		if !ok {
 			t.Errorf("error is type %T, expected entity.ValidationError", err)
@@ -80,9 +78,8 @@ func TestValidateCreateEntitiesErrorsWhitespace(t *testing.T) {
 
 	for _, e := range invalid {
 		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_UPDATE)
-		if err == nil {
-			t.Errorf("no error creating entity, expected one: %+v", e)
-		}
+		require.Error(t, err, "no error creating entity, expected one: %+v", e)
+
 		ve, ok := err.(entity.ValidationError)
 		if !ok {
 			t.Errorf("error is type %T, expected entity.ValidationError", err)
@@ -97,9 +94,8 @@ func TestValidateCreateEntitiesErrorsWhitespace(t *testing.T) {
 
 	for _, e := range invalid {
 		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_CREATE)
-		if err == nil {
-			t.Errorf("no error creating entity, expected one: %+v", e)
-		}
+		require.Error(t, err, "no error creating entity, expected one: %+v", e)
+
 		ve, ok := err.(entity.ValidationError)
 		if !ok {
 			t.Errorf("error is type %T, expected entity.ValidationError", err)
@@ -110,9 +106,8 @@ func TestValidateCreateEntitiesErrorsWhitespace(t *testing.T) {
 
 	for _, e := range invalid {
 		err := validate.Entities([]etre.Entity{e}, entity.VALIDATE_ON_UPDATE)
-		if err == nil {
-			t.Errorf("no error creating entity, expected one: %+v", e)
-		}
+		require.Error(t, err, "no error creating entity, expected one: %+v", e)
+
 		ve, ok := err.(entity.ValidationError)
 		if !ok {
 			t.Errorf("error is type %T, expected entity.ValidationError", err)
@@ -128,9 +123,8 @@ func TestValidateWriteOpOK(t *testing.T) {
 		Caller:     "dn",
 	}
 	err := validate.WriteOp(wo)
-	if err == nil {
-		t.Fatal("err is nill, expected an enitty.ValidationError")
-	}
+	require.Error(t, err)
+
 	v, ok := err.(entity.ValidationError)
 	if !ok {
 		t.Fatalf("err is type %#v, expected entity.ValidationError", err)
@@ -142,11 +136,7 @@ func TestValidateWriteOpOK(t *testing.T) {
 
 func TestValidateDeleteLabel(t *testing.T) {
 	err := validate.DeleteLabel("foo")
-	if err != nil {
-		t.Errorf("got err '%v', expected nil", err)
-	}
+	require.NoError(t, err)
 	err = validate.DeleteLabel("_id")
-	if err == nil {
-		t.Fatal("err is nill, expected an enitty.ValidationError")
-	}
+	require.Error(t, err)
 }

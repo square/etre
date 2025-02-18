@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-test/deep"
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc/changestream"
@@ -55,9 +56,8 @@ func setupClient(t *testing.T, streamer changestream.Streamer) *server {
 		defer close(server.doneChan)
 		var upgrader = websocket.Upgrader{}
 		wsConn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		clientNo++
 		clientId := fmt.Sprintf("client%d", clientNo)
 		server.Lock()
@@ -77,9 +77,8 @@ func setupClient(t *testing.T, streamer changestream.Streamer) *server {
 	}
 	server.ts = httptest.NewServer(http.HandlerFunc(wsHandler))
 	u, err := url.Parse(server.ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	server.url = fmt.Sprintf("ws://%s", u.Host)
 	return server
 }
@@ -94,9 +93,7 @@ func TestClientWebsocketPingFromClient(t *testing.T) {
 
 	// Connect to server.ts/wsHandler
 	clientConn, _, err := websocket.DefaultDialer.Dial(server.url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer clientConn.Close()
 
 	srcTs := time.Now()
@@ -135,9 +132,7 @@ func TestClientWebsocketPingToClient(t *testing.T) {
 
 	// Connect to server.ts/wsHandler
 	clientConn, _, err := websocket.DefaultDialer.Dial(server.url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer clientConn.Close()
 
 	<-server.clientRunning
@@ -204,9 +199,7 @@ func TestClientStreamer(t *testing.T) {
 
 	// Connect to server.ts/wsHandler
 	clientConn, _, err := websocket.DefaultDialer.Dial(server.url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer clientConn.Close()
 
 	startTs := 1
@@ -293,9 +286,7 @@ func TestClientInvalidMessageType(t *testing.T) {
 
 	// Connect to server.ts/wsHandler
 	clientConn, _, err := websocket.DefaultDialer.Dial(server.url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer clientConn.Close()
 
 	// Messages are supposed to be map[string]interface{}, so []int is invalid
@@ -328,9 +319,7 @@ func TestClientInvalidMessageContent(t *testing.T) {
 
 	// Connect to server.ts/wsHandler
 	clientConn, _, err := websocket.DefaultDialer.Dial(server.url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer clientConn.Close()
 
 	// This would be valid except "control": "ping" is missing
@@ -364,9 +353,7 @@ func TestClientClose(t *testing.T) {
 
 	// Connect to server.ts/wsHandler
 	clientConn, _, err := websocket.DefaultDialer.Dial(server.url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Start streamer so that goroutine is running
 	startTs := 1

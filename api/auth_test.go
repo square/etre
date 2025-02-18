@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/auth"
@@ -32,10 +33,7 @@ func TestAuthAccessDenied(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType + "?query=x"
 	var etreErr etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &etreErr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("%+v", etreErr)
+	require.NoError(t, err)
 	if statusCode != http.StatusUnauthorized {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusUnauthorized)
 	}
@@ -45,14 +43,12 @@ func TestAuthAccessDenied(t *testing.T) {
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType
 	newEntity := etre.Entity{"host": "local"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	var gotWR etre.WriteResult
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusUnauthorized {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusUnauthorized)
 	}
@@ -91,9 +87,7 @@ func TestAuthNotAuthorizedWNoACLs(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType + "?query=x"
 	var etreErr etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &etreErr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Logf("%+v", etreErr)
 	if statusCode != http.StatusForbidden {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusForbidden)
@@ -119,14 +113,10 @@ func TestAuthNotAuthorizedWNoACLs(t *testing.T) {
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType
 	newEntity := etre.Entity{"host": "local"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var gotWR etre.WriteResult
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if statusCode != http.StatusForbidden {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusForbidden)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre/query"
 )
@@ -14,9 +15,7 @@ func TestParseIn(t *testing.T) {
 	// Basic "x in (<values>)"
 	sel := "x in (1,2,3)"
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "x",
@@ -31,9 +30,7 @@ func TestParseIn(t *testing.T) {
 	// "in(<values>)": no space between "in" and value list
 	sel = "x in(1,2,3)"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -50,9 +47,7 @@ func TestParseNotIn(t *testing.T) {
 	// Basic "x notin (<values>)"
 	sel := "x notin (1,2,3)"
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "x",
@@ -67,9 +62,7 @@ func TestParseNotIn(t *testing.T) {
 	// "notin(<values>)": no space between "notin" and value list
 	sel = "x notin(1,2,3)"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -86,9 +79,7 @@ func TestParseEqual(t *testing.T) {
 	// Basic "x = 1"
 	sel := "x = 1"
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "x",
@@ -103,9 +94,7 @@ func TestParseEqual(t *testing.T) {
 	// "x=1": no spacing
 	sel = "x=1"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -120,9 +109,7 @@ func TestParseEqual(t *testing.T) {
 	// Basic "x == 1"
 	sel = "x == 1"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -137,9 +124,7 @@ func TestParseEqual(t *testing.T) {
 	// "x==1": no spacing
 	sel = "x==1"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -156,9 +141,7 @@ func TestParseNotEqual(t *testing.T) {
 	// Basic "x != 1"
 	sel := "x != 1"
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "x",
@@ -173,9 +156,7 @@ func TestParseNotEqual(t *testing.T) {
 	// "x!=1": no spacing
 	sel = "x!=1"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -194,9 +175,8 @@ func TestParseInequality(t *testing.T) {
 		// With space
 		sel := "x " + op + " 1"
 		got, err := query.Parse(sel)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		expect := []query.Requirement{
 			{
 				Label:  "x",
@@ -211,9 +191,8 @@ func TestParseInequality(t *testing.T) {
 		// No space
 		sel = "x" + op + "1"
 		got, err = query.Parse(sel)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+
 		if diff := deep.Equal(got, expect); diff != nil {
 			t.Error(diff)
 		}
@@ -225,9 +204,7 @@ func TestParseMixed(t *testing.T) {
 	// equality, exists
 	sel := "x = y, z"
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "x",
@@ -247,9 +224,7 @@ func TestParseMixed(t *testing.T) {
 	// exists, exists, exists
 	sel = "x,y,z"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -274,9 +249,7 @@ func TestParseMixed(t *testing.T) {
 	// Everything
 	sel = "x in (1,2), y notin(stage), z = foo, foo!=bar, app == shift, p, !p"
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{
 		{
 			Label:  "x",
@@ -324,9 +297,7 @@ func TestParseExcessiveSpacing(t *testing.T) {
 	// Ignore spacing around everything
 	sel := "  x =    y  , z      "
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "x",
@@ -347,9 +318,8 @@ func TestParseExcessiveSpacing(t *testing.T) {
 	// auto-generated properly?
 	sel = "                      "
 	got, err = query.Parse(sel)
-	if err == nil {
-		t.Errorf("err is nil, expected an error")
-	}
+	require.Error(t, err)
+
 	if got != nil {
 		t.Errorf("got %+v, expected nil []Requirement", got)
 	}
@@ -358,9 +328,7 @@ func TestParseExcessiveSpacing(t *testing.T) {
 	// no requirements.
 	sel = ""
 	got, err = query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect = []query.Requirement{}
 	if diff := deep.Equal(got, expect); diff != nil {
 		t.Error(diff)
@@ -370,9 +338,7 @@ func TestParseExcessiveSpacing(t *testing.T) {
 func TestParseQueryId(t *testing.T) {
 	sel := "_id = 507f191e810c19729de860ea"
 	got, err := query.Parse(sel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expect := []query.Requirement{
 		{
 			Label:  "_id",
@@ -445,9 +411,8 @@ func TestParseValidLabels(t *testing.T) {
 	}
 	for _, sel := range invalid {
 		got, err := query.Parse(sel)
-		if err != nil {
-			t.Errorf("selector '%s' is valid but caused an error: %s", sel, err)
-		}
+		require.NoError(t, err, "selector '%s' is valid but caused an error: %s", sel, err)
+
 		if len(got) != 1 || len(got[0].Values) != 1 || got[0].Values[0] != "foo" {
 			t.Errorf("selector '%s' parsed wrong value: %+v", sel, got)
 		}

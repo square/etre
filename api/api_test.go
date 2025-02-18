@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/square/etre"
@@ -90,9 +91,7 @@ func setup(t *testing.T, cfg config.Config, store mock.EntityStore) *server {
 	}
 
 	acls, err := srv.MapConfigACLRoles(cfg.Security.ACL)
-	if err != nil {
-		t.Fatalf("invalid Config.ACL: %s", err)
-	}
+	require.NoError(t, err, "invalid Config.ACL: %s", err)
 
 	appCtx := app.Context{
 		Config:          server.cfg,
@@ -108,9 +107,8 @@ func setup(t *testing.T, cfg config.Config, store mock.EntityStore) *server {
 	server.ts = httptest.NewServer(server.api)
 
 	u, err := url.Parse(server.ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	server.url = fmt.Sprintf("http://%s", u.Host)
 
 	return server
@@ -138,9 +136,7 @@ func TestStatus(t *testing.T) {
 	var gotStatus map[string]string
 	url := server.url + etre.API_ROOT + "/status"
 	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &gotStatus)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if statusCode != http.StatusOK {
 		t.Errorf("got HTTP status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -163,10 +159,7 @@ func TestValidateEntityType(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
 	}
@@ -193,9 +186,7 @@ func TestValidateEntityType(t *testing.T) {
 
 	var gotWR etre.WriteResult
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, nil, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusBadRequest {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
@@ -237,9 +228,7 @@ func TestClientQueryTimeout(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 	var gotEntity etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -248,7 +237,6 @@ func TestClientQueryTimeout(t *testing.T) {
 	// This is a number number because the deadline is in the future.
 	gotDeadline, set := gotCtx.Deadline()
 	d := time.Now().Sub(gotDeadline).Seconds()
-	t.Logf("deadline: set=%t, %s (%f)", set, gotDeadline, d)
 	if !set {
 		t.Errorf("query timeout deadline not set, expected it to be set")
 	}
@@ -264,15 +252,12 @@ func TestClientQueryTimeout(t *testing.T) {
 	defer func() { test.Headers = map[string]string{} }()
 
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
 	gotDeadline, set = gotCtx.Deadline()
 	d = time.Now().Sub(gotDeadline).Seconds()
-	t.Logf("deadline: set=%t, %s (%f)", set, gotDeadline, d)
 	if !set {
 		t.Errorf("query timeout deadline not set, expected it to be set")
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc/changestream"
@@ -35,9 +36,7 @@ func TestChanges(t *testing.T) {
 	wsURL := strings.Replace(server.url, "http", "ws", 1)
 	client := etre.NewCDCClient(wsURL, nil, 10, true)
 	eventsChan, err := client.Start(time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	latency := client.Ping(time.Duration(300 * time.Millisecond))
 	if latency.Send > 100 || latency.Recv > 100 && latency.RTT > 100 {

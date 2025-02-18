@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -41,9 +42,8 @@ func TestQueryBasic(t *testing.T) {
 
 	var gotEntities []etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -90,9 +90,8 @@ func TestQueryBasic(t *testing.T) {
 		"?query=" + url.QueryEscape(q)
 
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -137,9 +136,8 @@ func TestQueryBasic(t *testing.T) {
 		"?query=" + url.QueryEscape(q)
 
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusOK {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
 	}
@@ -194,9 +192,7 @@ func TestQueryNoMatches(t *testing.T) {
 
 	var gotEntities []etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// HTTP response is still 200 OK because query was ok, there just weren't
 	// any matching queries
@@ -252,9 +248,7 @@ func TestQueryErrorsDatabaseError(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusServiceUnavailable { // 503
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusServiceUnavailable)
@@ -309,9 +303,7 @@ func TestQueryErrorsNoEntityType(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
@@ -336,9 +328,8 @@ func TestQueryErrorsNoEntityType(t *testing.T) {
 	etreurl = server.url + etre.API_ROOT + "/entities/?query=" + url.QueryEscape("a=b")
 	gotError = etre.Error{}
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	if statusCode != http.StatusNotFound {
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
 	}
@@ -373,9 +364,7 @@ func TestQueryErrorsTimeout(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if statusCode != http.StatusServiceUnavailable { // 503
 		t.Errorf("response status = %d, expected %d", statusCode, http.StatusServiceUnavailable)
@@ -426,17 +415,13 @@ func TestResponseCompression(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType +
 		"?query=" + url.QueryEscape("foo=bar")
 	req, err := http.NewRequest("GET", etreurl, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Make the request
 	// Note that the http client automatically enables gzip, so we don't have to set the "Accept-Encoding" header.
 	res, err := http.DefaultClient.Do(req)
 	defer res.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// The http client strips the "Content-Encoding" header so we can't check it directly.
 	// Instead, we have to check the "Uncompressed" flag, which will be *true* if the content came back compressed and was decompressed by the http client.
