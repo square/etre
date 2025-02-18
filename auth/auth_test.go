@@ -25,9 +25,7 @@ func TestAllowAll(t *testing.T) {
 		Name:         "",
 		MetricGroups: []string{"etre"},
 	}
-	if diffs := deep.Equal(caller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectCaller, caller)
 	action := auth.Action{
 		EntityType: "foo",
 		Op:         auth.OP_READ,
@@ -72,12 +70,8 @@ func TestManager(t *testing.T) {
 	// If plugin.Authenticate returns nil error, and caller has no required trace keys,
 	// then manager just returns caller from plugin.
 	gotCaller, err := man.Authenticate(&http.Request{})
-	if err != authErr {
-		t.Errorf("got Authenticate error '%v', expected '%v'", err, authErr)
-	}
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, authErr, err)
+	assert.Equal(t, caller, gotCaller)
 
 	// Trace key requirements
 	// ---------------------------------------------------------------------------
@@ -168,16 +162,11 @@ func TestManagerNoACLs(t *testing.T) {
 
 	gotCaller, err := man.Authenticate(&http.Request{})
 	require.NoError(t, err)
-
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, caller, gotCaller)
 
 	err = man.Authorize(caller, auth.Action{EntityType: "foo", Op: auth.OP_WRITE})
 	require.NoError(t, err)
-	if !authorizeCalled {
-		t.Errorf("auth plugin Authorize called, expected it to be called without ACLs")
-	}
+	assert.True(t, authorizeCalled, "auth plugin Authorize called, expected it to be called without ACLs")
 }
 
 func TestManagerAuthenticateError(t *testing.T) {
@@ -203,12 +192,8 @@ func TestManagerAuthenticateError(t *testing.T) {
 	authErr = fmt.Errorf("forced test error")
 
 	gotCaller, err := man.Authenticate(&http.Request{})
-	if err != authErr {
-		t.Errorf("got Authenticate error '%v', expected '%v'", err, authErr)
-	}
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, authErr, err)
+	assert.Equal(t, caller, gotCaller)
 }
 
 func TestTraceHeader(t *testing.T) {
@@ -228,10 +213,7 @@ func TestTraceHeader(t *testing.T) {
 	}
 	gotCaller, err := man.Authenticate(req)
 	require.NoError(t, err)
-
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectCaller, gotCaller)
 
 	// Bad values are silently ignored
 	req, _ = http.NewRequest("GET", "http://example.com", nil)
@@ -241,20 +223,14 @@ func TestTraceHeader(t *testing.T) {
 	}
 	gotCaller, err = man.Authenticate(req)
 	require.NoError(t, err)
-
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectCaller, gotCaller)
 
 	req, _ = http.NewRequest("GET", "http://example.com", nil)
 	req.Header.Set(etre.TRACE_HEADER, "") // empty value
 	expectCaller.Trace = nil
 	gotCaller, err = man.Authenticate(req)
 	require.NoError(t, err)
-
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectCaller, gotCaller)
 
 	// Values set by plugin are not changed
 	caller := auth.Caller{
@@ -278,8 +254,5 @@ func TestTraceHeader(t *testing.T) {
 	}
 	gotCaller, err = man.Authenticate(req)
 	require.NoError(t, err)
-
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectCaller, gotCaller)
 }
