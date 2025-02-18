@@ -5,7 +5,7 @@ package query_test
 import (
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/square/etre/query"
 )
@@ -97,11 +97,9 @@ func TestQueryTranslate(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		got, err := query.Translate(tc.query)
-		if tc.returnsError && err == nil {
-			t.Errorf("query '%s' should return an error but didn't", tc.query)
+		if tc.returnsError {
+			assert.Error(t, err, "query '%s' should return an error but didn't", tc.query)
 		}
-		if diff := deep.Equal(got, tc.expect); diff != nil {
-			t.Errorf("query '%s': %v", tc.query, diff)
-		}
+		assert.Equal(t, tc.expect, got, "query '%s'", tc.query)
 	}
 }

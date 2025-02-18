@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre/query"
@@ -23,9 +24,8 @@ func TestParseIn(t *testing.T) {
 			Values: []string{"1", "2", "3"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// "in(<values>)": no space between "in" and value list
 	sel = "x in(1,2,3)"
@@ -38,9 +38,8 @@ func TestParseIn(t *testing.T) {
 			Values: []string{"1", "2", "3"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 }
 
 func TestParseNotIn(t *testing.T) {
@@ -55,9 +54,8 @@ func TestParseNotIn(t *testing.T) {
 			Values: []string{"1", "2", "3"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// "notin(<values>)": no space between "notin" and value list
 	sel = "x notin(1,2,3)"
@@ -70,9 +68,9 @@ func TestParseNotIn(t *testing.T) {
 			Values: []string{"1", "2", "3"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
+
 }
 
 func TestParseEqual(t *testing.T) {
@@ -87,9 +85,8 @@ func TestParseEqual(t *testing.T) {
 			Values: []string{"1"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// "x=1": no spacing
 	sel = "x=1"
@@ -102,9 +99,8 @@ func TestParseEqual(t *testing.T) {
 			Values: []string{"1"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// Basic "x == 1"
 	sel = "x == 1"
@@ -117,9 +113,8 @@ func TestParseEqual(t *testing.T) {
 			Values: []string{"1"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// "x==1": no spacing
 	sel = "x==1"
@@ -132,9 +127,9 @@ func TestParseEqual(t *testing.T) {
 			Values: []string{"1"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
+
 }
 
 func TestParseNotEqual(t *testing.T) {
@@ -149,9 +144,8 @@ func TestParseNotEqual(t *testing.T) {
 			Values: []string{"1"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// "x!=1": no spacing
 	sel = "x!=1"
@@ -164,9 +158,8 @@ func TestParseNotEqual(t *testing.T) {
 			Values: []string{"1"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 }
 
 func TestParseInequality(t *testing.T) {
@@ -184,18 +177,16 @@ func TestParseInequality(t *testing.T) {
 				Values: []string{"1"},
 			},
 		}
-		if diff := deep.Equal(got, expect); diff != nil {
-			t.Error(diff)
-		}
+		diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+		assert.Nil(t, diff)
 
 		// No space
 		sel = "x" + op + "1"
 		got, err = query.Parse(sel)
 		require.NoError(t, err)
 
-		if diff := deep.Equal(got, expect); diff != nil {
-			t.Error(diff)
-		}
+		diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+		assert.Nil(t, diff)
 	}
 }
 
@@ -217,9 +208,8 @@ func TestParseMixed(t *testing.T) {
 			Values: nil,
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// exists, exists, exists
 	sel = "x,y,z"
@@ -242,9 +232,8 @@ func TestParseMixed(t *testing.T) {
 			Values: nil,
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// Everything
 	sel = "x in (1,2), y notin(stage), z = foo, foo!=bar, app == shift, p, !p"
@@ -287,13 +276,11 @@ func TestParseMixed(t *testing.T) {
 			Values: nil,
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 }
 
 func TestParseExcessiveSpacing(t *testing.T) {
-
 	// Ignore spacing around everything
 	sel := "  x =    y  , z      "
 	got, err := query.Parse(sel)
@@ -310,19 +297,15 @@ func TestParseExcessiveSpacing(t *testing.T) {
 			Values: nil,
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 
 	// Nothing but space is an error. It could mean the query wasn't
 	// auto-generated properly?
 	sel = "                      "
 	got, err = query.Parse(sel)
 	require.Error(t, err)
-
-	if got != nil {
-		t.Errorf("got %+v, expected nil []Requirement", got)
-	}
+	assert.Nil(t, got)
 
 	// An empty string is not an error. It could imply "everything", i.e.
 	// no requirements.
@@ -330,9 +313,8 @@ func TestParseExcessiveSpacing(t *testing.T) {
 	got, err = query.Parse(sel)
 	require.NoError(t, err)
 	expect = []query.Requirement{}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff = deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 }
 
 func TestParseQueryId(t *testing.T) {
@@ -346,9 +328,8 @@ func TestParseQueryId(t *testing.T) {
 			Values: []string{"507f191e810c19729de860ea"},
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	diff := deep.Equal(got, expect) // can't use assert.Equal because some unexported fields don't match. deep.Equal only compares exported fields.
+	assert.Nil(t, diff)
 }
 
 func TestParseInvalid(t *testing.T) {
@@ -385,9 +366,8 @@ func TestParseInvalid(t *testing.T) {
 		`label\name=val`,
 	}
 	for _, sel := range invalid {
-		if got, err := query.Parse(sel); err == nil {
-			t.Errorf("selector '%s' is invalid but did not cause an error: %+v", sel, got)
-		}
+		got, err := query.Parse(sel)
+		assert.Error(t, err, "selector '%s' is invalid but did not cause an error: %s", sel, got)
 	}
 }
 
@@ -412,9 +392,6 @@ func TestParseValidLabels(t *testing.T) {
 	for _, sel := range invalid {
 		got, err := query.Parse(sel)
 		require.NoError(t, err, "selector '%s' is valid but caused an error: %s", sel, err)
-
-		if len(got) != 1 || len(got[0].Values) != 1 || got[0].Values[0] != "foo" {
-			t.Errorf("selector '%s' parsed wrong value: %+v", sel, got)
-		}
+		assert.True(t, len(got) == 1 && len(got[0].Values) == 1 && got[0].Values[0] == "foo", "selector '%s' parsed wrong value: %+v", sel, got)
 	}
 }
