@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
@@ -34,9 +34,7 @@ func TestAuthAccessDenied(t *testing.T) {
 	var etreErr etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &etreErr)
 	require.NoError(t, err)
-	if statusCode != http.StatusUnauthorized {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusUnauthorized)
-	}
+	assert.Equal(t, http.StatusUnauthorized, statusCode)
 
 	// ----------------------------------------------------------------------
 	// Write
@@ -48,15 +46,9 @@ func TestAuthAccessDenied(t *testing.T) {
 	var gotWR etre.WriteResult
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
 	require.NoError(t, err)
-
-	if statusCode != http.StatusUnauthorized {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusUnauthorized)
-	}
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "access-denied" {
-		t.Errorf("WriteResult.Error.Type = %s, expected access-denied", gotWR.Error.Type)
-	}
+	assert.Equal(t, http.StatusUnauthorized, statusCode)
+	require.NotNil(t, gotWR.Error)
+	assert.Equal(t, "access-denied", gotWR.Error.Type)
 }
 
 func TestAuthNotAuthorizedWNoACLs(t *testing.T) {
@@ -88,22 +80,13 @@ func TestAuthNotAuthorizedWNoACLs(t *testing.T) {
 	var etreErr etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &etreErr)
 	require.NoError(t, err)
-	t.Logf("%+v", etreErr)
-	if statusCode != http.StatusForbidden {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusForbidden)
-	}
-
-	if diff := deep.Equal(gotCaller, caller); diff != nil {
-		t.Error(diff)
-	}
-
+	assert.Equal(t, http.StatusForbidden, statusCode)
+	assert.Equal(t, caller, gotCaller)
 	expectAction := auth.Action{
 		EntityType: entityType,
 		Op:         auth.OP_READ,
 	}
-	if diff := deep.Equal(gotAction, expectAction); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectAction, gotAction)
 
 	// ----------------------------------------------------------------------
 	// Write
@@ -117,24 +100,14 @@ func TestAuthNotAuthorizedWNoACLs(t *testing.T) {
 	var gotWR etre.WriteResult
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
 	require.NoError(t, err)
-	if statusCode != http.StatusForbidden {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusForbidden)
-	}
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "not-authorized" {
-		t.Errorf("WriteResult.Error.Type = %s, expected not-authorized", gotWR.Error.Type)
-	}
-
-	if diff := deep.Equal(gotCaller, caller); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, http.StatusForbidden, statusCode)
+	require.NotNil(t, gotWR.Error)
+	assert.Equal(t, "not-authorized", gotWR.Error.Type)
+	assert.Equal(t, caller, gotCaller)
 
 	expectAction = auth.Action{
 		EntityType: entityType,
 		Op:         auth.OP_WRITE,
 	}
-	if diff := deep.Equal(gotAction, expectAction); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectAction, gotAction)
 }

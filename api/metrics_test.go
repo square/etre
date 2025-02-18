@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
@@ -65,10 +65,7 @@ func TestMetricsGet(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType + "?query=x"
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, nil)
 	require.NoError(t, err)
-
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	// GET /metrics
 	etreurl = server.url + etre.API_ROOT + "/metrics"
@@ -76,54 +73,10 @@ func TestMetricsGet(t *testing.T) {
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotMetrics)
 	require.NoError(t, err)
 
-	if statusCode != http.StatusOK {
-		t.Errorf("got HTTP status = %d, expected %d", statusCode, http.StatusOK)
-	}
-
-	if gotMetrics.System == nil {
-		t.Errorf("Metrics.System is nil, expected value")
-	}
-
-	if len(gotMetrics.Groups) != 1 {
-		t.Errorf("got %d Metrics.Groups, expected 1: %+v", len(gotMetrics.Groups), gotMetrics.Groups)
-	}
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.NotNil(t, gotMetrics.System)
+	assert.Len(t, gotMetrics.Groups, 1)
 }
-
-/*
-func TestMetricsInvalidEntityType(t *testing.T) {
-	// Invalid entity types should not generate metrics, i.e. don't pollute
-	// the list of entity types in the metrics
-	url := defaultServer.URL + etre.API_ROOT + "/entity/bad-type/" + seedId0
-	var actual etre.Entity
-	statusCode, err := test.MakeHTTPRequest("GET", url, nil, &actual)
-	require.NoError(t, err)
-
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
-	}
-
-	// No group/entity metrics because the entity type was invalid
-	expectMetrics := []mock.MetricMethodArgs{
-		{Method: "Inc", Metric: metrics.InvalidEntityType, IntVal: 1},
-		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
-	}
-	if diffs := deep.Equal(metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got (em): %+v", metricsrec.Called)
-		t.Logf("expect (em): %+v", expectMetrics)
-		t.Error(diffs)
-	}
-
-	// System metrics
-	expectMetrics = []mock.MetricMethodArgs{
-		{Method: "Inc", Metric: metrics.Query, IntVal: 1},
-	}
-	if diffs := deep.Equal(sysmetrics.Called, expectMetrics); diffs != nil {
-		t.Logf("   got (sys): %+v", sysmetrics.Called)
-		t.Logf("expect (sys): %+v", expectMetrics)
-		t.Error(diffs)
-	}
-}
-*/
 
 func TestMetricsBadRoute(t *testing.T) {
 	// Test that metrics, especially Load, are correct when route is 404 and not
@@ -138,21 +91,9 @@ func TestMetricsBadRoute(t *testing.T) {
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, nil)
 	require.NoError(t, err)
 
-	if statusCode != http.StatusNotFound {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
-	}
+	assert.Equal(t, http.StatusNotFound, statusCode)
 
 	// -- Metrics -----------------------------------------------------------
-	expectMetrics := []mock.MetricMethodArgs{}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
-	if diffs := deep.Equal(server.sysmetrics.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.sysmetrics.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
-
+	assert.Empty(t, server.metricsrec.Called)
+	assert.Empty(t, server.sysmetrics.Called)
 }
