@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -39,33 +39,30 @@ func setupV09(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	// First time, create unique index on "x"
 	if coll == nil {
 		iv := nodesColl.Indexes()
-		if _, err := iv.DropAll(context.TODO()); err != nil {
-			t.Fatal(err)
-		}
+		_, err = iv.DropAll(context.TODO())
+		require.NoError(t, err)
+
 		idx := mongo.IndexModel{
 			Keys:    bson.D{{"x", 1}},
 			Options: options.Index().SetUnique(true),
 		}
-		if _, err := iv.CreateOne(context.TODO(), idx); err != nil {
-			t.Fatal(err)
-		}
+		_, err = iv.CreateOne(context.TODO(), idx)
+		require.NoError(t, err)
 	}
 
 	v09testNodes = []etre.Entity{
-		etre.Entity{"_type": entityType, "_rev": int(0), "x": "a", "y": "a"},
-		etre.Entity{"_type": entityType, "_rev": int(0), "x": "b", "y": "a"},
-		etre.Entity{"_type": entityType, "_rev": int(0), "x": "c", "y": "a"},
+		{"_type": entityType, "_rev": int(0), "x": "a", "y": "a"},
+		{"_type": entityType, "_rev": int(0), "x": "b", "y": "a"},
+		{"_type": entityType, "_rev": int(0), "x": "c", "y": "a"},
 	}
 	v09testNodes_int32 = []etre.Entity{
-		etre.Entity{"_type": entityType, "_rev": int32(0), "x": "a", "y": "a"},
-		etre.Entity{"_type": entityType, "_rev": int32(0), "x": "b", "y": "a"},
-		etre.Entity{"_type": entityType, "_rev": int32(0), "x": "c", "y": "a"},
+		{"_type": entityType, "_rev": int32(0), "x": "a", "y": "a"},
+		{"_type": entityType, "_rev": int32(0), "x": "b", "y": "a"},
+		{"_type": entityType, "_rev": int32(0), "x": "c", "y": "a"},
 	}
 	res, err := nodesColl.InsertMany(context.TODO(), docs(v09testNodes))
 	require.NoError(t, err)
-	if len(res.InsertedIDs) != len(v09testNodes) {
-		t.Fatalf("mongo-driver returned %d doc ids, expected %d", len(res.InsertedIDs), len(v09testNodes))
-	}
+	assert.Len(t, res.InsertedIDs, len(v09testNodes))
 	for i, id := range res.InsertedIDs {
 		v09testNodes[i]["_id"] = id.(primitive.ObjectID)
 		v09testNodes_int32[i]["_id"] = id.(primitive.ObjectID)
@@ -87,16 +84,13 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 	store := setupV09(t, cdcm)
 
 	testData := []etre.Entity{
-		etre.Entity{"x": "d"},
-		etre.Entity{"x": "e"},
-		etre.Entity{"x": "f", "_setId": "343", "_setOp": "something", "_setSize": 1},
+		{"x": "d"},
+		{"x": "e"},
+		{"x": "f", "_setId": "343", "_setOp": "something", "_setSize": 1},
 	}
 	ids, err := store.CreateEntities(wo, testData)
 	require.NoError(t, err)
-
-	if len(ids) != len(testData) {
-		t.Errorf("got %d ids, expected %d", len(ids), len(testData))
-	}
+	assert.Len(t, ids, len(testData))
 
 	// Verify that the last CDC event we create is as expected.
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
@@ -140,9 +134,7 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 			SetSize:    1,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvents); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvents, gotEvents)
 }
 
 func TestV09UpdateEntities(t *testing.T) {
@@ -169,9 +161,6 @@ func TestV09UpdateEntities(t *testing.T) {
 	}
 	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
 	require.NoError(t, err)
-	if len(gotDiffs) != 1 {
-		t.Errorf("got %d diffs, expected 1", len(gotDiffs))
-	}
 	expectDiffs := []etre.Entity{
 		{
 			"_id":   v09testNodes[0]["_id"],
@@ -180,10 +169,7 @@ func TestV09UpdateEntities(t *testing.T) {
 			"y":     "a",
 		},
 	}
-	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
-		t.Logf("got: %+v", gotDiffs)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectDiffs, gotDiffs)
 
 	for i := range gotEvents {
 		gotEvents[i].Id = ""
@@ -204,9 +190,7 @@ func TestV09UpdateEntities(t *testing.T) {
 			SetSize:    1,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }
 
 func TestV09DeleteEntities(t *testing.T) {
@@ -225,10 +209,7 @@ func TestV09DeleteEntities(t *testing.T) {
 
 	gotOld, err := store.DeleteEntities(wo, q)
 	require.NoError(t, err)
-
-	if diff := deep.Equal(gotOld, v09testNodes_int32[:1]); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, v09testNodes_int32[:1], gotOld)
 
 	// Match last two test nodes
 	q, err = query.Translate("x in (b,c)")
@@ -236,10 +217,7 @@ func TestV09DeleteEntities(t *testing.T) {
 
 	gotOld, err = store.DeleteEntities(wo, q)
 	require.NoError(t, err)
-
-	if diff := deep.Equal(gotOld, v09testNodes_int32[1:]); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, v09testNodes_int32[1:], gotOld)
 
 	for i := range gotEvents {
 		gotEvents[i].Id = ""
@@ -274,9 +252,7 @@ func TestV09DeleteEntities(t *testing.T) {
 			Old:        &v09testNodes_int32[2],
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }
 
 func TestV09DeleteLabel(t *testing.T) {
@@ -303,9 +279,7 @@ func TestV09DeleteLabel(t *testing.T) {
 		"_rev":  v09testNodes_int32[0]["_rev"],
 		"y":     "a",
 	}
-	if diff := deep.Equal(gotOld, expectOld); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectOld, gotOld)
 
 	// The foo label should no longer be set on the entity
 	q, _ := query.Translate("x=a")
@@ -319,10 +293,7 @@ func TestV09DeleteLabel(t *testing.T) {
 	delete(e, "y")       // because we deleted the label
 	e["_rev"] = int32(1) // because we deleted the label
 	expectNew := []etre.Entity{e}
-	if diff := deep.Equal(gotNew, expectNew); diff != nil {
-		t.Logf("got: %+v", gotNew)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectNew, gotNew)
 
 	for i := range gotEvents {
 		gotEvents[i].Id = ""
@@ -345,7 +316,5 @@ func TestV09DeleteLabel(t *testing.T) {
 			New:        &expectedEventNew,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }
