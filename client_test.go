@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -188,7 +187,7 @@ func TestQueryHandledError(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), respError.Type), "error message does not contain '%s': '%s'", respError.Message, err)
+	assert.Contains(t, err.Error(), respError.Type)
 	assert.Nil(t, got)
 }
 
@@ -204,7 +203,7 @@ func TestQueryUnhandledError(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "no response"), "error message does not contain 'no response': '%s'", err)
+	assert.Contains(t, err.Error(), "no response")
 	assert.Nil(t, got)
 }
 
@@ -283,7 +282,7 @@ func TestInsertUnhandledError(t *testing.T) {
 	entities := []etre.Entity{{"foo": "bar"}}
 	wr, err := ec.Insert(entities)
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "no response"), "error message does not contain 'no response': '%s'", err)
+	assert.Contains(t, err.Error(), "no response")
 	assert.Zero(t, wr)
 }
 
@@ -354,7 +353,7 @@ func TestUpdateAPIError(t *testing.T) {
 	require.Error(t, err)
 
 	// The etre.Error.Message should bubble up
-	assert.True(t, strings.Contains(err.Error(), respError.Message), "error does not contain '%s': %s", respError.Message, err)
+	assert.Contains(t, err.Error(), respError.Message)
 
 	// There should not be any entities returned
 	assert.Nil(t, got.Writes)
