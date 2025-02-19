@@ -27,7 +27,7 @@ type Context struct {
 	ReturnLabels []string // query
 	Query        string   // query
 	EntityId     string   // --update and --delete
-	Patches      []string // --update
+	Patches      []string // --update and --insert
 }
 
 type EntityClientFactory interface {
@@ -42,6 +42,7 @@ type Hooks struct {
 	AfterParseOptions func(*config.Options)
 	BeforeQuery       func(*Context) error
 	AfterQuery        func(Context, []etre.Entity, error)
+	BeforeInsert      func(cxt *Context) error
 	BeforeDelete      func(ctx *Context) error
 	BeforeUpdate      func(cxt *Context) error
 	WriteResult       func(Context, etre.WriteResult, error)
