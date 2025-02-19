@@ -3,11 +3,12 @@
 package etre_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/square/etre"
 )
 
@@ -21,56 +22,32 @@ func TestRevOrder(t *testing.T) {
 	}
 
 	ok, buf := revo.InOrder(e)
-	if !ok {
-		t.Error("not ok, expected ok")
-	}
-	if buf != nil {
-		t.Errorf("buf not nil, expected nil: %#v", buf)
-	}
+	assert.True(t, ok)
+	assert.Nil(t, buf)
 
 	ok, buf = revo.InOrder(e)
-	if ok {
-		t.Error("ok, expected not ok becuase it's the same rev")
-	}
-	if buf != nil {
-		t.Errorf("buf not nil, expected nil: %#v", buf)
-	}
+	assert.False(t, ok, "expected not ok becuase it's the same rev")
+	assert.Nil(t, buf)
 
 	e.EntityRev = 1
 	ok, buf = revo.InOrder(e)
-	if !ok {
-		t.Error("not ok, expected ok becuase rev += 1")
-	}
-	if buf != nil {
-		t.Errorf("buf not nil, expected nil: %#v", buf)
-	}
+	assert.True(t, ok, "expected ok becuase rev += 1")
+	assert.Nil(t, buf)
 
 	e.EntityRev = 3
 	ok, buf = revo.InOrder(e)
-	if ok {
-		t.Error("ok, expected not ok becuase rev 2 not sent yet")
-	}
-	if buf != nil {
-		t.Errorf("buf not nil, expected nil: %#v", buf)
-	}
+	assert.False(t, ok, "expected not ok becuase rev 2 not sent yet")
+	assert.Nil(t, buf)
 
 	e.EntityRev = 4
 	ok, buf = revo.InOrder(e)
-	if ok {
-		t.Error("ok, expected not ok becuase rev 2 not sent yet")
-	}
-	if buf != nil {
-		t.Errorf("buf not nil, expected nil: %#v", buf)
-	}
+	assert.False(t, ok, "expected not ok becuase rev 2 not sent yet")
+	assert.Nil(t, buf)
 
 	e.EntityRev = 2
 	ok, buf = revo.InOrder(e)
-	if !ok {
-		t.Error("not ok, expected ok becuase rev set complete (2, 3)")
-	}
-	if buf == nil {
-		t.Errorf("buf nil, expected [2,3]")
-	}
+	assert.True(t, ok, "expected ok becuase rev set complete (2, 3)")
+	assert.NotNil(t, buf, "expected buf [2,3]")
 	expect := []etre.CDCEvent{
 		{
 			EntityId:  "abc",
@@ -88,9 +65,7 @@ func TestRevOrder(t *testing.T) {
 			Op:        "i",
 		},
 	}
-	if diffs := deep.Equal(buf, expect); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expect, buf)
 }
 
 func TestRevOrderPanicRRltQR(t *testing.T) {
@@ -116,14 +91,8 @@ func TestRevOrderPanicRRltQR(t *testing.T) {
 
 	select {
 	case r := <-recoverChan:
-		if r == nil {
-			t.Errorf("nil panic/recover, expected non-nil recover() value")
-		} else {
-			pat := "revision 1 received first and revision 0 received second"
-			if !strings.Contains(r.(string), pat) {
-				t.Errorf("panic msg doesn't contain '%s': %s", pat, r)
-			}
-		}
+		require.NotNil(t, r, "nil panic/recover, expected non-nil recover() value")
+		assert.Contains(t, r.(string), "revision 1 received first and revision 0 received second")
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for goroutine to panic")
 	}
@@ -166,18 +135,9 @@ func TestRevOrderPanicEvict(t *testing.T) {
 
 	select {
 	case r := <-recoverChan:
-		if r == nil {
-			t.Errorf("nil panic/recover, expected non-nil recover() value")
-		} else {
-			pat1 := "Entity abc evicted"
-			if !strings.Contains(r.(string), pat1) {
-				t.Errorf("panic msg doesn't contain '%s': %s", pat1, r)
-			}
-			pat2 := "revisions > 2. Received revisions: 4"
-			if !strings.Contains(r.(string), pat2) {
-				t.Errorf("panic msg doesn't contain '%s': %s", pat2, r)
-			}
-		}
+		require.NotNil(t, r)
+		assert.Contains(t, r.(string), "Entity abc evicted")
+		assert.Contains(t, r.(string), "revisions > 2. Received revisions: 4")
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for goroutine to panic")
 	}
@@ -210,9 +170,7 @@ func TestRevOrderIgnorePastRevs(t *testing.T) {
 
 	select {
 	case r := <-recoverChan:
-		if r != nil {
-			t.Errorf("panic, expected nil: %v", r)
-		}
+		assert.Nil(t, r)
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for goroutine to panic")
 	}

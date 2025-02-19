@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -41,27 +42,17 @@ func TestQueryBasic(t *testing.T) {
 
 	var gotEntities []etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	require.NoError(t, err)
 
+	assert.Equal(t, http.StatusOK, statusCode)
 	expectQuery, _ := query.Translate(q)
-	if diff := deep.Equal(gotQuery, expectQuery); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectQuery, gotQuery)
 
 	expectFilter := etre.QueryFilter{}
-	if diff := deep.Equal(gotFilter, expectFilter); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectFilter, gotFilter)
 
 	fixRev(gotEntities) // JSON float64(_rev) ->, int64(_rev)
-	if diffs := deep.Equal(gotEntities, testEntities); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, testEntities, gotEntities)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -74,11 +65,7 @@ func TestQueryBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 3},              // len(testEntities)
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Multi-label query
@@ -90,22 +77,15 @@ func TestQueryBasic(t *testing.T) {
 		"?query=" + url.QueryEscape(q)
 
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	expectQuery, _ = query.Translate(q)
-	if diff := deep.Equal(gotQuery, expectQuery); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectQuery, gotQuery)
 
 	expectFilter = etre.QueryFilter{}
-	if diff := deep.Equal(gotFilter, expectFilter); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectFilter, gotFilter)
 
 	// Don't care about the return from the mock store, that was tested above
 
@@ -121,11 +101,7 @@ func TestQueryBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 3},              // len(testEntities)
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Single-label exists query
@@ -137,22 +113,14 @@ func TestQueryBasic(t *testing.T) {
 		"?query=" + url.QueryEscape(q)
 
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	expectQuery, _ = query.Translate(q)
-	if diff := deep.Equal(gotQuery, expectQuery); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectQuery, gotQuery)
 
 	expectFilter = etre.QueryFilter{}
-	if diff := deep.Equal(gotFilter, expectFilter); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectFilter, gotFilter)
 
 	// Don't care about the return from the mock store, that was tested above
 
@@ -167,11 +135,7 @@ func TestQueryBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 3},                // len(testEntities)
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestQueryNoMatches(t *testing.T) {
@@ -194,25 +158,17 @@ func TestQueryNoMatches(t *testing.T) {
 
 	var gotEntities []etre.Entity
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotEntities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// HTTP response is still 200 OK because query was ok, there just weren't
 	// any matching queries
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	expectQuery, _ := query.Translate(q)
-	if diff := deep.Equal(gotQuery, expectQuery); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectQuery, gotQuery)
 
 	// Empty result, no matching queries
-	if diffs := deep.Equal(gotEntities, []etre.Entity{}); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Empty(t, gotEntities)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -225,11 +181,7 @@ func TestQueryNoMatches(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 0}, // no matching queries
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 // --------------------------------------------------------------------------
@@ -252,22 +204,16 @@ func TestQueryErrorsDatabaseError(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusServiceUnavailable { // 503
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusServiceUnavailable)
-	}
+	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
 
 	expectError := etre.Error{
 		Message:    "fake error",
 		Type:       "db-read",
 		HTTPStatus: http.StatusServiceUnavailable, // 503
 	}
-	if diffs := deep.Equal(gotError, expectError); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectError, gotError)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -280,11 +226,7 @@ func TestQueryErrorsDatabaseError(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1}, // db error
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestQueryErrorsNoEntityType(t *testing.T) {
@@ -309,26 +251,16 @@ func TestQueryErrorsNoEntityType(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusNotFound {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
-	}
+	assert.Equal(t, http.StatusNotFound, statusCode)
 
 	expectError := api.ErrEndpointNotFound
-	if diffs := deep.Equal(gotError, expectError); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectError, gotError)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// With trailing slash to ensure API doesn't pass "" for :type
@@ -336,22 +268,13 @@ func TestQueryErrorsNoEntityType(t *testing.T) {
 	etreurl = server.url + etre.API_ROOT + "/entities/?query=" + url.QueryEscape("a=b")
 	gotError = etre.Error{}
 	statusCode, err = test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statusCode != http.StatusNotFound {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
-	}
-	if diffs := deep.Equal(gotError, expectError); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusNotFound, statusCode)
+	assert.Equal(t, expectError, gotError)
 
 	// -- Metrics -----------------------------------------------------------
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestQueryErrorsTimeout(t *testing.T) {
@@ -373,17 +296,10 @@ func TestQueryErrorsTimeout(t *testing.T) {
 
 	var gotError etre.Error
 	statusCode, err := test.MakeHTTPRequest("GET", etreurl, nil, &gotError)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusServiceUnavailable { // 503
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusServiceUnavailable)
-	}
-
-	if gotError.Type != "db-read" {
-		t.Errorf("got etre.Error.Type = %s, expected \"db-read\": %+v", gotError.Type, gotError)
-	}
+	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
+	assert.Equal(t, "db-read", gotError.Type)
 
 	if len(server.metricsrec.Called) == 8 {
 		if server.metricsrec.Called[7].Metric != metrics.LatencyMs || server.metricsrec.Called[7].IntVal < 90 || server.metricsrec.Called[7].IntVal > 150 {
@@ -405,11 +321,7 @@ func TestQueryErrorsTimeout(t *testing.T) {
 		{Method: "Inc", Metric: metrics.QueryTimeout, IntVal: 1}, // query timeout
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestResponseCompression(t *testing.T) {
@@ -426,26 +338,18 @@ func TestResponseCompression(t *testing.T) {
 	etreurl := server.url + etre.API_ROOT + "/entities/" + entityType +
 		"?query=" + url.QueryEscape("foo=bar")
 	req, err := http.NewRequest("GET", etreurl, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Make the request
 	// Note that the http client automatically enables gzip, so we don't have to set the "Accept-Encoding" header.
 	res, err := http.DefaultClient.Do(req)
 	defer res.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// The http client strips the "Content-Encoding" header so we can't check it directly.
 	// Instead, we have to check the "Uncompressed" flag, which will be *true* if the content came back compressed and was decompressed by the http client.
-	if !res.Uncompressed {
-		t.Errorf("response was not compressed, expected it to be")
-	}
+	assert.True(t, res.Uncompressed, "The server did not send a compressed response. If it had sent a compressed response then the client would have uncompressed it and res.Uncompressed would be true.")
 
 	// Make sure content type is correct
-	if res.Header.Get("Content-Type") != "application/json" {
-		t.Errorf("response Content-Type = %s, expected application/json", res.Header.Get("Content-Type"))
-	}
+	assert.Equal(t, "application/json", res.Header.Get("Content-Type"))
 }

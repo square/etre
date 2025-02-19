@@ -6,7 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -38,17 +39,13 @@ func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	if coll == nil {
 		var err error
 		client, coll, err = test.DbCollections(entityTypes)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 
 	// Reset the collection: delete all entities and insert the standard test entities
 	nodesColl := coll[entityType]
 	_, err := nodesColl.DeleteMany(context.TODO(), bson.D{{}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Create unique index on "x"
 	iv := nodesColl.Indexes()
@@ -61,22 +58,17 @@ func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 		Keys:    bson.D{{"x", 1}},
 		Options: options.Index().SetUnique(true),
 	}
-	if _, err := iv.CreateOne(context.TODO(), idx); err != nil {
-		t.Fatal(err)
-	}
+	_, err = iv.CreateOne(context.TODO(), idx)
+	require.NoError(t, err)
 
 	testNodes = []etre.Entity{
-		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(2), "y": "a", "z": int64(9), "foo": ""},
-		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(4), "y": "b", "bar": ""},
-		etre.Entity{"_type": entityType, "_rev": int64(0), "x": int64(6), "y": "b", "bar": ""},
+		{"_type": entityType, "_rev": int64(0), "x": int64(2), "y": "a", "z": int64(9), "foo": ""},
+		{"_type": entityType, "_rev": int64(0), "x": int64(4), "y": "b", "bar": ""},
+		{"_type": entityType, "_rev": int64(0), "x": int64(6), "y": "b", "bar": ""},
 	}
 	res, err := nodesColl.InsertMany(context.TODO(), docs(testNodes))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.InsertedIDs) != len(testNodes) {
-		t.Fatalf("mongo-driver returned %d doc ids, expected %d", len(res.InsertedIDs), len(testNodes))
-	}
+	require.NoError(t, err)
+	require.Len(t, res.InsertedIDs, len(testNodes), "mongo-driver returned %d doc ids, expected %d", len(res.InsertedIDs), len(testNodes))
 	for i, id := range res.InsertedIDs {
 		testNodes[i]["_id"] = id.(primitive.ObjectID)
 	}
@@ -115,16 +107,11 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 	expect := []etre.Entity{testNodes[0]}
 	for _, qs := range queries {
 		q, err := query.Translate(qs)
-		if err != nil {
-			t.Fatalf("cannot translate '%s': %s", qs, err)
-		}
+		require.NoError(t, err)
+
 		actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
-		if err != nil {
-			t.Fatalf("store.ReadEntities error on '%s': %s", qs, err)
-		}
-		if diff := deep.Equal(actual, expect); diff != nil {
-			t.Errorf("query '%s' did not match:\ngot: %+v\nexpected: %+v\ndiff: %v", qs, actual, expect, diff)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, expect, actual)
 	}
 }
 
@@ -162,16 +149,11 @@ func TestReadEntitiesMatching(t *testing.T) {
 	}
 	for _, rt := range readTests {
 		q, err := query.Translate(rt.query)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
+
 		got, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
-		if err != nil {
-			t.Fatalf("store.ReadEntities error on query '%s': %s", rt.query, err)
-		}
-		if diff := deep.Equal(got, rt.expect); diff != nil {
-			t.Errorf("query '%s' did not match:\ngot: %+v\nexpected: %+v\ndiff: %v", rt.query, got, rt.expect, diff)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, rt.expect, got)
 	}
 }
 
@@ -181,24 +163,20 @@ func TestReadEntitiesFilterDistinct(t *testing.T) {
 	// so the unique values are [a,b].
 	store := setup(t, &mock.CDCStore{})
 	q, err := query.Translate("y") // all test nodes have label "y"
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	f := etre.QueryFilter{
 		ReturnLabels: []string{"y"}, // only works with 1 return label
 		Distinct:     true,
 	}
 	got, err := store.ReadEntities(entityType, q, f)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	expect := []etre.Entity{
 		{"y": "a"}, // from 1st test node
 		{"y": "b"}, // from 2nd and 3rd test nodes
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, got)
 }
 
 func TestReadEntitiesFilterReturnLabels(t *testing.T) {
@@ -207,9 +185,8 @@ func TestReadEntitiesFilterReturnLabels(t *testing.T) {
 	// but return only label x.
 	store := setup(t, &mock.CDCStore{})
 	q, err := query.Translate("y") // all test nodes have label "y"
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	f := etre.QueryFilter{
 		ReturnLabels: []string{"x"}, // testing this
 	}
@@ -219,30 +196,22 @@ func TestReadEntitiesFilterReturnLabels(t *testing.T) {
 		{"x": int64(6)},
 	}
 	got, err := store.ReadEntities(entityType, q, f)
-	if err != nil {
-		t.Error(err)
-	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, expect, got)
 }
 
 func TestReadEntitiesFilterReturnMetalabels(t *testing.T) {
 	store := setup(t, &mock.CDCStore{})
 	q, err := query.Translate("y=a")
-	if err != nil {
-		t.Fatalf("cannot translate '%s': %s", q, err)
-	}
+	require.NoError(t, err)
+
 	actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{ReturnLabels: []string{"_id", "_type", "_rev", "y"}})
-	if err != nil {
-		t.Fatalf("store.ReadEntities error on '%s': %s", q, err)
-	}
+	require.NoError(t, err)
+
 	expect := []etre.Entity{
 		{"_id": testNodes[0]["_id"], "_type": entityType, "_rev": int64(0), "y": "a"},
 	}
-	if diff := deep.Equal(actual, expect); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, actual)
 }
 
 // --------------------------------------------------------------------------
@@ -267,13 +236,8 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 		etre.Entity{"x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1},
 	}
 	ids, err := store.CreateEntities(wo, testData)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if len(ids) != len(testData) {
-		t.Errorf("got %d ids, expected %d", len(ids), len(testData))
-	}
+	require.NoError(t, err)
+	assert.Len(t, ids, len(testData))
 
 	// Verify that the last CDC event we create is as expected.
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
@@ -317,9 +281,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 			SetSize:    1,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvents); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvents, gotEvents)
 }
 
 func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
@@ -342,19 +304,11 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 		etre.Entity{"x": 7}, // would be ok but blocked by dupe
 	}
 	ids, err := store.CreateEntities(wo, testData)
-	if err == nil {
-		t.Errorf("no error, expected dupe key error")
-	} else {
-		dberr, ok := err.(entity.DbError)
-		if !ok {
-			t.Errorf("got error type %#v, expected entity.DbError", err)
-		} else if dberr.Type != "duplicate-entity" {
-			t.Errorf("got DbErr.Type %s, expected duplicate-entity", dberr.Type)
-		}
-	}
-	if len(ids) != 1 {
-		t.Errorf("got %d ids, expected 1", len(ids))
-	}
+	require.Error(t, err)
+	dberr, ok := err.(entity.DbError)
+	require.True(t, ok, "got error type %#v, expected entity.DbError", err)
+	assert.Equal(t, "duplicate-entity", dberr.Type)
+	assert.Len(t, ids, 1)
 
 	// Only x=5 written/inserted, so only a CDC event for it
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
@@ -371,9 +325,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 5},
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvents); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvents, gotEvents)
 }
 
 // --------------------------------------------------------------------------
@@ -396,9 +348,8 @@ func TestUpdateEntities(t *testing.T) {
 	// ----------------------------------------------------------------------
 	// This matches first test node
 	q, err := query.Translate("y=a")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	patch := etre.Entity{"y": "y"} // y=a -> y=y
 	wo1 := entity.WriteOp{
 		EntityType: entityType,
@@ -408,12 +359,8 @@ func TestUpdateEntities(t *testing.T) {
 		SetSize:    1,
 	}
 	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(gotDiffs) != 1 {
-		t.Errorf("got %d diffs, expected 1", len(gotDiffs))
-	}
+	require.NoError(t, err)
+	assert.Len(t, gotDiffs, 1)
 	expectDiffs := []etre.Entity{
 		{
 			"_id":   testNodes[0]["_id"],
@@ -422,17 +369,13 @@ func TestUpdateEntities(t *testing.T) {
 			"y":     "a",
 		},
 	}
-	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
-		t.Logf("got: %+v", gotDiffs)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectDiffs, gotDiffs)
 
 	// ----------------------------------------------------------------------
 	// And this matches 2nd and 3rd test nodes
 	q, err = query.Translate("y=b")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	patch = etre.Entity{"y": "c"} // y=b -> y=c
 	wo2 := entity.WriteOp{
 		EntityType: entityType,
@@ -442,12 +385,8 @@ func TestUpdateEntities(t *testing.T) {
 		SetSize:    1,
 	}
 	gotDiffs, err = store.UpdateEntities(wo2, q, patch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(gotDiffs) != 2 {
-		t.Errorf("got %d diffs, expected 2", len(gotDiffs))
-	}
+	require.NoError(t, err)
+	assert.Len(t, gotDiffs, 2)
 	expectDiffs = []etre.Entity{
 		{
 			"_id":   testNodes[1]["_id"],
@@ -462,10 +401,7 @@ func TestUpdateEntities(t *testing.T) {
 			"y":     "b",
 		},
 	}
-	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
-		t.Logf("got: %+v", gotDiffs)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectDiffs, gotDiffs)
 
 	// ----------------------------------------------------------------------
 	// 3 CDC events because 3 entities were updated
@@ -514,9 +450,7 @@ func TestUpdateEntities(t *testing.T) {
 			SetSize:    1,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }
 
 func TestUpdateEntitiesById(t *testing.T) {
@@ -546,12 +480,7 @@ func TestUpdateEntitiesById(t *testing.T) {
 		SetSize:    1,
 	}
 	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(gotDiffs) != 1 {
-		t.Errorf("got %d diffs, expected 1", len(gotDiffs))
-	}
+	require.NoError(t, err)
 	expectDiffs := []etre.Entity{
 		{
 			"_id":   testNodes[0]["_id"],
@@ -560,17 +489,13 @@ func TestUpdateEntitiesById(t *testing.T) {
 			"y":     "a",
 		},
 	}
-	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
-		t.Logf("got: %+v", gotDiffs)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectDiffs, gotDiffs)
 
 	// ----------------------------------------------------------------------
 	// And this matches 2nd and 3rd test nodes
 	q, err = query.Translate("y=b")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	patch = etre.Entity{"y": "c"} // y=b -> y=c
 	wo2 := entity.WriteOp{
 		EntityType: entityType,
@@ -580,12 +505,7 @@ func TestUpdateEntitiesById(t *testing.T) {
 		SetSize:    1,
 	}
 	gotDiffs, err = store.UpdateEntities(wo2, q, patch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(gotDiffs) != 2 {
-		t.Errorf("got %d diffs, expected 2", len(gotDiffs))
-	}
+	require.NoError(t, err)
 	expectDiffs = []etre.Entity{
 		{
 			"_id":   testNodes[1]["_id"],
@@ -600,10 +520,7 @@ func TestUpdateEntitiesById(t *testing.T) {
 			"y":     "b",
 		},
 	}
-	if diff := deep.Equal(gotDiffs, expectDiffs); diff != nil {
-		t.Logf("got: %+v", gotDiffs)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectDiffs, gotDiffs)
 
 	// ----------------------------------------------------------------------
 	// 3 CDC events because 3 entities were updated
@@ -652,9 +569,7 @@ func TestUpdateEntitiesById(t *testing.T) {
 			SetSize:    1,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }
 
 func TestUpdateEntitiesDuplicate(t *testing.T) {
@@ -670,31 +585,20 @@ func TestUpdateEntitiesDuplicate(t *testing.T) {
 
 	// This matches first test node
 	q, err := query.Translate("y=a")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	patch := etre.Entity{"x": 6} // x=2 -> x=6 conflicts with 3rd test node
 	wo1 := entity.WriteOp{
 		EntityType: entityType,
 		Caller:     username,
 	}
 	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
-	if err == nil {
-		t.Errorf("no error, expected dupe key error")
-	} else {
-		dberr, ok := err.(entity.DbError)
-		if !ok {
-			t.Errorf("got error type %#v, expected entity.DbError", err)
-		} else if dberr.Type != "duplicate-entity" {
-			t.Errorf("got DbErr.Type %s, expected duplicate-entity", dberr.Type)
-		}
-	}
-	if len(gotDiffs) != 0 {
-		t.Errorf("got %d diffs, expected 0", len(gotDiffs))
-	}
-	if len(gotEvents) != 0 {
-		t.Errorf("got %d cdc events, expected 0: %+v", len(gotEvents), gotEvents)
-	}
+	require.Error(t, err)
+	dberr, ok := err.(entity.DbError)
+	require.True(t, ok, "got error type %#v, expected entity.DbError", err)
+	assert.Equal(t, "duplicate-entity", dberr.Type)
+	assert.Empty(t, gotDiffs)
+	assert.Empty(t, gotEvents)
 }
 
 // --------------------------------------------------------------------------
@@ -713,29 +617,19 @@ func TestDeleteEntities(t *testing.T) {
 
 	// Match one first test node
 	q, err := query.Translate("y == a")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	gotOld, err := store.DeleteEntities(wo, q)
-	if err != nil {
-		t.Error(err)
-	}
-	if diff := deep.Equal(gotOld, testNodes[:1]); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, testNodes[:1], gotOld)
 
 	// Match last two test nodes
 	q, err = query.Translate("y == b")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	gotOld, err = store.DeleteEntities(wo, q)
-	if err != nil {
-		t.Error(err)
-	}
-	if diff := deep.Equal(gotOld, testNodes[1:]); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, testNodes[1:], gotOld)
 
 	for i := range gotEvents {
 		gotEvents[i].Id = ""
@@ -770,9 +664,7 @@ func TestDeleteEntities(t *testing.T) {
 			Old:        &testNodes[2],
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }
 
 // --------------------------------------------------------------------------
@@ -795,25 +687,21 @@ func TestDeleteLabel(t *testing.T) {
 		Caller:     username,
 	}
 	gotOld, err := store.DeleteLabel(wo, "foo")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	expectOld := etre.Entity{
 		"_id":   testNodes[0]["_id"],
 		"_type": testNodes[0]["_type"],
 		"_rev":  testNodes[0]["_rev"],
 		"foo":   "",
 	}
-	if diff := deep.Equal(gotOld, expectOld); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectOld, gotOld)
 
 	// The foo label should no longer be set on the entity
 	q, _ := query.Translate("y=a")
 	gotNew, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	e := etre.Entity{}
 	for k, v := range testNodes[0] {
 		e[k] = v
@@ -821,10 +709,7 @@ func TestDeleteLabel(t *testing.T) {
 	delete(e, "foo")                  // because we deleted the label
 	e["_rev"] = e["_rev"].(int64) + 1 // because we deleted the label
 	expectNew := []etre.Entity{e}
-	if diff := deep.Equal(gotNew, expectNew); diff != nil {
-		t.Logf("got: %+v", gotNew)
-		t.Error(diff)
-	}
+	assert.Equal(t, expectNew, gotNew)
 
 	for i := range gotEvents {
 		gotEvents[i].Id = ""
@@ -847,7 +732,5 @@ func TestDeleteLabel(t *testing.T) {
 			New:        &expectedEventNew,
 		},
 	}
-	if diff := deep.Equal(gotEvents, expectEvent); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEvent, gotEvents)
 }

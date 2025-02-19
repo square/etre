@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/square/etre"
 	"github.com/square/etre/auth"
 	"github.com/square/etre/test/mock"
@@ -16,29 +19,23 @@ import (
 func TestAllowAll(t *testing.T) {
 	allowAll := auth.NewAllowAll()
 	caller, err := allowAll.Authenticate(&http.Request{})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	expectCaller := auth.Caller{
 		Name:         "",
 		MetricGroups: []string{"etre"},
 	}
-	if diffs := deep.Equal(caller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectCaller, caller)
 	action := auth.Action{
 		EntityType: "foo",
 		Op:         auth.OP_READ,
 	}
 	err = allowAll.Authorize(caller, action)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	action.Op = auth.OP_WRITE
 	err = allowAll.Authorize(caller, action)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestManager(t *testing.T) {
@@ -73,12 +70,8 @@ func TestManager(t *testing.T) {
 	// If plugin.Authenticate returns nil error, and caller has no required trace keys,
 	// then manager just returns caller from plugin.
 	gotCaller, err := man.Authenticate(&http.Request{})
-	if err != authErr {
-		t.Errorf("got Authenticate error '%v', expected '%v'", err, authErr)
-	}
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, authErr, err)
+	assert.Equal(t, caller, gotCaller)
 
 	// Trace key requirements
 	// ---------------------------------------------------------------------------
@@ -89,26 +82,20 @@ func TestManager(t *testing.T) {
 	// can have roles for which there are no ACLs.
 	caller.Roles = []string{"foo", "x", "y"}
 	_, err = man.Authenticate(&http.Request{})
-	if err == nil {
-		t.Errorf("no Authenticate error for missing trace keys, expected an error")
-	}
+	require.Error(t, err)
 
 	// Add a trace key but not the one we need: app
 	caller.Trace = map[string]string{"user": "finch"}
 	_, err = man.Authenticate(&http.Request{})
-	if err == nil {
-		t.Errorf("no Authenticate error for missing trace keys, expected an error")
-	}
+	require.Error(t, err)
 
 	// Add the needed key and it should work again
 	caller.Trace["app"] = "etre"
 	gotCaller, err = man.Authenticate(&http.Request{})
-	if err != nil {
-		t.Error(err)
-	}
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+
+	diffs := deep.Equal(gotCaller, caller)
+	assert.Nil(t, diffs)
 
 	// Read/write authorization
 	// ---------------------------------------------------------------------------
@@ -116,59 +103,44 @@ func TestManager(t *testing.T) {
 	// bar can read foo and bar, and write bar entities
 	caller.Roles = []string{"bar"}
 	err = man.Authorize(caller, auth.Action{EntityType: "foo", Op: auth.OP_READ})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "bar", Op: auth.OP_READ})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "bar", Op: auth.OP_WRITE})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	// bar can't read foo but it cannot write it
 	err = man.Authorize(caller, auth.Action{EntityType: "foo", Op: auth.OP_WRITE})
-	if err == nil {
-		t.Error("no Authorize error, expected one")
-	}
+	require.Error(t, err, "no Authorize error, expected one")
+
 	// bar can't read or write other entity types
 	err = man.Authorize(caller, auth.Action{EntityType: "not-this-type", Op: auth.OP_READ})
-	if err == nil {
-		t.Error("no Authorize error, expected one")
-	}
+	require.Error(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "not-this-type", Op: auth.OP_WRITE})
-	if err == nil {
-		t.Error("no Authorize error, expected one")
-	}
+	require.Error(t, err)
 
 	// Admin role finch can read/write anything
 	caller.Roles = []string{"finch"}
 	err = man.Authorize(caller, auth.Action{EntityType: "foo", Op: auth.OP_READ})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "foo", Op: auth.OP_WRITE})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "bar", Op: auth.OP_READ})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "bar", Op: auth.OP_WRITE})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "any-entity-type", Op: auth.OP_READ})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = man.Authorize(caller, auth.Action{EntityType: "any-entity-type", Op: auth.OP_WRITE})
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestManagerNoACLs(t *testing.T) {
@@ -189,20 +161,12 @@ func TestManagerNoACLs(t *testing.T) {
 	man := auth.NewManager([]auth.ACL{}, plugin)
 
 	gotCaller, err := man.Authenticate(&http.Request{})
-	if err != nil {
-		t.Errorf("got Authenticate error '%v', expected nil", err)
-	}
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, caller, gotCaller)
 
 	err = man.Authorize(caller, auth.Action{EntityType: "foo", Op: auth.OP_WRITE})
-	if err != nil {
-		t.Error(err)
-	}
-	if !authorizeCalled {
-		t.Errorf("auth plugin Authorize called, expected it to be called without ACLs")
-	}
+	require.NoError(t, err)
+	assert.True(t, authorizeCalled, "auth plugin Authorize called, expected it to be called without ACLs")
 }
 
 func TestManagerAuthenticateError(t *testing.T) {
@@ -228,12 +192,8 @@ func TestManagerAuthenticateError(t *testing.T) {
 	authErr = fmt.Errorf("forced test error")
 
 	gotCaller, err := man.Authenticate(&http.Request{})
-	if err != authErr {
-		t.Errorf("got Authenticate error '%v', expected '%v'", err, authErr)
-	}
-	if diffs := deep.Equal(gotCaller, caller); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, authErr, err)
+	assert.Equal(t, caller, gotCaller)
 }
 
 func TestTraceHeader(t *testing.T) {
@@ -252,12 +212,8 @@ func TestTraceHeader(t *testing.T) {
 		},
 	}
 	gotCaller, err := man.Authenticate(req)
-	if err != nil {
-		t.Errorf("got Authenticate error '%v', expected nil", err)
-	}
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, expectCaller, gotCaller)
 
 	// Bad values are silently ignored
 	req, _ = http.NewRequest("GET", "http://example.com", nil)
@@ -266,23 +222,15 @@ func TestTraceHeader(t *testing.T) {
 		"app": "foo",
 	}
 	gotCaller, err = man.Authenticate(req)
-	if err != nil {
-		t.Errorf("got Authenticate error '%v', expected nil", err)
-	}
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, expectCaller, gotCaller)
 
 	req, _ = http.NewRequest("GET", "http://example.com", nil)
 	req.Header.Set(etre.TRACE_HEADER, "") // empty value
 	expectCaller.Trace = nil
 	gotCaller, err = man.Authenticate(req)
-	if err != nil {
-		t.Errorf("got Authenticate error '%v', expected nil", err)
-	}
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, expectCaller, gotCaller)
 
 	// Values set by plugin are not changed
 	caller := auth.Caller{
@@ -305,10 +253,6 @@ func TestTraceHeader(t *testing.T) {
 		},
 	}
 	gotCaller, err = man.Authenticate(req)
-	if err != nil {
-		t.Errorf("got Authenticate error '%v', expected nil", err)
-	}
-	if diffs := deep.Equal(gotCaller, expectCaller); diffs != nil {
-		t.Error(diffs)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, expectCaller, gotCaller)
 }

@@ -3,6 +3,8 @@ package server
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/square/etre/app"
@@ -15,13 +17,10 @@ import (
 func TestDefaultPlugins(t *testing.T) {
 	s := NewServer(app.Defaults())
 	err := s.Boot("../test/config/empty.yaml")
-	if err != nil {
-		t.Fatalf("Error booting server: %s", err)
-	}
+	require.NoError(t, err, "Error booting server")
+
 	err = s.Stop()
-	if err != nil {
-		t.Fatalf("Error stopping server: %s", err)
-	}
+	require.NoError(t, err, "Error stopping server")
 }
 
 // TestDBPlugin tests server boot with a DB plugin
@@ -39,17 +38,12 @@ func TestDBPlugin(t *testing.T) {
 	s := NewServer(ctx)
 	// Start the server
 	err := s.Boot("../test/config/empty.yaml")
-	if err != nil {
-		t.Fatalf("Error booting server: %s", err)
-	}
+	require.NoError(t, err, "Error booting server")
+
 	// Check that the DB plugin was called twice: once for the main DB and once for the CDC DB.
-	if counter != 2 {
-		t.Errorf("Expected DB plugin to be called twice, but got %d", counter)
-	}
+	assert.Equal(t, 2, counter, "Expected DB plugin to be called twice")
 
 	// Stop the server
 	err = s.Stop()
-	if err != nil {
-		t.Fatalf("Error stopping server: %s", err)
-	}
+	require.NoError(t, err, "Error stopping server")
 }

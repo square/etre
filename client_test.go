@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/square/etre"
 )
 
@@ -89,9 +90,7 @@ func setup(t *testing.T) {
 func TestEntityType(t *testing.T) {
 	setup(t)
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
-	if ec.EntityType() != "node" {
-		t.Errorf("got entity type %s, expected node", ec.EntityType())
-	}
+	assert.Equal(t, "node", ec.EntityType())
 }
 
 func TestQueryAndIdRequired(t *testing.T) {
@@ -106,29 +105,27 @@ func TestQueryAndIdRequired(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	// All methods that take query string should return ErrNoQuery if not given one
-	if _, err := ec.Query("", etre.QueryFilter{}); err != etre.ErrNoQuery {
-		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
-	}
-	if _, err := ec.Update("", entities[0]); err != etre.ErrNoQuery {
-		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
-	}
-	if _, err := ec.Delete(""); err != etre.ErrNoQuery {
-		t.Errorf("got error %v, expected etre.ErrNoQuery", err)
-	}
+	_, err := ec.Query("", etre.QueryFilter{})
+	assert.ErrorIs(t, err, etre.ErrNoQuery)
+
+	_, err = ec.Update("", entities[0])
+	assert.ErrorIs(t, err, etre.ErrNoQuery)
+
+	_, err = ec.Delete("")
+	assert.ErrorIs(t, err, etre.ErrNoQuery)
 
 	// All methods that take id string should return ErrIdNotSet if not given one
-	if _, err := ec.UpdateOne("", entities[0]); err != etre.ErrIdNotSet {
-		t.Errorf("got error %v, expected etre.ErrIdNotSet", err)
-	}
-	if _, err := ec.DeleteOne(""); err != etre.ErrIdNotSet {
-		t.Errorf("got error %v, expected etre.ErrIdNotSet", err)
-	}
-	if _, err := ec.Labels(""); err != etre.ErrIdNotSet {
-		t.Errorf("got error %v, expected etre.ErrIdNotSet", err)
-	}
-	if _, err := ec.DeleteLabel("", "foo"); err != etre.ErrIdNotSet {
-		t.Errorf("got error %v, expected etre.ErrIdNotSet", err)
-	}
+	_, err = ec.UpdateOne("", entities[0])
+	assert.ErrorIs(t, err, etre.ErrIdNotSet)
+
+	_, err = ec.DeleteOne("")
+	assert.ErrorIs(t, err, etre.ErrIdNotSet)
+
+	_, err = ec.Labels("")
+	assert.ErrorIs(t, err, etre.ErrIdNotSet)
+
+	_, err = ec.DeleteLabel("", "foo")
+	assert.ErrorIs(t, err, etre.ErrIdNotSet)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -150,23 +147,14 @@ func TestQueryOK(t *testing.T) {
 
 	// Normal query that returns status code 200 and respData
 	query := "x=y"
-	expectQuery := "query=" + query
 	got, err := ec.Query(query, etre.QueryFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
-	expectPath := etre.API_ROOT + "/entities/node"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if gotQuery != expectQuery {
-		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, "GET", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
+	assert.Equal(t, "query="+query, gotQuery)
+	assert.Equal(t, got, respData)
 }
 
 func TestQueryNoResults(t *testing.T) {
@@ -180,12 +168,8 @@ func TestQueryNoResults(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, respData, got)
 }
 
 func TestQueryHandledError(t *testing.T) {
@@ -201,15 +185,9 @@ func TestQueryHandledError(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
-	if err == nil {
-		t.Error("err is nil, expected an error")
-	}
-	if !strings.Contains(err.Error(), respError.Message) {
-		t.Errorf("error message does not contain '%s': '%s'", respError.Message, err)
-	}
-	if got != nil {
-		t.Errorf("got entities, expected nil: %v", got)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), respError.Type)
+	assert.Nil(t, got)
 }
 
 func TestQueryUnhandledError(t *testing.T) {
@@ -223,15 +201,9 @@ func TestQueryUnhandledError(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	got, err := ec.Query("any=thing", etre.QueryFilter{})
-	if err == nil {
-		t.Fatal("err is nil, expected an error")
-	}
-	if !strings.Contains(err.Error(), "no response") {
-		t.Errorf("error does not contain 'no response': '%s'", err)
-	}
-	if got != nil {
-		t.Errorf("got entities, expected nil: %v", got)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no response")
+	assert.Nil(t, got)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -262,21 +234,13 @@ func TestInsertOK(t *testing.T) {
 		},
 	}
 	got, err := ec.Insert(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
-	if gotMethod != "POST" {
-		t.Errorf("got method %s, expected POST", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entities/node"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, "POST", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
+	assert.Empty(t, gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 func TestInsertAPIError(t *testing.T) {
@@ -300,12 +264,8 @@ func TestInsertAPIError(t *testing.T) {
 		},
 	}
 	got, err := ec.Insert(entities)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := deep.Equal(got, respData.(etre.WriteResult)); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, respData, got)
 }
 
 func TestInsertUnhandledError(t *testing.T) {
@@ -320,15 +280,9 @@ func TestInsertUnhandledError(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 	entities := []etre.Entity{{"foo": "bar"}}
 	wr, err := ec.Insert(entities)
-	if err == nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(err.Error(), "no response") {
-		t.Errorf("error does not contain 'no response': '%s'", err)
-	}
-	if !wr.IsZero() {
-		t.Errorf("non-zero WriteResult, expected no WriteResult: %+v", wr)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no response")
+	assert.Zero(t, wr)
 }
 
 func TestInsertNoEntityError(t *testing.T) {
@@ -339,12 +293,8 @@ func TestInsertNoEntityError(t *testing.T) {
 	// A zero length slice of entities should return ErrNoEntity
 	entities := []etre.Entity{}
 	got, err := ec.Insert(entities)
-	if err != etre.ErrNoEntity {
-		t.Fatalf("err is '%s', expected ErrNoEtity", err)
-	}
-	if got.Writes != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
+	assert.ErrorIs(t, err, etre.ErrNoEntity)
+	assert.Nil(t, got.Writes)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -374,21 +324,13 @@ func TestUpdateOK(t *testing.T) {
 		"foo": "bar", // patch foo:foo -> for:bar
 	}
 	got, err := ec.Update("foo=bar", entity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
-	if gotMethod != "PUT" {
-		t.Errorf("got method %s, expected PUT", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entities/node"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, "PUT", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
+	assert.Equal(t, "query=foo=bar", gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 func TestUpdateAPIError(t *testing.T) {
@@ -407,19 +349,13 @@ func TestUpdateAPIError(t *testing.T) {
 		"foo": "bar",
 	}
 	got, err := ec.Update("foo=bar", entity)
-	if err == nil {
-		t.Fatal("err is nil, expected an error")
-	}
+	require.Error(t, err)
 
 	// The etre.Error.Message should bubble up
-	if !strings.Contains(err.Error(), respError.Message) {
-		t.Errorf("error does not contain '%s': %s", respError.Message, err)
-	}
+	assert.Contains(t, err.Error(), respError.Message)
 
 	// There should not be any entities returned
-	if got.Writes != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
+	assert.Nil(t, got.Writes)
 }
 
 func TestUpdateNoEntityError(t *testing.T) {
@@ -430,12 +366,8 @@ func TestUpdateNoEntityError(t *testing.T) {
 	// A zero length slice of entities should return ErrNoEntity
 	entity := etre.Entity{}
 	got, err := ec.Update("foo=bar", entity)
-	if err != etre.ErrNoEntity {
-		t.Fatalf("err is '%s', expected ErrNoEtity", err)
-	}
-	if got.Writes != nil {
-		t.Errorf("got []etre.WriteResult, expected nil: %#v", got)
-	}
+	assert.ErrorIs(t, err, etre.ErrNoEntity)
+	assert.Nil(t, got.Writes)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -465,20 +397,11 @@ func TestUpdateOneOK(t *testing.T) {
 		"foo": "bar", // patch foo:foo -> for:bar
 	}
 	got, err := ec.UpdateOne("abc", entity)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if gotMethod != "PUT" {
-		t.Errorf("got method %s, expected PUT", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entity/node/abc"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "PUT", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entity/node/abc", gotPath)
+	assert.Empty(t, gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -507,25 +430,13 @@ func TestDeleteOK(t *testing.T) {
 	// Normal delete that returns status code 200 and a write result
 	query := "foo=bar"
 	got, err := ec.Delete(query)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
-	if gotMethod != "DELETE" {
-		t.Errorf("got method %s, expected DELETE", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entities/node"
-	expectQuery := "query=" + query
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if gotQuery != expectQuery {
-		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, "DELETE", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
+	assert.Equal(t, "query="+query, gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 func TestDeleteWithSet(t *testing.T) {
@@ -557,25 +468,14 @@ func TestDeleteWithSet(t *testing.T) {
 	// Normal delete that returns status code 200 and a write result
 	query := "foo=bar"
 	got, err := ec.Delete(query)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Verify call and response
-	if gotMethod != "DELETE" {
-		t.Errorf("got method %s, expected DELETE", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entities/node"
-	expectQuery := "query=" + query + "&setId=setid&setOp=setop&setSize=3"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if gotQuery != expectQuery {
-		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, "DELETE", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
+	assert.Equal(t, "query="+query+"&setId=setid&setOp=setop&setSize=3", gotQuery)
+	assert.Equal(t, respData, got)
+
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -601,19 +501,12 @@ func TestDeleteOneOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.DeleteOne("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotMethod != "DELETE" {
-		t.Errorf("got method %s, expected DELETE", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entity/node/abc"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+
+	assert.Equal(t, "DELETE", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entity/node/abc", gotPath)
+	assert.Empty(t, gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 func TestDeleteOneWithSet(t *testing.T) {
@@ -642,23 +535,11 @@ func TestDeleteOneWithSet(t *testing.T) {
 	ec = ec.WithSet(set)
 
 	got, err := ec.DeleteOne("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotMethod != "DELETE" {
-		t.Errorf("got method %s, expected DELETE", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entity/node/abc"
-	expectQuery := "setId=setid&setOp=setop&setSize=2" // testing this
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if gotQuery != expectQuery {
-		t.Errorf("got query %s, expected %s", gotQuery, expectQuery)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "DELETE", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entity/node/abc", gotPath)
+	assert.Equal(t, "setId=setid&setOp=setop&setSize=2", gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -674,19 +555,11 @@ func TestLabelsOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.Labels("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotMethod != "GET" {
-		t.Errorf("got method %s, expected GET", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entity/node/abc/labels"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "GET", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entity/node/abc/labels", gotPath)
+	assert.Empty(t, gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 func TestDeleteLabelOK(t *testing.T) {
@@ -707,20 +580,11 @@ func TestDeleteLabelOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	got, err := ec.DeleteLabel("abc", "foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if gotMethod != "DELETE" {
-		t.Errorf("got method %s, expected DELETE", gotMethod)
-	}
-	expectPath := etre.API_ROOT + "/entity/node/abc/labels/foo"
-	if gotPath != expectPath {
-		t.Errorf("got path %s, expected %s", gotPath, expectPath)
-	}
-	if diff := deep.Equal(got, respData); diff != nil {
-		t.Error(diff)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "DELETE", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entity/node/abc/labels/foo", gotPath)
+	assert.Empty(t, gotQuery)
+	assert.Equal(t, respData, got)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -745,19 +609,12 @@ func TestCDCClient(t *testing.T) {
 		var upgrader = websocket.Upgrader{}
 		var err error
 		wsConn, err = upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Fatal(err)
-			return
-		}
+		require.NoError(t, err)
 		defer wsConn.Close()
-		if err := wsConn.ReadJSON(&gotStart); err != nil {
-			t.Fatal(err)
-			return
-		}
-		if err := wsConn.WriteJSON(startAck); err != nil {
-			t.Fatal(err)
-			return
-		}
+		err = wsConn.ReadJSON(&gotStart)
+		require.NoError(t, err)
+		err = wsConn.WriteJSON(startAck)
+		require.NoError(t, err)
 		connChan <- true
 		<-connChan
 	}
@@ -772,9 +629,7 @@ func TestCDCClient(t *testing.T) {
 
 	startTs := time.Now()
 	events, err := ec.Start(startTs)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Wait for wsHandler ^ to do start sequence
 	select {
@@ -791,12 +646,8 @@ func TestCDCClient(t *testing.T) {
 
 	// Start should be idempotent
 	events2, err2 := ec.Start(startTs)
-	if err2 != nil {
-		t.Errorf("got error %s, expected none", err2)
-	}
-	if events2 != events {
-		t.Errorf("Start did not return same events chan, expected same one")
-	}
+	assert.NoError(t, err2)
+	assert.Equal(t, events, events2, "Start did not return same events chan, expected same one")
 
 	// Verify client sent correct start control message
 
@@ -811,11 +662,7 @@ func TestCDCClient(t *testing.T) {
 	bytes, _ := json.Marshal(v)
 	var expectStart map[string]interface{}
 	json.Unmarshal(bytes, &expectStart)
-	if diff := deep.Equal(gotStart, expectStart); diff != nil {
-		t.Logf("gotStart: %#v", gotStart)
-		t.Logf("expectStart: %s", string(bytes))
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStart, gotStart)
 
 	// First, let's send the client a CDC event and make sure it sends via the
 	// events chan it returned from Start()
@@ -844,10 +691,7 @@ func TestCDCClient(t *testing.T) {
 	}
 
 	// The event we got should be the event we sent--that's the whole point!
-	if diff := deep.Equal(gotEvent, sentEvent); diff != nil {
-		t.Logf("%#v", gotStart)
-		t.Error(diff)
-	}
+	assert.Equal(t, sentEvent, gotEvent)
 
 	//
 	// Send client a ping control message (server -> client ping)
@@ -866,20 +710,11 @@ func TestCDCClient(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	if pong["control"] != "pong" {
-		t.Errorf("wrong control reply '%s', expected 'ping'", pong["control"])
-	}
+	assert.Equal(t, "pong", pong["control"])
+
 	ts, ok := pong["dstTs"]
-	if !ok {
-		t.Errorf("dstTs not set in ping reply, expected a UnixNano value")
-	} else {
-		// Go JSON makes all numbers float64, so convert to that first,
-		// then int64 for UnixNano.
-		n := int64(ts.(float64))
-		if n <= startTs.UnixNano() {
-			t.Errorf("got ts %d <= sent ts %d, expected it to be greater", n, startTs.UnixNano())
-		}
-	}
+	require.True(t, ok, "dstTs not set in ping reply, expected a UnixNano value")
+	assert.True(t, int64(ts.(float64)) > startTs.UnixNano(), "got ts %v <= sent ts %d, expected it to be greater", ts, startTs.UnixNano())
 
 	//
 	// Ping server (client -> server ping)
@@ -892,19 +727,13 @@ func TestCDCClient(t *testing.T) {
 		var err error
 
 		err = wsConn.ReadJSON(&ping)
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		require.NoError(t, err)
+
 		time.Sleep(101 * time.Millisecond)
 		ping["control"] = "pong"
 		ping["dstTs"] = time.Now().UnixNano()
-		t.Logf("%#v", ping)
 		err = wsConn.WriteJSON(ping)
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		require.NoError(t, err)
 
 		close(waitForPing)
 	}()
@@ -915,9 +744,7 @@ func TestCDCClient(t *testing.T) {
 	// Ping to wsConn.ReadJSON in the gorountine above. Since that's local
 	// it's microseconds. But the time.Sleep in the goroutine creates an
 	// artificial Send and RTT lag.
-	if lag.Send < 101 || lag.RTT < 101 {
-		t.Errorf("got zero lag, exected > 100ms values: %#v", lag)
-	}
+	assert.False(t, lag.Send < 101 || lag.RTT < 101, "got zero lag, exected > 100ms values: %#v", lag)
 
 	<-waitForPing
 
@@ -932,22 +759,15 @@ func TestCDCClient(t *testing.T) {
 		"error":   "fake error",
 	}
 	err = wsConn.WriteJSON(errorMsg)
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
+	require.NoError(t, err)
 
 	// Give client a few milliseconds to shutdown
 	time.Sleep(500 * time.Millisecond)
 	var rand map[string]interface{} // shouldn't read random data
 	err = wsConn.ReadJSON(&rand)
-	if err == nil {
-		t.Errorf("no error read, expected an error; read %#v", rand)
-	}
+	require.Error(t, err)
 
 	// The client should save the error ^ and return it
 	gotError := ec.Error().Error()
-	if !strings.Contains(gotError, "fake error") {
-		t.Errorf("got error '%s', expected 'fake error'", gotError)
-	}
+	assert.Contains(t, gotError, "fake error")
 }

@@ -8,7 +8,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -42,21 +43,14 @@ func TestPostEntityOK(t *testing.T) {
 
 	newEntity := etre.Entity{"host": "local"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusCreated {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusCreated)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, statusCode)
 
 	expectWR := etre.WriteResult{
 		Writes: []etre.Write{
@@ -66,22 +60,16 @@ func TestPostEntityOK(t *testing.T) {
 			},
 		},
 	}
-	if diffs := deep.Equal(gotWR, expectWR); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
 		Caller:     "test", // from mock.AuthPlugin
 		EntityType: entityType,
 	}
-	if diff := deep.Equal(gotWO, expectWO); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectWO, gotWO)
 
 	expectEntities := []etre.Entity{newEntity}
-	if diff := deep.Equal(gotEntities, expectEntities); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectEntities, gotEntities)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -92,11 +80,7 @@ func TestPostEntityOK(t *testing.T) {
 		{Method: "Inc", Metric: metrics.Created, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestPostEntityDuplicate(t *testing.T) {
@@ -114,28 +98,17 @@ func TestPostEntityDuplicate(t *testing.T) {
 
 	newEntity := etre.Entity{"host": "local"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusConflict {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusConflict)
-	}
-
-	if gotWR.Error == nil || gotWR.Error.Message == "" {
-		t.Errorf("WriteResult.Error is empty, expected duplicate key error")
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusConflict, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.NotEmpty(t, gotWR.Error.Type)
+	assert.Len(t, gotWR.Writes, 0)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -147,11 +120,7 @@ func TestPostEntityDuplicate(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestPostEntityErrors(t *testing.T) {
@@ -171,31 +140,17 @@ func TestPostEntityErrors(t *testing.T) {
 	// ----------------------------------------------------------------------
 	newEntity := etre.Entity{"host": "local", "_id": testEntityIds[0]}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
-	}
-
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "cannot-set-metalabel" {
-		t.Errorf("WriteResult.Error.Type = %s, expected cannot-set-metalabel", gotWR.Error.Type)
-	}
-
-	if created == true {
-		t.Error("CreateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "cannot-set-metalabel", gotWR.Error.Type)
+	assert.False(t, created, "CreateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -207,11 +162,7 @@ func TestPostEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// No value/zero entities (can't create nothing)
@@ -220,27 +171,16 @@ func TestPostEntityErrors(t *testing.T) {
 
 	newEntity = etre.Entity{}
 	payload, err = json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
 	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
-	}
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "empty-entity" {
-		t.Errorf("WriteResult.Error.Type = %s, expected empty-entity", gotWR.Error.Type)
-	}
-	if created == true {
-		t.Error("CreateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "empty-entity", gotWR.Error.Type)
+	assert.False(t, created, "CreateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{
@@ -252,11 +192,7 @@ func TestPostEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Invalid JSON
@@ -267,21 +203,11 @@ func TestPostEntityErrors(t *testing.T) {
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("POST", etreurl, payload, &gotWR)
-	t.Logf("got WriteResult: %+v", gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("got HTTP status = %d, expected %d: %+v", statusCode, http.StatusBadRequest, gotWR)
-	}
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "invalid-content" {
-		t.Errorf("WriteResult.Error.Type = %s, expected invalid-content", gotWR.Error.Type)
-	}
-	if created == true {
-		t.Error("CreateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "invalid-content", gotWR.Error.Type)
+	assert.False(t, created, "CreateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{
@@ -293,11 +219,7 @@ func TestPostEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -326,21 +248,15 @@ func TestPutEntityOK(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	expectWR := etre.WriteResult{
 		Writes: []etre.Write{
@@ -356,23 +272,17 @@ func TestPutEntityOK(t *testing.T) {
 			},
 		},
 	}
-	if diffs := deep.Equal(gotWR, expectWR); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
 		Caller:     "test", // from mock.AuthPlugin
 		EntityType: entityType,
 		EntityId:   testEntityIds[0],
 	}
-	if diff := deep.Equal(gotWO, expectWO); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectWO, gotWO)
 
 	expectQuery, _ := query.Translate("_id=" + testEntityIds[0])
-	if diff := deep.Equal(gotQuery, expectQuery); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectQuery, gotQuery)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -384,11 +294,7 @@ func TestPutEntityOK(t *testing.T) {
 		{Method: "Inc", Metric: metrics.Updated, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestPutEntityDuplicate(t *testing.T) {
@@ -408,28 +314,17 @@ func TestPutEntityDuplicate(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusConflict {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusConflict)
-	}
-
-	if gotWR.Error == nil || gotWR.Error.Message == "" {
-		t.Errorf("WriteResult.Error is empty, expected duplicate key error")
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusConflict, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "duplicate-entity", gotWR.Error.Type)
+	assert.Len(t, gotWR.Writes, 0)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -442,11 +337,7 @@ func TestPutEntityDuplicate(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestPutEntityNotFound(t *testing.T) {
@@ -462,28 +353,17 @@ func TestPutEntityNotFound(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusNotFound {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
-	}
-
-	if gotWR.Error == nil || gotWR.Error.Message == "" {
-		t.Errorf("WriteResult.Error is empty, expected not found error")
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "entity-not-found", gotWR.Error.Type)
+	assert.Empty(t, gotWR.Writes)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -495,11 +375,7 @@ func TestPutEntityNotFound(t *testing.T) {
 		//{Method: "Inc", Metric: metrics.Updated, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 func TestPutEntityErrors(t *testing.T) {
@@ -516,9 +392,7 @@ func TestPutEntityErrors(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// ----------------------------------------------------------------------
 	// Missing entity id (:id)
@@ -530,32 +404,16 @@ func TestPutEntityErrors(t *testing.T) {
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusNotFound {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusNotFound)
-	}
-
-	if diffs := deep.Equal(*gotWR.Error, api.ErrEndpointNotFound); diffs != nil {
-		t.Errorf("got Error %+v, expected api.ErrEndpointNotFound %+v; diffs: %+v", gotWR.Error, api.ErrEndpointNotFound, diffs)
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
-
-	if updated == true {
-		t.Error("UpdateEntities called, expected no call due to error")
-	}
+	assert.Equal(t, http.StatusNotFound, statusCode)
+	assert.Equal(t, *gotWR.Error, api.ErrEndpointNotFound)
+	assert.Len(t, gotWR.Writes, 0)
+	assert.False(t, updated, "UpdateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Invalid entity id (:id)
@@ -566,26 +424,12 @@ func TestPutEntityErrors(t *testing.T) {
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
-	}
-
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "invalid-param" {
-		t.Errorf("WriteResult.Error.Type = %s, expected invalid-param", gotWR.Error.Type)
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
-
-	if updated == true {
-		t.Error("UpdateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "invalid-param", gotWR.Error.Type)
+	assert.Empty(t, gotWR.Writes)
+	assert.False(t, updated, "UpdateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{
@@ -597,11 +441,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Invalid patch
@@ -611,34 +451,18 @@ func TestPutEntityErrors(t *testing.T) {
 	// Patch can't have _id
 	newEntity = etre.Entity{"_id": testEntityIds[0], "foo": "bar"}
 	payload, err = json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
-	}
-
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "cannot-change-metalabel" {
-		t.Errorf("WriteResult.Error.Type = %s, expected cannot-change-metalabel", gotWR.Error.Type)
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
-
-	if updated == true {
-		t.Error("UpdateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "cannot-change-metalabel", gotWR.Error.Type)
+	assert.Len(t, gotWR.Writes, 0)
+	assert.False(t, updated, "UpdateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{
@@ -650,11 +474,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Empty patch entity
@@ -663,34 +483,18 @@ func TestPutEntityErrors(t *testing.T) {
 
 	newEntity = etre.Entity{}
 	payload, err = json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl = server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
-	}
-
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "empty-entity" {
-		t.Errorf("WriteResult.Error.Type = %s, expected empty-entity", gotWR.Error.Type)
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
-
-	if updated == true {
-		t.Error("UpdateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "empty-entity", gotWR.Error.Type)
+	assert.Len(t, gotWR.Writes, 0)
+	assert.False(t, updated, "UpdateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{
@@ -702,11 +506,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// Bad JSON
@@ -718,26 +518,12 @@ func TestPutEntityErrors(t *testing.T) {
 
 	gotWR = etre.WriteResult{}
 	statusCode, err = test.MakeHTTPRequest("PUT", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if statusCode != http.StatusBadRequest {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusBadRequest)
-	}
-
-	if gotWR.Error == nil {
-		t.Errorf("WriteResult.Error is nil, expected error message")
-	} else if gotWR.Error.Type != "invalid-content" {
-		t.Errorf("WriteResult.Error.Type = %s, expected invalid-content", gotWR.Error.Type)
-	}
-	if len(gotWR.Writes) != 0 {
-		t.Errorf("%d writes, exected 0: %+v", len(gotWR.Writes), gotWR.Writes)
-	}
-
-	if updated == true {
-		t.Error("UpdateEntities called, expected no call due to error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, statusCode)
+	require.Error(t, gotWR.Error)
+	assert.Equal(t, "invalid-content", gotWR.Error.Type)
+	assert.Len(t, gotWR.Writes, 0)
+	assert.False(t, updated, "UpdateEntities called, expected no call due to error")
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{
@@ -749,11 +535,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -782,21 +564,15 @@ func TestDeleteEntityOK(t *testing.T) {
 
 	newEntity := etre.Entity{"foo": "bar"}
 	payload, err := json.Marshal(newEntity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	etreurl := server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", etreurl, payload, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	expectWR := etre.WriteResult{
 		Writes: []etre.Write{
@@ -812,23 +588,17 @@ func TestDeleteEntityOK(t *testing.T) {
 			},
 		},
 	}
-	if diffs := deep.Equal(gotWR, expectWR); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
 		Caller:     "test", // from mock.AuthPlugin
 		EntityType: entityType,
 		EntityId:   testEntityIds[0],
 	}
-	if diff := deep.Equal(gotWO, expectWO); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectWO, gotWO)
 
 	expectQuery, _ := query.Translate("_id=" + testEntityIds[0])
-	if diff := deep.Equal(gotQuery, expectQuery); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectQuery, gotQuery)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -839,11 +609,7 @@ func TestDeleteEntityOK(t *testing.T) {
 		{Method: "Inc", Metric: metrics.Deleted, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -869,13 +635,9 @@ func TestDeleteLabel(t *testing.T) {
 
 	var gotWR etre.WriteResult
 	statusCode, err := test.MakeHTTPRequest("DELETE", etreurl, nil, &gotWR)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if statusCode != http.StatusOK {
-		t.Errorf("response status = %d, expected %d", statusCode, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, statusCode)
 
 	expectWR := etre.WriteResult{
 		Writes: []etre.Write{
@@ -891,24 +653,18 @@ func TestDeleteLabel(t *testing.T) {
 			},
 		},
 	}
-	if diffs := deep.Equal(gotWR, expectWR); diffs != nil {
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
 		Caller:     "test", // from mock.AuthPlugin
 		EntityType: entityType,
 		EntityId:   testEntityIds[0],
 	}
-	if diff := deep.Equal(gotWO, expectWO); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expectWO, gotWO)
 
 	// Pretty important that the label from the URL is passed to
 	// entity.Store.DeleteLabel(), i.e. we delete the correct label
-	if gotLabel != "foo" {
-		t.Errorf("got label %s, expected foo (from URL)", gotLabel)
-	}
+	assert.Equal(t, "foo", gotLabel)
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{
@@ -919,9 +675,5 @@ func TestDeleteLabel(t *testing.T) {
 		{Method: "IncLabel", Metric: metrics.LabelDelete, StringVal: "foo"},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
-	if diffs := deep.Equal(server.metricsrec.Called, expectMetrics); diffs != nil {
-		t.Logf("   got: %+v", server.metricsrec.Called)
-		t.Logf("expect: %+v", expectMetrics)
-		t.Error(diffs)
-	}
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }

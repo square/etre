@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/square/etre/app"
 )
 
@@ -36,9 +37,7 @@ func TestInstrumentOneBlockOneCall(t *testing.T) {
 			Time:  time.Duration(2 * time.Second),
 		},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, got)
 }
 
 func TestInstrumentManyBlocksOneCall(t *testing.T) {
@@ -68,10 +67,7 @@ func TestInstrumentManyBlocksOneCall(t *testing.T) {
 		{Block: "c", Level: 1, Calls: 1, Time: time.Duration(3 * time.Second)},
 		{Block: "?", Level: 1, Calls: 0, Time: time.Duration(1 * time.Second)},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Logf("%+v", got)
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, got)
 }
 
 func TestInstrumentNestedBlockCall(t *testing.T) {
@@ -98,7 +94,5 @@ func TestInstrumentNestedBlockCall(t *testing.T) {
 		{Block: "b", Level: 2, Calls: 1, Time: time.Duration(2 * time.Second)},
 		{Block: "?", Level: 1, Calls: 0, Time: time.Duration(1 * time.Second)},
 	}
-	if diff := deep.Equal(got, expect); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, expect, got)
 }

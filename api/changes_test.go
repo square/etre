@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc/changestream"
@@ -35,14 +36,10 @@ func TestChanges(t *testing.T) {
 	wsURL := strings.Replace(server.url, "http", "ws", 1)
 	client := etre.NewCDCClient(wsURL, nil, 10, true)
 	eventsChan, err := client.Start(time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	latency := client.Ping(time.Duration(300 * time.Millisecond))
-	if latency.Send > 100 || latency.Recv > 100 && latency.RTT > 100 {
-		t.Errorf("Ping latency > 100ms, expected near-zero: %+v", latency)
-	}
+	assert.False(t, latency.Send > 100 || latency.Recv > 100 && latency.RTT > 100, "Ping latency > 100ms, expected near-zero: %+v", latency)
 
 	mux := &sync.Mutex{}
 	events := []etre.CDCEvent{}
@@ -85,13 +82,8 @@ func TestChanges(t *testing.T) {
 		t.Fatal("timeout waiting for recv goroutine to finish")
 	}
 
-	if diff := deep.Equal(events, mock.CDCEvents[0:1]); diff != nil {
-		t.Error(diff)
-	}
-
-	if gotSinceTs != 0 {
-		t.Errorf("got sinceTs = %d, expected 0", gotSinceTs)
-	}
+	assert.Equal(t, mock.CDCEvents[0:1], events)
+	assert.Equal(t, int64(0), gotSinceTs)
 
 	/*
 		@todo Fix data race
