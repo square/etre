@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-test/deep"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -647,12 +646,8 @@ func TestCDCClient(t *testing.T) {
 
 	// Start should be idempotent
 	events2, err2 := ec.Start(startTs)
-	if err2 != nil {
-		t.Errorf("got error %s, expected none", err2)
-	}
-	if events2 != events {
-		t.Errorf("Start did not return same events chan, expected same one")
-	}
+	assert.NoError(t, err2)
+	assert.Equal(t, events, events2, "Start did not return same events chan, expected same one")
 
 	// Verify client sent correct start control message
 
@@ -667,11 +662,7 @@ func TestCDCClient(t *testing.T) {
 	bytes, _ := json.Marshal(v)
 	var expectStart map[string]interface{}
 	json.Unmarshal(bytes, &expectStart)
-	if diff := deep.Equal(gotStart, expectStart); diff != nil {
-		t.Logf("gotStart: %#v", gotStart)
-		t.Logf("expectStart: %s", string(bytes))
-		t.Error(diff)
-	}
+	assert.Equal(t, expectStart, gotStart)
 
 	// First, let's send the client a CDC event and make sure it sends via the
 	// events chan it returned from Start()
@@ -700,10 +691,7 @@ func TestCDCClient(t *testing.T) {
 	}
 
 	// The event we got should be the event we sent--that's the whole point!
-	if diff := deep.Equal(gotEvent, sentEvent); diff != nil {
-		t.Logf("%#v", gotStart)
-		t.Error(diff)
-	}
+	assert.Equal(t, sentEvent, gotEvent)
 
 	//
 	// Send client a ping control message (server -> client ping)

@@ -101,15 +101,13 @@ func TestClientWebsocketPingFromClient(t *testing.T) {
 		"control": "ping",
 		"srcTs":   srcTs.UnixNano(),
 	}
-	if err := clientConn.WriteJSON(ping); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.WriteJSON(ping)
+	require.NoError(t, err)
+
 	var pong map[string]interface{}
-	if err := clientConn.ReadJSON(&pong); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.ReadJSON(&pong)
+	require.NoError(t, err)
+
 	assert.Equal(t, "pong", pong["control"])
 	dstTs, ok := pong["dstTs"]
 	require.True(t, ok, "dstTs not set in ping reply, expected a UnixNano value")
@@ -144,10 +142,9 @@ func TestClientWebsocketPingToClient(t *testing.T) {
 
 	// Receive ping from Client
 	var msg map[string]interface{}
-	if err := clientConn.ReadJSON(&msg); err != nil {
-		t.Fatal(err)
-		return
-	}
+	err = clientConn.ReadJSON(&msg)
+	require.NoError(t, err)
+
 	assert.Equal(t, "ping", msg["control"])
 	srcTs, ok := msg["srcTs"]
 	require.True(t, ok, "srcTs not set in ping message, expected a UnixNano value")
@@ -158,9 +155,8 @@ func TestClientWebsocketPingToClient(t *testing.T) {
 	dstTs := time.Now()
 	msg["control"] = "pong"
 	msg["dstTs"] = dstTs.UnixNano()
-	if err := clientConn.WriteJSON(msg); err != nil {
-		t.Fatal(err)
-	}
+	err = clientConn.WriteJSON(msg)
+	require.NoError(t, err)
 
 	var gotLag etre.Latency
 	select {
@@ -200,18 +196,14 @@ func TestClientStreamer(t *testing.T) {
 	err = clientConn.ReadJSON(&ack)
 	require.NoError(t, err)
 	assert.Equal(t, "start", ack["control"])
-	if e, ok := ack["error"]; ok {
-		if e != "" {
-			t.Errorf("got an error in the ack respons of '%s', expected no error", e)
-		}
-	}
+	assert.Empty(t, ack["error"], "got an error in the ack response. Expected no error")
 
 	// Send some events via mock.Stream which should flow through the Client
 	// and to the HTTP client
 	events := []etre.CDCEvent{
-		etre.CDCEvent{Id: "abc", Ts: 2}, // these timestamps have to be greater than startTs
-		etre.CDCEvent{Id: "def", Ts: 3},
-		etre.CDCEvent{Id: "ghi", Ts: 4},
+		{Id: "abc", Ts: 2}, // these timestamps have to be greater than startTs
+		{Id: "def", Ts: 3},
+		{Id: "ghi", Ts: 4},
 	}
 	for _, event := range events {
 		eventsChan <- event // when Client called Streamer.Start(), it got this chan
@@ -220,10 +212,8 @@ func TestClientStreamer(t *testing.T) {
 	var gotEvents []etre.CDCEvent
 	for i := 0; i < len(events); i++ {
 		var recvdEvent etre.CDCEvent
-		if err := clientConn.ReadJSON(&recvdEvent); err != nil {
-			t.Fatal(err)
-			return
-		}
+		err = clientConn.ReadJSON(&recvdEvent)
+		require.NoError(t, err)
 		gotEvents = append(gotEvents, recvdEvent)
 	}
 	assert.Equal(t, events, gotEvents)
@@ -269,9 +259,8 @@ func TestClientInvalidMessageType(t *testing.T) {
 	require.NoError(t, err)
 
 	var errControl map[string]interface{}
-	if err := clientConn.ReadJSON(&errControl); err != nil {
-		t.Fatal(err)
-	}
+	err = clientConn.ReadJSON(&errControl)
+	require.NoError(t, err)
 	assert.Equal(t, "error", errControl["control"])
 }
 

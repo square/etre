@@ -5,7 +5,6 @@ package config_test
 import (
 	"testing"
 
-	"github.com/go-test/deep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -29,9 +28,7 @@ func TestDatasourceConfigDefaults(t *testing.T) {
 	}
 	c := config.DatasourceConfig{}
 	c = c.WithDefaults(d)
-	if diff := deep.Equal(c, d); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, d, c)
 
 	c = config.DatasourceConfig{
 		URL:            "c1",
@@ -52,9 +49,7 @@ func TestDatasourceConfigDefaults(t *testing.T) {
 		Mechanism:      "k",
 	}
 	c = c.WithDefaults(d)
-	if diff := deep.Equal(c, m); diff != nil {
-		t.Error(diff)
-	}
+	assert.Equal(t, m, c)
 }
 
 func TestLoadEmpty(t *testing.T) {

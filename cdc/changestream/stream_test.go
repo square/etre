@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
@@ -450,9 +451,8 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 
 	// Get that 1 backlog event, then wait for ServerStreamer to close client chan
 	// (last thing it does on shutdown)
-	if err := waitUntilClosed(streamChan); err != nil {
-		t.Fatal(err)
-	}
+	err := waitUntilClosed(streamChan)
+	require.NoError(t, err)
 
 	// Status should reflect that we're not running, were not in sync, did have the
 	// backlog buffer, and the server closed the stream
@@ -467,7 +467,7 @@ func TestStreamServerClosedStreamDuringBacklog(t *testing.T) {
 	assert.Equal(t, expectStatus, gotStatus)
 
 	// Error() should return changestream.ErrServerClosedStream
-	err := stream.Error()
+	err = stream.Error()
 	assert.Equal(t, changestream.ErrServerClosedStream, err)
 }
 
@@ -493,9 +493,8 @@ func TestStreamServerClosedStreamDuringSync(t *testing.T) {
 	close(serverChan)
 
 	// Wait for ServerStreamer to close client chan (last thing it does on shutdown)
-	if err := waitUntilClosed(streamChan); err != nil {
-		t.Fatal(err)
-	}
+	err := waitUntilClosed(streamChan)
+	require.NoError(t, err)
 
 	// Status should reflect that we were in sync and the server closed the stream.
 	// No BufferUsage becuse we didn't have a backlog.
@@ -509,6 +508,6 @@ func TestStreamServerClosedStreamDuringSync(t *testing.T) {
 	assert.Equal(t, expectStatus, gotStatus)
 
 	// changestream.ErrServerClosedStream should be reported
-	err := stream.Error()
+	err = stream.Error()
 	assert.Equal(t, changestream.ErrServerClosedStream, err)
 }
