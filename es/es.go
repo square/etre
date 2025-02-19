@@ -300,6 +300,9 @@ func Run(ctx app.Context) {
 		if err != nil {
 			printAndExit(err, ctx)
 		}
+		if len(wr.Writes) != 1 {
+			printAndExit(fmt.Errorf("Etre reports no error but reported %d inserts, expected 1 insert", len(wr.Writes)), ctx)
+		}
 		fmt.Printf("OK, inserted %s %s\n", ctx.EntityType, wr.Writes[0].EntityId)
 		return
 	}
@@ -573,7 +576,7 @@ func parsePatches(ctx app.Context) (etre.Entity, error) {
 		case 1:
 			patch[p[0]] = nil
 		case 2:
-			patch[p[0]] = p[1]
+			patch[p[0]] = strings.TrimSpace(p[1])
 		default:
 			return patch, fmt.Errorf("Invalid patch: %s: split on = yielded %d parts, expected 2", kv, len(p))
 		}

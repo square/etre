@@ -27,7 +27,7 @@ type Context struct {
 	ReturnLabels []string // query
 	Query        string   // query
 	EntityId     string   // --update and --delete
-	Patches      []string // --update
+	Patches      []string // --update and --insert
 }
 
 type EntityClientFactory interface {
