@@ -348,7 +348,7 @@ func TestResponseCompression(t *testing.T) {
 
 	// The http client strips the "Content-Encoding" header so we can't check it directly.
 	// Instead, we have to check the "Uncompressed" flag, which will be *true* if the content came back compressed and was decompressed by the http client.
-	assert.True(t, res.Uncompressed, "response was not compressed, expected it to be")
+	assert.True(t, res.Uncompressed, "The server did not send a compressed response. If it had sent a compressed response then the client would have uncompressed it and res.Uncompressed would be true.")
 
 	// Make sure content type is correct
 	assert.Equal(t, "application/json", res.Header.Get("Content-Type"))
