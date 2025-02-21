@@ -120,6 +120,7 @@ func Help() {
 		"  --env           Environment (dev, staging, production)\n"+
 		"  --help          Print help\n"+
 		"  --ifs           Character to print between label values (default: %s)\n"+
+		"  --insert        Insert one entity\n"+
 		"  --json          Print entities as JSON\n"+
 		"  --labels        Print label: before value\n"+
 		"  --old           Print old values on --update\n"+
