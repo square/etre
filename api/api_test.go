@@ -235,7 +235,7 @@ func TestClientQueryTimeout(t *testing.T) {
 }
 
 func TestContextPropagation(t *testing.T) {
-	// Make sure context values from teh request are propagated all the way down to the entity.Store context
+	// Make sure context values from the request are propagated all the way down to the entity.Store context
 	var gotCtx context.Context
 	store := mock.EntityStore{}
 	store.WithContextFunc = func(ctx context.Context) entity.Store {
