@@ -227,14 +227,13 @@ func (api *API) requestWrapper(next http.Handler) http.Handler {
 		// --------------------------------------------------------------
 		var ctx context.Context
 		var cancel context.CancelFunc
-		queryTimeout := r.Header.Get(etre.QUERY_TIMEOUT_HEADER) // explicit
-		if queryTimeout == "" {
-			ctx, cancel = context.WithTimeout(context.Background(), api.queryTimeout)
-		} else {
-			d, err := time.ParseDuration(queryTimeout)
+
+		queryTimeout := api.queryTimeout
+		if qth := r.Header.Get(etre.QUERY_TIMEOUT_HEADER); qth != "" {
+			d, err := time.ParseDuration(qth)
 			if err != nil {
 				err := etre.Error{
-					Message:    fmt.Sprintf("invalid %s header: %s: %s", etre.QUERY_TIMEOUT_HEADER, queryTimeout, err),
+					Message:    fmt.Sprintf("invalid %s header: %s: %s", etre.QUERY_TIMEOUT_HEADER, qth, err),
 					Type:       "invalid-query-timeout",
 					HTTPStatus: http.StatusBadRequest,
 				}
@@ -245,8 +244,10 @@ func (api *API) requestWrapper(next http.Handler) http.Handler {
 				}
 				return
 			}
-			ctx, cancel = context.WithTimeout(context.Background(), d)
+			queryTimeout = d
 		}
+		ctx, cancel = context.WithTimeout(r.Context(), queryTimeout)
+
 		defer cancel() // don't leak
 		t0 := time.Now()
 

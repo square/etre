@@ -3,8 +3,11 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -229,4 +232,84 @@ func TestClientQueryTimeout(t *testing.T) {
 	d = time.Now().Sub(gotDeadline).Seconds()
 	assert.True(t, set, "query timeout deadline not set, expected it to be set")
 	assert.True(t, -d >= 4.8 && -d <= 5.2, "deadline %f, expected between 4.8-5.2s (5s client)", d)
+}
+
+func TestContextPropagation(t *testing.T) {
+	// Make sure context values from the request are propagated all the way down to the entity.Store context
+	var gotCtx context.Context
+	store := mock.EntityStore{}
+	store.WithContextFunc = func(ctx context.Context) entity.Store {
+		gotCtx = ctx
+		return store
+	}
+	// We're going to test all operations, so we need to set all of these funcs
+	store.ReadEntitiesFunc = func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		return testEntitiesWithObjectIDs[0:1], nil
+	}
+	store.CreateEntitiesFunc = func(op entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		return []string{testEntityIds[0]}, nil
+	}
+	store.UpdateEntitiesFunc = func(op entity.WriteOp, q query.Query, e etre.Entity) ([]etre.Entity, error) {
+		return testEntitiesWithObjectIDs[0:1], nil
+	}
+	store.DeleteEntitiesFunc = func(op entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+		return testEntitiesWithObjectIDs[0:1], nil
+	}
+	store.DeleteLabelFunc = func(op entity.WriteOp, label string) (etre.Entity, error) {
+		return testEntitiesWithObjectIDs[0], nil
+	}
+
+	server := setup(t, defaultConfig, store)
+	defer server.ts.Close()
+
+	newEntity := etre.Entity{"host": "local"}
+	payload, err := json.Marshal(newEntity)
+	require.NoError(t, err)
+
+	multiPayload, err := json.Marshal([]etre.Entity{newEntity})
+	require.NoError(t, err)
+
+	tc := []struct {
+		Name    string
+		Method  string
+		URL     string
+		Payload []byte
+	}{
+		// mux.Handle("GET "+etre.API_ROOT+"/entities/{type}", api.requestWrapper(http.HandlerFunc(api.getEntitiesHandler)))
+		{Name: "getEntitiesHandler", Method: "GET", URL: server.url + etre.API_ROOT + "/entities/" + entityType + "?query=" + url.QueryEscape("foo=bar")},
+		//mux.Handle("POST "+etre.API_ROOT+"/entities/{type}", api.requestWrapper(http.HandlerFunc(api.postEntitiesHandler)))
+		{Name: "postEntitiesHandler", Method: "POST", URL: server.url + etre.API_ROOT + "/entities/" + entityType, Payload: multiPayload},
+		//mux.Handle("PUT "+etre.API_ROOT+"/entities/{type}", api.requestWrapper(http.HandlerFunc(api.putEntitiesHandler)))
+		{Name: "putEntitiesHandler", Method: "PUT", URL: server.url + etre.API_ROOT + "/entities/" + entityType + "?query=" + url.QueryEscape("foo=bar"), Payload: payload},
+		//mux.Handle("DELETE "+etre.API_ROOT+"/entities/{type}", api.requestWrapper(http.HandlerFunc(api.deleteEntitiesHandler)))
+		{Name: "deleteEntitiesHandler", Method: "DELETE", URL: server.url + etre.API_ROOT + "/entities/" + entityType + "?query=" + url.QueryEscape("foo=bar")},
+		//mux.Handle("POST "+etre.API_ROOT+"/entity/{type}", api.requestWrapper(http.HandlerFunc(api.postEntityHandler)))
+		{Name: "postEntityHandler", Method: "POST", URL: server.url + etre.API_ROOT + "/entity/" + entityType, Payload: payload},
+		//mux.Handle("GET "+etre.API_ROOT+"/entity/{type}/{id}", api.requestWrapper(api.id(http.HandlerFunc(api.getEntityHandler))))
+		{Name: "getEntityHandler", Method: "GET", URL: server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]},
+		//mux.Handle("PUT "+etre.API_ROOT+"/entity/{type}/{id}", api.requestWrapper(api.id(http.HandlerFunc(api.putEntityHandler))))
+		{Name: "putEntityHandler", Method: "PUT", URL: server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0], Payload: payload},
+		//mux.Handle("GET "+etre.API_ROOT+"/entity/{type}/{id}/labels", api.requestWrapper(api.id(http.HandlerFunc(api.getLabelsHandler))))
+		{Name: "getLabelsHandler", Method: "GET", URL: server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0] + "/labels"},
+		//mux.Handle("DELETE "+etre.API_ROOT+"/entity/{type}/{id}", api.requestWrapper(api.id(http.HandlerFunc(api.deleteEntityHandler))))
+		{Name: "deleteEntityHandler", Method: "DELETE", URL: server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0]},
+		//mux.Handle("DELETE "+etre.API_ROOT+"/entity/{type}/{id}/labels/{label}", api.requestWrapper(api.id(http.HandlerFunc(api.deleteLabelHandler))))
+		{Name: "deleteLabelHandler", Method: "DELETE", URL: server.url + etre.API_ROOT + "/entity/" + entityType + "/" + testEntityIds[0] + "/labels/foo"},
+	}
+
+	for _, tt := range tc {
+		t.Run(tt.Name, func(t *testing.T) {
+			gotCtx = nil
+			r := httptest.NewRequest(tt.Method, tt.URL, nil).WithContext(context.WithValue(context.Background(), "key", tt.Name))
+			r.Body = io.NopCloser(bytes.NewReader(tt.Payload))
+			r.ContentLength = int64(len(tt.Payload))
+
+			w := &httptest.ResponseRecorder{}
+			server.api.ServeHTTP(w, r)
+			require.True(t, w.Code >= 200 && w.Code < 300, "expected 2xx response code, got %d", w.Code)
+			// make sure the context pushed to the store had the right key propagated from the original request
+			require.NotNil(t, gotCtx)
+			assert.Equal(t, tt.Name, gotCtx.Value("key"))
+		})
+	}
 }
