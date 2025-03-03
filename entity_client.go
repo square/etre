@@ -4,6 +4,7 @@ package etre
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -61,6 +62,16 @@ type EntityClient interface {
 	// for server-side metrics. The trace string is a comma-separated list of key=value
 	// pairs like: app=foo,host=bar. Invalid trace values are silently ignored by the server.
 	WithTrace(string) EntityClient
+
+	// WithContext returns a new EntityClient that attaches the context to every request.
+	WithContext(ctx context.Context) EntityClient
+
+	// Context returns the EntityClient's context. To change the context, use
+	// WithContext.
+	//
+	// The returned context is always non-nil; it defaults to the
+	// background context.
+	Context() context.Context
 }
 
 // EntityClientConfig represents required and optional configuration for an EntityClient.
@@ -79,16 +90,16 @@ type EntityClientConfig struct {
 // EntityClients represents type-specific entity clients keyed on user-defined const
 // which define each entity type. For example:
 //
-//   const (
-//     ENTITY_TYPE_FOO string = "foo"
-//     ENTITY_TYPE_BAR        = "bar"
-//   )
+//	const (
+//	  ENTITY_TYPE_FOO string = "foo"
+//	  ENTITY_TYPE_BAR        = "bar"
+//	)
 //
 // Pass an etre.EntityClients to use like:
 //
-//   func CreateFoo(ec etre.EntityClients) {
-//     ec[ENTITY_TYPE_FOO].Insert(...)
-//   }
+//	func CreateFoo(ec etre.EntityClients) {
+//	  ec[ENTITY_TYPE_FOO].Insert(...)
+//	}
 //
 // Using EntityClients and const entity types is optional but helps avoid typos.
 type EntityClients map[string]EntityClient
@@ -104,6 +115,7 @@ type entityClient struct {
 	retryWait        time.Duration
 	retryLogging     bool
 	queryTimeout     time.Duration
+	ctx              context.Context
 }
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
@@ -143,6 +155,12 @@ func (c entityClient) WithSet(set Set) EntityClient {
 func (c entityClient) WithTrace(trace string) EntityClient {
 	new := c
 	new.traceHeaderValue = trace
+	return new
+}
+
+func (c entityClient) WithContext(ctx context.Context) EntityClient {
+	new := c
+	new.ctx = ctx
 	return new
 }
 
@@ -351,13 +369,13 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 	var err error
 	if payload != nil {
 		buf := bytes.NewBuffer(payload)
-		req, err = http.NewRequest(method, url, buf)
+		req, err = http.NewRequestWithContext(c.Context(), method, url, buf)
 	} else {
 		// Can't use a nil *bytes.Buffer because net/http/request.go looks at the type:
 		//   switch v := body.(type) {
 		//       case *bytes.Buffer:
 		// So even though it's nil, request.go will attempt to read it, causing a panic.
-		req, err = http.NewRequest(method, url, nil)
+		req, err = http.NewRequestWithContext(c.Context(), method, url, nil)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("http.NewRequest: %s: %s", url, err)
@@ -395,6 +413,13 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 
 func (c entityClient) url(endpoint string) string {
 	return c.addr + API_ROOT + endpoint
+}
+
+func (c entityClient) Context() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
 }
 
 func readError(resp *http.Response, bytes []byte) (bool, error) {
@@ -465,6 +490,8 @@ type MockEntityClient struct {
 	EntityTypeFunc  func() string
 	WithSetFunc     func(Set) EntityClient
 	WithTraceFunc   func(string) EntityClient
+	WithContextFunc func(ctx context.Context) EntityClient
+	ContextFunc     func() context.Context
 }
 
 func (c MockEntityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
@@ -542,4 +569,18 @@ func (c MockEntityClient) WithTrace(trace string) EntityClient {
 		return c.WithTraceFunc(trace)
 	}
 	return c
+}
+
+func (c MockEntityClient) WithContext(ctx context.Context) EntityClient {
+	if c.WithContextFunc != nil {
+		return c.WithContextFunc(ctx)
+	}
+	return c
+}
+
+func (c MockEntityClient) Context() context.Context {
+	if c.ContextFunc != nil {
+		return c.ContextFunc()
+	}
+	return context.Background()
 }
