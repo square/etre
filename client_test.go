@@ -3,8 +3,9 @@
 package etre_test
 
 import (
+	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,7 +35,10 @@ var (
 	respError      *etre.Error // if respData is nil
 	respStatusCode int
 )
-var httpClient = &http.Client{}
+var httpRT = &rt{}
+var httpClient = &http.Client{
+	Transport: httpRT,
+}
 
 func init() {
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +48,7 @@ func init() {
 
 		if r.Method == "POST" || r.Method == "PUT" {
 			var err error
-			gotBody, err = ioutil.ReadAll(r.Body)
+			gotBody, err = io.ReadAll(r.Body)
 			if err != nil {
 				panic(err.Error())
 			}
@@ -146,8 +150,9 @@ func TestQueryOK(t *testing.T) {
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
 	// Normal query that returns status code 200 and respData
+	ctx := testContext()
 	query := "x=y"
-	got, err := ec.Query(query, etre.QueryFilter{})
+	got, err := ec.WithContext(ctx).Query(query, etre.QueryFilter{})
 	require.NoError(t, err)
 
 	// Verify call and response
@@ -155,6 +160,7 @@ func TestQueryOK(t *testing.T) {
 	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
 	assert.Equal(t, "query="+query, gotQuery)
 	assert.Equal(t, got, respData)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 func TestQueryNoResults(t *testing.T) {
@@ -207,6 +213,82 @@ func TestQueryUnhandledError(t *testing.T) {
 }
 
 // //////////////////////////////////////////////////////////////////////////
+// Get
+// //////////////////////////////////////////////////////////////////////////
+func TestGetOK(t *testing.T) {
+	setup(t)
+
+	// Set global vars used by httptest.Server
+	respData = etre.Entity{
+		"_id":      "abc",
+		"hostname": "localhost",
+	}
+
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+
+	// Normal get that returns status code 200 and respData
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).Get("abc")
+	require.NoError(t, err)
+
+	// Verify call and response
+	assert.Equal(t, "GET", gotMethod)
+	assert.Equal(t, etre.API_ROOT+"/entity/node/abc", gotPath)
+	assert.Equal(t, got, respData)
+	assert.Equal(t, ctx, httpRT.gotCtx)
+}
+
+func TestGetHandledError(t *testing.T) {
+	// Test that client returns error on API error and no entity
+	setup(t)
+
+	// Set global vars used by httptest.Server
+	respStatusCode = http.StatusInternalServerError
+	respError = &etre.Error{
+		Type:    "fake_error",
+		Message: "this is a fake error",
+	}
+
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+	got, err := ec.Get("abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), respError.Type)
+	assert.Nil(t, got)
+}
+
+func TestGetUnhandledError(t *testing.T) {
+	// Like TestGetHandledError above, but simulating a more severe error,
+	// like a panic, that makes the API _not_ return an etre.Error. The client
+	// should handle this and still return an error.
+	setup(t)
+
+	// Set global vars used by httptest.Server
+	respStatusCode = http.StatusInternalServerError
+
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+	got, err := ec.Get("abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no response")
+	assert.Nil(t, got)
+}
+
+func TestGetNotFound(t *testing.T) {
+	// Like TestGetHandledError above, but simulating a more severe error,
+	// like a panic, that makes the API _not_ return an etre.Error. The client
+	// should handle this and still return an error.
+	setup(t)
+
+	// Set global vars used by httptest.Server
+	respStatusCode = http.StatusNotFound
+
+	ec := etre.NewEntityClient("node", ts.URL, httpClient)
+	got, err := ec.Get("abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	assert.Nil(t, got)
+}
+
+// //////////////////////////////////////////////////////////////////////////
 // Insert
 // //////////////////////////////////////////////////////////////////////////
 
@@ -233,7 +315,8 @@ func TestInsertOK(t *testing.T) {
 			"foo": "bar",
 		},
 	}
-	got, err := ec.Insert(entities)
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).Insert(entities)
 	require.NoError(t, err)
 
 	// Verify call and response
@@ -241,6 +324,7 @@ func TestInsertOK(t *testing.T) {
 	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
 	assert.Empty(t, gotQuery)
 	assert.Equal(t, respData, got)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 func TestInsertAPIError(t *testing.T) {
@@ -323,7 +407,8 @@ func TestUpdateOK(t *testing.T) {
 	entity := etre.Entity{
 		"foo": "bar", // patch foo:foo -> for:bar
 	}
-	got, err := ec.Update("foo=bar", entity)
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).Update("foo=bar", entity)
 	require.NoError(t, err)
 
 	// Verify call and response
@@ -331,6 +416,7 @@ func TestUpdateOK(t *testing.T) {
 	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
 	assert.Equal(t, "query=foo=bar", gotQuery)
 	assert.Equal(t, respData, got)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 func TestUpdateAPIError(t *testing.T) {
@@ -429,7 +515,8 @@ func TestDeleteOK(t *testing.T) {
 
 	// Normal delete that returns status code 200 and a write result
 	query := "foo=bar"
-	got, err := ec.Delete(query)
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).Delete(query)
 	require.NoError(t, err)
 
 	// Verify call and response
@@ -437,6 +524,7 @@ func TestDeleteOK(t *testing.T) {
 	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
 	assert.Equal(t, "query="+query, gotQuery)
 	assert.Equal(t, respData, got)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 func TestDeleteWithSet(t *testing.T) {
@@ -475,7 +563,6 @@ func TestDeleteWithSet(t *testing.T) {
 	assert.Equal(t, etre.API_ROOT+"/entities/node", gotPath)
 	assert.Equal(t, "query="+query+"&setId=setid&setOp=setop&setSize=3", gotQuery)
 	assert.Equal(t, respData, got)
-
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -500,13 +587,15 @@ func TestDeleteOneOK(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
-	got, err := ec.DeleteOne("abc")
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).DeleteOne("abc")
 	require.NoError(t, err)
 
 	assert.Equal(t, "DELETE", gotMethod)
 	assert.Equal(t, etre.API_ROOT+"/entity/node/abc", gotPath)
 	assert.Empty(t, gotQuery)
 	assert.Equal(t, respData, got)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 func TestDeleteOneWithSet(t *testing.T) {
@@ -554,12 +643,14 @@ func TestLabelsOK(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
-	got, err := ec.Labels("abc")
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).Labels("abc")
 	require.NoError(t, err)
 	assert.Equal(t, "GET", gotMethod)
 	assert.Equal(t, etre.API_ROOT+"/entity/node/abc/labels", gotPath)
 	assert.Empty(t, gotQuery)
 	assert.Equal(t, respData, got)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 func TestDeleteLabelOK(t *testing.T) {
@@ -579,12 +670,14 @@ func TestDeleteLabelOK(t *testing.T) {
 
 	ec := etre.NewEntityClient("node", ts.URL, httpClient)
 
-	got, err := ec.DeleteLabel("abc", "foo")
+	ctx := testContext()
+	got, err := ec.WithContext(ctx).DeleteLabel("abc", "foo")
 	require.NoError(t, err)
 	assert.Equal(t, "DELETE", gotMethod)
 	assert.Equal(t, etre.API_ROOT+"/entity/node/abc/labels/foo", gotPath)
 	assert.Empty(t, gotQuery)
 	assert.Equal(t, respData, got)
+	assert.Equal(t, ctx, httpRT.gotCtx)
 }
 
 // //////////////////////////////////////////////////////////////////////////
@@ -770,4 +863,32 @@ func TestCDCClient(t *testing.T) {
 	// The client should save the error ^ and return it
 	gotError := ec.Error().Error()
 	assert.Contains(t, gotError, "fake error")
+}
+
+func TestWithContext(t *testing.T) {
+	ctx1 := context.Background()
+	ctx2 := context.WithValue(ctx1, "key", "value")
+
+	// client w/o context should return context.Background()
+	client1 := etre.NewEntityClient("node", ts.URL, httpClient)
+	require.NotNil(t, client1.Context())
+	assert.Equal(t, ctx1, client1.Context())
+
+	// set the context. should not change client1's context
+	client2 := client1.WithContext(ctx2)
+	assert.Equal(t, ctx2, client2.Context())
+	assert.Equal(t, ctx1, client1.Context())
+}
+
+func testContext() context.Context {
+	return context.WithValue(context.Background(), "key", "test-context-"+time.Now().String())
+}
+
+type rt struct {
+	gotCtx context.Context
+}
+
+func (t *rt) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.gotCtx = r.Context()
+	return http.DefaultTransport.RoundTrip(r)
 }
