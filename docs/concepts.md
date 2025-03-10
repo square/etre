@@ -204,7 +204,8 @@ Internally, every entity is stored like:
     "_id": "b93aksdfjz09",
     "_type": "host",
     "_rev": 1,
-    <key-value labels>
+    "key1": "val1",
+    "keyN": "valN"
 }
 ```
 
@@ -217,7 +218,7 @@ The latter two fields are necessary for the change data capture (CDC) stream.
 Entities are stored as JSON objects on the back end (in the data store), but they are also represented as key-value CSV _text_ (strings) by the CLI:
 
 ```
-_id:b93aksdfjz09,_type:host,_rev:1,<key-value labels>
+_id:b93aksdfjz09,_type:host,_rev:1,key1:val1,keyN:valN
 ```
 
 The CLI defaults to key-value CSV text because it's intended to be processed with Bash and command-line tools like `cut`, `sed`, and `awk`.
