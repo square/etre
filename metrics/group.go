@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gm "github.com/daniel-nichter/go-metrics"
+
 	"github.com/square/etre"
 )
 
@@ -419,17 +420,7 @@ func (m *groupEntityMetrics) Inc(mn byte, n int64) {
 }
 
 func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
-	m.Lock()
-	lm := m.em.label[label]
-	if lm == nil {
-		lm = &labelMetrics{
-			Read:   gm.NewCounter(),
-			Update: gm.NewCounter(),
-			Delete: gm.NewCounter(),
-		}
-		m.em.label[label] = lm
-	}
-	m.Unlock()
+	lm := m.getLabelMetrics(label)
 	switch mn {
 	case LabelRead:
 		lm.Read.Add(1)
@@ -441,6 +432,21 @@ func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
 		errMsg := fmt.Sprintf("non-counter metric number passed to IncLabel: %d", mn)
 		panic(errMsg)
 	}
+}
+
+func (m *groupEntityMetrics) getLabelMetrics(label string) *labelMetrics {
+	m.Lock()
+	defer m.Unlock()
+	lm := m.em.label[label]
+	if lm == nil {
+		lm = &labelMetrics{
+			Read:   gm.NewCounter(),
+			Update: gm.NewCounter(),
+			Delete: gm.NewCounter(),
+		}
+		m.em.label[label] = lm
+	}
+	return lm
 }
 
 func (m *groupEntityMetrics) Val(mn byte, n int64) {
@@ -466,6 +472,7 @@ func (m *groupEntityMetrics) Val(mn byte, n int64) {
 
 func (m *groupEntityMetrics) Trace(trace map[string]string) {
 	m.Lock()
+	defer m.Unlock()
 	for traceMetric, traceValue := range trace {
 		traceValues, ok := m.em.trace[traceMetric]
 		if !ok {
@@ -479,5 +486,4 @@ func (m *groupEntityMetrics) Trace(trace map[string]string) {
 		}
 		cnt.Add(1)
 	}
-	m.Unlock()
 }
