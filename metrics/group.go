@@ -437,8 +437,8 @@ func (m *groupEntityMetrics) IncLabel(mn byte, label string) {
 func (m *groupEntityMetrics) getLabelMetrics(label string) *labelMetrics {
 	m.Lock()
 	defer m.Unlock()
-	lm := m.em.label[label]
-	if lm == nil {
+	lm, ok := m.em.label[label]
+	if !ok {
 		lm = &labelMetrics{
 			Read:   gm.NewCounter(),
 			Update: gm.NewCounter(),

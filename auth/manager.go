@@ -85,34 +85,21 @@ func (m Manager) Authorize(caller Caller, a Action) error {
 	// Check each caller role against configured role ACLs
 	allowed := false
 	opName := ""
-roles:
-	for _, role := range caller.Roles {
-		acl := m.acl[role]
-		// Allow if admin role
-		if acl.Admin {
-			return nil
-		}
 
-		// Allow if role allows the action
-		var allowedEntityTypes []string
+	// Check all roles until we find one that allows access
+	for i := 0; i < len(caller.Roles) && !allowed; i++ {
+		acl := m.acl[caller.Roles[i]]
+
 		switch a.Op {
 		case OP_READ:
-			allowedEntityTypes = acl.Read
 			opName = "reading"
+			allowed = acl.Admin || inList(a.EntityType, acl.Read)
 		case OP_WRITE:
-			allowedEntityTypes = acl.Write
 			opName = "writing"
+			allowed = acl.Admin || inList(a.EntityType, acl.Write)
 		case OP_CDC:
 			opName = "CDC"
-			if acl.CDC {
-				allowed = true
-				break roles
-			}
-			continue roles // skip the inList check for CDC
-		}
-		if inList(a.EntityType, allowedEntityTypes) {
-			allowed = true
-			break
+			allowed = acl.Admin || acl.CDC
 		}
 	}
 	if !allowed {
