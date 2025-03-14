@@ -96,15 +96,19 @@ func setup(t *testing.T, cfg config.Config, store mock.EntityStore) *server {
 	acls, err := srv.MapConfigACLRoles(cfg.Security.ACL)
 	require.NoError(t, err, "invalid Config.ACL: %s", err)
 
+	ms := metrics.NewMemoryStore()
+	mf := metrics.GroupFactory{Store: ms}
+	sm := metrics.NewSystemMetrics()
+
 	appCtx := app.Context{
 		Config:          server.cfg,
 		EntityStore:     server.store,
 		EntityValidator: validate,
 		Auth:            auth.NewManager(acls, server.auth),
-		MetricsStore:    mock.MetricsStore{},
-		MetricsFactory:  mock.MetricsFactory{MetricRecorder: server.metricsrec},
+		MetricsStore:    ms,
+		MetricsFactory:  mock.NewMetricsFactory(mf, server.metricsrec),
 		StreamerFactory: server.streamerFactory,
-		SystemMetrics:   server.sysmetrics,
+		SystemMetrics:   mock.NewSystemMetrics(sm, server.sysmetrics),
 	}
 	server.api = api.NewAPI(appCtx)
 	server.ts = httptest.NewServer(server.api)
