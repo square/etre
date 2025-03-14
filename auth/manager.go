@@ -85,6 +85,7 @@ func (m Manager) Authorize(caller Caller, a Action) error {
 	// Check each caller role against configured role ACLs
 	allowed := false
 	opName := ""
+roles:
 	for _, role := range caller.Roles {
 		acl := m.acl[role]
 		// Allow if admin role
@@ -101,6 +102,13 @@ func (m Manager) Authorize(caller Caller, a Action) error {
 		case OP_WRITE:
 			allowedEntityTypes = acl.Write
 			opName = "writing"
+		case OP_CDC:
+			opName = "CDC"
+			if acl.CDC {
+				allowed = true
+				break roles
+			}
+			continue roles // skip the inList check for CDC
 		}
 		if inList(a.EntityType, allowedEntityTypes) {
 			allowed = true

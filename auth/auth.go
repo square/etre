@@ -27,6 +27,9 @@ type ACL struct {
 	// Write entity types granted to the role. Does not apply to admin roles.
 	Write []string
 
+	// Role grants access to CDC events for all entity types.
+	CDC bool
+
 	// Trace keys required to be set. Applies to admin roles.
 	TraceKeysRequired []string
 }
@@ -50,6 +53,7 @@ type Action struct {
 const (
 	OP_READ  = "r"
 	OP_WRITE = "w"
+	OP_CDC   = "c"
 )
 
 // Plugin is the auth plugin. Implement this interface to enable custom auth.

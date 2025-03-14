@@ -48,6 +48,7 @@ func TestManager(t *testing.T) {
 			Role:  "bar",
 			Read:  []string{"bar", "foo"},
 			Write: []string{"bar"},
+			CDC:   true,
 		},
 		{
 			Role:              "foo",
@@ -141,6 +142,23 @@ func TestManager(t *testing.T) {
 
 	err = man.Authorize(caller, auth.Action{EntityType: "any-entity-type", Op: auth.OP_WRITE})
 	require.NoError(t, err)
+
+	// CDC authorization
+	// ---------------------------------------------------------------------------
+
+	// finch and bar have CDC access
+	caller.Roles = []string{"finch"}
+	err = man.Authorize(caller, auth.Action{Op: auth.OP_CDC})
+	require.NoError(t, err)
+
+	caller.Roles = []string{"bar"}
+	err = man.Authorize(caller, auth.Action{Op: auth.OP_CDC})
+	require.NoError(t, err)
+
+	// foo does not have CDC access
+	caller.Roles = []string{"foo"}
+	err = man.Authorize(caller, auth.Action{Op: auth.OP_CDC})
+	require.Error(t, err)
 }
 
 func TestManagerNoACLs(t *testing.T) {
