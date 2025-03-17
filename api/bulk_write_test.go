@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
+	"github.com/square/etre/auth"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -60,7 +61,7 @@ func TestPostEntitiesOK(t *testing.T) {
 	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
-		Caller:     "test", // from mock.AuthPlugin
+		Caller:     "test", // from mock.AuthRecorder
 		EntityType: entityType,
 	}
 	assert.Equal(t, expectWO, gotWO)
@@ -78,6 +79,13 @@ func TestPostEntitiesOK(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_WRITE, EntityType: entityType},
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 }
 
 func TestPostEntitiesErrors(t *testing.T) {
@@ -278,7 +286,7 @@ func TestPutEntitiesOK(t *testing.T) {
 	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
-		Caller:     "test", // from mock.AuthPlugin
+		Caller:     "test", // from mock.AuthRecorder
 		EntityType: entityType,
 	}
 	assert.Equal(t, expectWO, gotWO)
@@ -302,6 +310,13 @@ func TestPutEntitiesOK(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_WRITE, EntityType: entityType},
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 }
 
 func TestPutEntitiesErrors(t *testing.T) {
@@ -513,7 +528,7 @@ func TestDeleteEntitiesOK(t *testing.T) {
 	assert.Equal(t, expectWR, gotWR)
 
 	expectWO := entity.WriteOp{
-		Caller:     "test", // from mock.AuthPlugin
+		Caller:     "test", // from mock.AuthRecorder
 		EntityType: entityType,
 	}
 	assert.Equal(t, expectWO, gotWO)
@@ -534,6 +549,13 @@ func TestDeleteEntitiesOK(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_WRITE, EntityType: entityType},
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 }
 
 func TestDeleteEntitiesErrors(t *testing.T) {

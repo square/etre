@@ -48,6 +48,7 @@ func TestManager(t *testing.T) {
 			Role:  "bar",
 			Read:  []string{"bar", "foo"},
 			Write: []string{"bar"},
+			CDC:   true,
 		},
 		{
 			Role:              "foo",
@@ -57,7 +58,7 @@ func TestManager(t *testing.T) {
 	}
 	var caller auth.Caller
 	var authErr, authorErr error
-	plugin := mock.AuthPlugin{
+	plugin := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, authErr
 		},
@@ -141,6 +142,23 @@ func TestManager(t *testing.T) {
 
 	err = man.Authorize(caller, auth.Action{EntityType: "any-entity-type", Op: auth.OP_WRITE})
 	require.NoError(t, err)
+
+	// CDC authorization
+	// ---------------------------------------------------------------------------
+
+	// finch and bar have CDC access
+	caller.Roles = []string{"finch"}
+	err = man.Authorize(caller, auth.Action{Op: auth.OP_CDC})
+	require.NoError(t, err)
+
+	caller.Roles = []string{"bar"}
+	err = man.Authorize(caller, auth.Action{Op: auth.OP_CDC})
+	require.NoError(t, err)
+
+	// foo does not have CDC access
+	caller.Roles = []string{"foo"}
+	err = man.Authorize(caller, auth.Action{Op: auth.OP_CDC})
+	require.Error(t, err)
 }
 
 func TestManagerNoACLs(t *testing.T) {
@@ -149,7 +167,7 @@ func TestManagerNoACLs(t *testing.T) {
 	// trace keys and Authorize just calls the plugin Authorize.
 	var caller auth.Caller
 	var authorizeCalled bool
-	plugin := mock.AuthPlugin{
+	plugin := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, nil
 		},
@@ -181,7 +199,7 @@ func TestManagerAuthenticateError(t *testing.T) {
 	}
 	var caller auth.Caller
 	var authErr error
-	plugin := mock.AuthPlugin{
+	plugin := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, authErr
 		},
@@ -237,7 +255,7 @@ func TestTraceHeader(t *testing.T) {
 		Name:  "foo",
 		Trace: map[string]string{"app": "do-not-change"},
 	}
-	p2 := mock.AuthPlugin{
+	p2 := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, nil
 		},

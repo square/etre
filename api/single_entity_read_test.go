@@ -13,6 +13,7 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
+	"github.com/square/etre/auth"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/metrics"
 	"github.com/square/etre/query"
@@ -66,6 +67,13 @@ func TestGetEntityBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_READ, EntityType: entityType},
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 }
 
 func TestGetEntityReturnLabels(t *testing.T) {
@@ -105,6 +113,13 @@ func TestGetEntityReturnLabels(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_READ, EntityType: entityType},
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 }
 
 func TestGetEntityNotFound(t *testing.T) {
@@ -272,4 +287,11 @@ func TestGetEntityLabels(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_READ, EntityType: entityType},
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 }

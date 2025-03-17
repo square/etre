@@ -129,7 +129,7 @@ func NewAPI(appCtx app.Context) *API {
 	// /////////////////////////////////////////////////////////////////////
 	// Changes
 	// /////////////////////////////////////////////////////////////////////
-	mux.Handle("GET "+etre.API_ROOT+"/changes", api.requestWrapper(http.HandlerFunc(api.changesHandler)))
+	mux.Handle("GET "+etre.API_ROOT+"/changes", api.cdcWrapper(http.HandlerFunc(api.changesHandler)))
 
 	// /////////////////////////////////////////////////////////////////////
 	// OpenAPI docs
@@ -176,16 +176,32 @@ func (api *API) Stop() error {
 	return api.srv.Shutdown(context.TODO())
 }
 
+// requestWrapper adds auth and metrics middleware to the endpoint handler for
+// entity read/write endpoints. CDC should use cdcWrapper instead.
 func (api *API) requestWrapper(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		write := isWriteRequest(r.Method)
-		cdc := strings.HasSuffix(r.URL.String(), "/changes")
 
 		// Etre request context passed to endpoint handler
 		rc := &req{
 			entityType: r.PathValue("type"),
 			write:      write,
+		}
+
+		// requests passed to requestWrapper should always have an entity type
+		if rc.entityType == "" {
+			etreErr := etre.Error{
+				Message:    "missing entity type in request path: " + r.URL.String(),
+				Type:       "bad-request",
+				HTTPStatus: http.StatusBadRequest,
+			}
+			if write {
+				api.WriteResult(rc, w, nil, etreErr)
+			} else {
+				api.readError(rc, w, etreErr)
+			}
+			return
 		}
 
 		defer func() {
@@ -284,22 +300,20 @@ func (api *API) requestWrapper(next http.Handler) http.Handler {
 		gm := api.metricsFactory.Make(caller.MetricGroups)
 		rc.gm = gm
 
-		if rc.entityType != "" {
-			if err := api.validate.EntityType(rc.entityType); err != nil {
-				log.Printf("Invalid entity type: '%s': caller=%+v request=%+v", rc.entityType, caller, r)
-				gm.Inc(metrics.InvalidEntityType, 1)
-				if write {
-					api.WriteResult(rc, w, nil, err)
-				} else {
-					api.readError(rc, w, err)
-				}
-				return
+		if err := api.validate.EntityType(rc.entityType); err != nil {
+			log.Printf("Invalid entity type: '%s': caller=%+v request=%+v", rc.entityType, caller, r)
+			gm.Inc(metrics.InvalidEntityType, 1)
+			if write {
+				api.WriteResult(rc, w, nil, err)
+			} else {
+				api.readError(rc, w, err)
 			}
-
-			// Bind group metrics to entity type
-			gm.EntityType(rc.entityType)
-			gm.Inc(metrics.Query, 1) // all queries (QPS)
+			return
 		}
+
+		// Bind group metrics to entity type
+		gm.EntityType(rc.entityType)
+		gm.Inc(metrics.Query, 1) // all queries (QPS)
 
 		// auth.Manager extracts trace values from X-Etre-Trace header
 		if caller.Trace != nil {
@@ -309,13 +323,6 @@ func (api *API) requestWrapper(next http.Handler) http.Handler {
 		// --------------------------------------------------------------
 		// Authorize
 		// --------------------------------------------------------------
-
-		// Authorize any endpoint with an entity type or CDC; do not authorize
-		// other endpoints like metrics, status, and docs
-		authorize := rc.entityType != "" || cdc
-		if !authorize {
-			goto handler
-		}
 
 		rc.inst.Start("authorize")
 		if write {
@@ -369,16 +376,11 @@ func (api *API) requestWrapper(next http.Handler) http.Handler {
 		// Endpoint
 		// //////////////////////////////////////////////////////////////////////
 
-	handler:
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, reqKey, rc)))
 
 		// //////////////////////////////////////////////////////////////////////
 		// After
 		// //////////////////////////////////////////////////////////////////////
-
-		if cdc { // no query time for CDC cilents; they're not queries
-			return
-		}
 
 		// Record query latency (response time) in milliseconds
 		queryLatency := time.Now().Sub(t0)
@@ -396,6 +398,93 @@ func (api *API) requestWrapper(next http.Handler) http.Handler {
 		if rc.inst != app.NopInstrument && queryLatency > api.queryProfReportThreshold {
 			log.Printf("Query profile: %s %s %s %+v (caller=%+v)", r.Method, r.URL.String(), queryLatency, rc.inst.Report(), caller)
 		}
+	})
+}
+
+// cdcWrapper auth and metrics middleware for the changes endpoint. This endpoint is
+// unique because it does not have an entity type and is a long-lived connection that
+// should not use query timeout and long running query instrumentation.
+func (api *API) cdcWrapper(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Etre request context passed to endpoint handler
+		rc := &req{}
+
+		defer func() {
+			if r := recover(); r != nil {
+				err, ok := r.(error)
+				if !ok {
+					err = fmt.Errorf("%v", r)
+				}
+				b := make([]byte, 4096)
+				n := runtime.Stack(b, false)
+				etreErr := etre.Error{
+					Message:    fmt.Sprintf("PANIC: %s\n%s", err, string(b[0:n])),
+					Type:       "panic",
+					HTTPStatus: http.StatusInternalServerError,
+				}
+				log.Printf("PANIC: %s\n%s\n\n", err, string(b[0:n]))
+				api.readError(rc, w, etreErr)
+			}
+		}()
+
+		api.systemMetrics.Inc(metrics.Load, 1)
+		defer api.systemMetrics.Inc(metrics.Load, -1)
+
+		api.systemMetrics.Inc(metrics.Query, 1)
+
+		// --------------------------------------------------------------
+		// Authenticate
+		// --------------------------------------------------------------
+		caller, err := api.auth.Authenticate(r)
+		if err != nil {
+			log.Printf("AUTH: failed to authenticate: %s (caller: %+v request: %+v)", err, caller, r)
+			api.systemMetrics.Inc(metrics.AuthenticationFailed, 1)
+			authErr := auth.Error{
+				Err:        err,
+				Type:       "access-denied",
+				HTTPStatus: http.StatusUnauthorized,
+			}
+			api.readError(rc, w, authErr)
+			return
+		}
+		rc.caller = caller
+
+		// --------------------------------------------------------------
+		// Metrics
+		// --------------------------------------------------------------
+
+		// This makes a metrics.Group which is a 1-to-many proxy for every
+		// metric group in caller.MetricGroups. E.g. if the groups are "ods"
+		// and "finch", then every metric is recorded in both groups.
+		//
+		// Note that CDC does not have an entity type, so entity type specific
+		// metrics should not be recorded.
+		gm := api.metricsFactory.Make(caller.MetricGroups)
+		rc.gm = gm
+
+		// --------------------------------------------------------------
+		// Authorize
+		// --------------------------------------------------------------
+
+		if err := api.auth.Authorize(caller, auth.Action{Op: auth.OP_CDC}); err != nil {
+			log.Printf("AUTH: not authorized: %s (caller: %+v request: %+v)", err, caller, r)
+			gm.Inc(metrics.AuthorizationFailed, 1)
+			authErr := auth.Error{
+				Err:        err,
+				Type:       "not-authorized",
+				HTTPStatus: http.StatusForbidden,
+			}
+			api.readError(rc, w, authErr)
+			return
+		}
+
+		// //////////////////////////////////////////////////////////////////////
+		// Endpoint
+		// //////////////////////////////////////////////////////////////////////
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), reqKey, rc)))
 	})
 }
 
