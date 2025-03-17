@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/square/etre"
+	"github.com/square/etre/auth"
 	"github.com/square/etre/cdc/changestream"
 	"github.com/square/etre/test/mock"
 )
@@ -84,6 +85,13 @@ func TestChanges(t *testing.T) {
 
 	assert.Equal(t, mock.CDCEvents[0:1], events)
 	assert.Equal(t, int64(0), gotSinceTs)
+
+	// -- Auth -----------------------------------------------------------
+	require.Len(t, server.auth.AuthenticateArgs, 1)
+	assert.Equal(t, []mock.AuthorizeArgs{{
+		Action: auth.Action{Op: auth.OP_CDC, EntityType: ""}, // no entity type for CDC
+		Caller: auth.Caller{Name: "test", MetricGroups: []string{"test"}},
+	}}, server.auth.AuthorizeArgs)
 
 	/*
 		@todo Fix data race

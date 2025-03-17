@@ -44,7 +44,7 @@ type server struct {
 	api             *api.API
 	ts              *httptest.Server
 	url             string
-	auth            *mock.AuthPlugin
+	auth            *mock.AuthRecorder
 	cdcStore        *mock.CDCStore
 	streamerFactory *mock.StreamerFactory
 	metricsrec      *mock.MetricRecorder
@@ -86,7 +86,7 @@ func setup(t *testing.T, cfg config.Config, store mock.EntityStore) *server {
 	server := &server{
 		store:           store,
 		cfg:             cfg,
-		auth:            &mock.AuthPlugin{},
+		auth:            &mock.AuthRecorder{},
 		cdcStore:        &mock.CDCStore{},
 		streamerFactory: &mock.StreamerFactory{},
 		metricsrec:      mock.NewMetricsRecorder(),

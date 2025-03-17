@@ -468,7 +468,7 @@ func (api *API) cdcWrapper(next http.Handler) http.Handler {
 		// Authorize
 		// --------------------------------------------------------------
 
-		if err := api.auth.Authorize(caller, auth.Action{Op: auth.OP_READ}); err != nil {
+		if err := api.auth.Authorize(caller, auth.Action{Op: auth.OP_CDC}); err != nil {
 			log.Printf("AUTH: not authorized: %s (caller: %+v request: %+v)", err, caller, r)
 			gm.Inc(metrics.AuthorizationFailed, 1)
 			authErr := auth.Error{

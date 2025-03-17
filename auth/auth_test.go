@@ -58,7 +58,7 @@ func TestManager(t *testing.T) {
 	}
 	var caller auth.Caller
 	var authErr, authorErr error
-	plugin := mock.AuthPlugin{
+	plugin := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, authErr
 		},
@@ -167,7 +167,7 @@ func TestManagerNoACLs(t *testing.T) {
 	// trace keys and Authorize just calls the plugin Authorize.
 	var caller auth.Caller
 	var authorizeCalled bool
-	plugin := mock.AuthPlugin{
+	plugin := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, nil
 		},
@@ -199,7 +199,7 @@ func TestManagerAuthenticateError(t *testing.T) {
 	}
 	var caller auth.Caller
 	var authErr error
-	plugin := mock.AuthPlugin{
+	plugin := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, authErr
 		},
@@ -255,7 +255,7 @@ func TestTraceHeader(t *testing.T) {
 		Name:  "foo",
 		Trace: map[string]string{"app": "do-not-change"},
 	}
-	p2 := mock.AuthPlugin{
+	p2 := &mock.AuthRecorder{
 		AuthenticateFunc: func(req *http.Request) (auth.Caller, error) {
 			return caller, nil
 		},
