@@ -80,3 +80,27 @@ func TestLoadTest002(t *testing.T) {
 	expect.CDC.Disabled = true // testing this
 	assert.Equal(t, expect, got)
 }
+
+func TestLoadTestACL(t *testing.T) {
+	got, err := config.Load("../test/config/testACL.yaml", config.Default())
+	require.NoError(t, err)
+
+	expect := config.Default()
+	expect.Security.ACL = []config.ACL{
+		{
+			Role:  "dba",
+			Admin: true,
+		},
+		{
+			Role: "eng",
+			Read: []string{"node", "host"},
+		},
+		{
+			Role:  "loader",
+			CDC:   true,
+			Read:  []string{"node", "host", "dns"},
+			Write: []string{"node", "host", "dns"},
+		},
+	}
+	assert.Equal(t, expect, got)
+}

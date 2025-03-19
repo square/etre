@@ -246,6 +246,7 @@ func MapConfigACLRoles(aclRoles []config.ACL) ([]auth.ACL, error) {
 			Admin:             acl.Admin,
 			Read:              acl.Read,
 			Write:             acl.Write,
+			CDC:               acl.CDC,
 			TraceKeysRequired: acl.TraceKeysRequired,
 		}
 	}

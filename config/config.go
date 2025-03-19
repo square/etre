@@ -237,6 +237,7 @@ type ACL struct {
 	Admin             bool     `yaml:"admin"`
 	Read              []string `yaml:"read"`
 	Write             []string `yaml:"write"`
+	CDC               bool     `yaml:"cdc"`
 	TraceKeysRequired []string `yaml:"trace_keys_required"`
 }
 
