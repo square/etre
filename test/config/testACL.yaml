@@ -1,0 +1,18 @@
+security:
+  acl:
+    - role: dba
+      admin: true
+    - role: eng
+      read:
+        - node
+        - host
+    - role: loader
+      cdc: true
+      read:
+        - node
+        - host
+        - dns
+      write:
+        - node
+        - host
+        - dns
