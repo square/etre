@@ -3,15 +3,14 @@
 package db
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/square/etre/config"
 )
@@ -68,24 +67,7 @@ func (d Default) Connect(cfg config.DatasourceConfig) (*mongo.Client, error) {
 		log.Printf("WARNING: No database username for %s specified in config. Authentication will fail unless MongoDB access control is disabled.", cfg.URL)
 	}
 
-	client, err := mongo.NewClient(opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// mongo.Connect() does not actually connect:
-	//   The Client.Connect method starts background goroutines to monitor the
-	//   state of the deployment and does not do any I/O in the main goroutine to
-	//   prevent the main goroutine from blocking. Therefore, it will not error if
-	//   the deployment is down.
-	// https://pkg.go.dev/go.mongodb.org/mongo-driver/mongo?tab=doc#Connect
-	// The caller must call client.Ping() to actually connect. Consequently,
-	// we don't need a context here. As long as there's not a bug in the mongo
-	// driver, this won't block.
-	if err := client.Connect(context.Background()); err != nil {
-		return nil, err
-	}
-	return client, nil
+	return mongo.Connect(opts)
 }
 
 func loadTLS(cfg config.DatasourceConfig) (*tls.Config, error) {
@@ -95,7 +77,7 @@ func loadTLS(cfg config.DatasourceConfig) (*tls.Config, error) {
 
 		// Root CA
 		if cfg.TLSCA != "" {
-			caCert, err := ioutil.ReadFile(cfg.TLSCA)
+			caCert, err := os.ReadFile(cfg.TLSCA)
 			if err != nil {
 				return nil, err
 			}

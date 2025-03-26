@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"

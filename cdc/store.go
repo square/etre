@@ -11,9 +11,9 @@ import (
 	"sort"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/square/etre"
 )
@@ -107,8 +107,9 @@ func (s *store) Read(f Filter) ([]etre.CDCEvent, error) {
 	// etre.CDC to match so, below, cursor.All() doesn't have to realloc the
 	// slice. For small fetches, this is overkill, but it makes large fetchs
 	// (>100k events) very quick and efficient.
-	opts := options.Count().SetMaxTime(5 * time.Second)
-	count, err := s.coll.CountDocuments(context.TODO(), q, opts)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	count, err := s.coll.CountDocuments(ctx, q, options.Count())
 	if err != nil {
 		return nil, err
 	}

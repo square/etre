@@ -18,7 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/swaggo/http-swagger"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/square/etre"
 	"github.com/square/etre/app"
@@ -494,13 +494,13 @@ func (api *API) id(next http.Handler) http.Handler {
 		rc := ctx.Value(reqKey).(*req)
 
 		var err error
-		var entityId primitive.ObjectID
+		var entityId bson.ObjectID
 
 		id := r.PathValue("id") // 1. from URL
 		if id == "" {
 			err = ErrMissingParam.New("missing id param")
 		} else {
-			entityId, err = primitive.ObjectIDFromHex(id) // 2. convert to/validate as ObjectID
+			entityId, err = bson.ObjectIDFromHex(id) // 2. convert to/validate as ObjectID
 			if err != nil {
 				err = ErrInvalidParam.New("id '%s' is not a valid ObjectID: %v", id, err)
 			}
@@ -1297,8 +1297,8 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 			diffs := ids.([]etre.Entity)
 			writes = make([]etre.Write, len(diffs))
 			for i, diff := range diffs {
-				// _id from db is primitive.ObjectID, convert to string
-				id := diff["_id"].(primitive.ObjectID).Hex()
+				// _id from db is bson.ObjectID, convert to string
+				id := diff["_id"].(bson.ObjectID).Hex()
 				writes[i] = etre.Write{
 					EntityId: id,
 					URI:      api.addr + etre.API_ROOT + "/entity/" + id,
@@ -1322,8 +1322,8 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 		case etre.Entity:
 			// Entity from DeleteLabel
 			diff := ids.(etre.Entity)
-			// _id from db is primitive.ObjectID, convert to string
-			id := diff["_id"].(primitive.ObjectID).Hex()
+			// _id from db is bson.ObjectID, convert to string
+			id := diff["_id"].(bson.ObjectID).Hex()
 			writes = []etre.Write{
 				{
 					EntityId: id,

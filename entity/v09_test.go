@@ -8,10 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/square/etre"
 	"github.com/square/etre/entity"
@@ -39,7 +38,7 @@ func setupV09(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	// First time, create unique index on "x"
 	if coll == nil {
 		iv := nodesColl.Indexes()
-		_, err = iv.DropAll(context.TODO())
+		err = iv.DropAll(context.TODO())
 		require.NoError(t, err)
 
 		idx := mongo.IndexModel{
@@ -64,8 +63,8 @@ func setupV09(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	require.NoError(t, err)
 	assert.Len(t, res.InsertedIDs, len(v09testNodes))
 	for i, id := range res.InsertedIDs {
-		v09testNodes[i]["_id"] = id.(primitive.ObjectID)
-		v09testNodes_int32[i]["_id"] = id.(primitive.ObjectID)
+		v09testNodes[i]["_id"] = id.(bson.ObjectID)
+		v09testNodes_int32[i]["_id"] = id.(bson.ObjectID)
 	}
 
 	return entity.NewStore(coll, cdcm)
@@ -93,9 +92,9 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 	assert.Len(t, ids, len(testData))
 
 	// Verify that the last CDC event we create is as expected.
-	id1, _ := primitive.ObjectIDFromHex(ids[0])
-	id2, _ := primitive.ObjectIDFromHex(ids[1])
-	id3, _ := primitive.ObjectIDFromHex(ids[2])
+	id1, _ := bson.ObjectIDFromHex(ids[0])
+	id2, _ := bson.ObjectIDFromHex(ids[1])
+	id3, _ := bson.ObjectIDFromHex(ids[2])
 	expectEvents := []etre.CDCEvent{
 		{
 			Id:         gotEvents[0].Id, // non-deterministic
@@ -175,7 +174,7 @@ func TestV09UpdateEntities(t *testing.T) {
 		gotEvents[i].Id = ""
 		gotEvents[i].Ts = 0
 	}
-	id1, _ := v09testNodes[0]["_id"].(primitive.ObjectID)
+	id1, _ := v09testNodes[0]["_id"].(bson.ObjectID)
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -223,9 +222,9 @@ func TestV09DeleteEntities(t *testing.T) {
 		gotEvents[i].Id = ""
 		gotEvents[i].Ts = 0
 	}
-	id1, _ := v09testNodes[0]["_id"].(primitive.ObjectID)
-	id2, _ := v09testNodes[1]["_id"].(primitive.ObjectID)
-	id3, _ := v09testNodes[2]["_id"].(primitive.ObjectID)
+	id1, _ := v09testNodes[0]["_id"].(bson.ObjectID)
+	id2, _ := v09testNodes[1]["_id"].(bson.ObjectID)
+	id3, _ := v09testNodes[2]["_id"].(bson.ObjectID)
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -267,7 +266,7 @@ func TestV09DeleteLabel(t *testing.T) {
 
 	wo := entity.WriteOp{
 		EntityType: entityType,
-		EntityId:   v09testNodes[0]["_id"].(primitive.ObjectID).Hex(),
+		EntityId:   v09testNodes[0]["_id"].(bson.ObjectID).Hex(),
 		Caller:     username,
 	}
 	gotOld, err := store.DeleteLabel(wo, "y")
@@ -299,7 +298,7 @@ func TestV09DeleteLabel(t *testing.T) {
 		gotEvents[i].Id = ""
 		gotEvents[i].Ts = 0
 	}
-	id1, _ := v09testNodes[0]["_id"].(primitive.ObjectID)
+	id1, _ := v09testNodes[0]["_id"].(bson.ObjectID)
 	expectedEventNew := etre.Entity{
 		"_id":   v09testNodes[0]["_id"],
 		"_type": v09testNodes[0]["_type"],
