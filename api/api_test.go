@@ -16,7 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/square/etre"
 	"github.com/square/etre/api"
@@ -60,9 +60,9 @@ var testEntities = []etre.Entity{
 var testEntityIds = []string{"59f10d2a5669fc79103a0000", "59f10d2a5669fc79103a1111", "59f10d2a5669fc79103a2222"}
 
 var (
-	testEntityId0, _ = primitive.ObjectIDFromHex(testEntityIds[0])
-	testEntityId1, _ = primitive.ObjectIDFromHex(testEntityIds[1])
-	testEntityId2, _ = primitive.ObjectIDFromHex(testEntityIds[2])
+	testEntityId0, _ = bson.ObjectIDFromHex(testEntityIds[0])
+	testEntityId1, _ = bson.ObjectIDFromHex(testEntityIds[1])
+	testEntityId2, _ = bson.ObjectIDFromHex(testEntityIds[2])
 )
 
 var testEntitiesWithObjectIDs = []etre.Entity{

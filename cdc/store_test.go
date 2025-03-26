@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
@@ -47,7 +47,7 @@ func setup(t *testing.T, fallbackFile string, wrp cdc.RetryPolicy) cdc.Store {
 	// First time, create unique index on "x"
 	if coll == nil {
 		iv := cdcColl.Indexes()
-		if _, err := iv.DropAll(context.TODO()); err != nil {
+		if err := iv.DropAll(context.TODO()); err != nil {
 			t.Fatal(err)
 		}
 		idx := mongo.IndexModel{

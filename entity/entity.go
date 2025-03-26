@@ -8,9 +8,8 @@ import (
 	"github.com/square/etre"
 	"github.com/square/etre/query"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 type DbError struct {
@@ -66,16 +65,16 @@ func Filter(q query.Query) bson.M {
 			if p.Label == etre.META_LABEL_ID {
 				switch p.Value.(type) {
 				case string:
-					id, _ := primitive.ObjectIDFromHex(p.Value.(string))
+					id, _ := bson.ObjectIDFromHex(p.Value.(string))
 					filter[p.Label] = bson.M{operatorMap[p.Operator]: id}
 				case []string:
 					vals := p.Value.([]string)
-					oids := make([]primitive.ObjectID, len(vals))
+					oids := make([]bson.ObjectID, len(vals))
 					for i, v := range vals {
-						oids[i], _ = primitive.ObjectIDFromHex(v)
+						oids[i], _ = bson.ObjectIDFromHex(v)
 					}
 					filter[p.Label] = bson.M{operatorMap[p.Operator]: oids}
-				case primitive.ObjectID:
+				case bson.ObjectID:
 					filter[p.Label] = bson.M{operatorMap[p.Operator]: p.Value}
 				default:
 					panic(fmt.Sprintf("invalid _id value type: %T", p.Value))
