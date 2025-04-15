@@ -97,7 +97,7 @@ func (s *Server) Boot(configFile string) error {
 	for _, entityType := range cfg.Entity.Types {
 		coll[entityType] = mainClient.Database(cfg.Datasource.Database).Collection(entityType)
 	}
-	s.appCtx.EntityStore = entity.NewStore(coll, s.appCtx.CDCStore)
+	s.appCtx.EntityStore = entity.NewStore(coll, s.appCtx.CDCStore, cfg.Entity)
 	s.appCtx.EntityValidator = entity.NewValidator(cfg.Entity.Types)
 
 	// //////////////////////////////////////////////////////////////////////
