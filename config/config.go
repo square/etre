@@ -28,6 +28,7 @@ const (
 	DEFAULT_QUERY_LATENCY_SLA              = "1s"
 	DEFAULT_QUERY_PROFILE_SAMPLE_RATE      = 0.2
 	DEFAULT_QUERY_PROFILE_REPORT_THRESHOLD = "500ms"
+	DEFAULT_BATCH_SIZE                     = 5000
 )
 
 const CDC_COLLECTION = "cdc"
@@ -37,7 +38,8 @@ var reservedNames = []string{"entity", "entities", "cdc", "etre"}
 func Default() Config {
 	return Config{
 		Entity: EntityConfig{
-			Types: []string{DEFAULT_ENTITY_TYPE},
+			Types:     []string{DEFAULT_ENTITY_TYPE},
+			BatchSize: DEFAULT_BATCH_SIZE,
 		},
 		Server: ServerConfig{
 			Addr: DEFAULT_ADDR,
@@ -192,7 +194,8 @@ func (c DatasourceConfig) WithDefaults(d DatasourceConfig) DatasourceConfig {
 }
 
 type EntityConfig struct {
-	Types []string `yaml:"types"`
+	Types     []string `yaml:"types"`
+	BatchSize int      `yaml:"batch_size"`
 }
 
 type CDCConfig struct {

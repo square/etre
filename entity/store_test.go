@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/square/etre"
+	"github.com/square/etre/config"
 	"github.com/square/etre/entity"
 	"github.com/square/etre/query"
 	"github.com/square/etre/test"
@@ -73,7 +74,11 @@ func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 		testNodes[i]["_id"] = id.(primitive.ObjectID)
 	}
 
-	return entity.NewStore(coll, cdcm)
+	testConfig := config.EntityConfig{
+		Types:     []string{entityType},
+		BatchSize: 5000,
+	}
+	return entity.NewStore(coll, cdcm, testConfig)
 }
 
 func docs(entities []etre.Entity) []interface{} {

@@ -6,5 +6,6 @@ datasource:
 entity:
   types:
     - test
+  batch_size: 5000
 metrics:
   query_latency_sla: "10ms"

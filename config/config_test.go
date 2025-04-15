@@ -68,6 +68,7 @@ func TestLoadTest001(t *testing.T) {
 	expect.Datasource.URL = "mongodb://10.0.0.2:4567"
 	expect.Datasource.Database = "test_db"
 	expect.Entity.Types = []string{"test"}
+	expect.Entity.BatchSize = 5000
 	expect.Metrics.QueryLatencySLA = "10ms"
 	assert.Equal(t, expect, got)
 }

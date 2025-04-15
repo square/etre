@@ -13,6 +13,7 @@ import (
 
 	"github.com/square/etre"
 	"github.com/square/etre/cdc"
+	"github.com/square/etre/config"
 	"github.com/square/etre/query"
 )
 
@@ -32,17 +33,19 @@ type Store interface {
 }
 
 type store struct {
-	coll map[string]*mongo.Collection
-	cdcs cdc.Store
-	ctx  context.Context
+	coll   map[string]*mongo.Collection
+	cdcs   cdc.Store
+	ctx    context.Context
+	config config.EntityConfig
 }
 
 // NewStore creates a Store.
-func NewStore(entities map[string]*mongo.Collection, cdcStore cdc.Store) store {
+func NewStore(entities map[string]*mongo.Collection, cdcStore cdc.Store, cfg config.EntityConfig) store {
 	return store{
-		coll: entities,
-		cdcs: cdcStore,
-		ctx:  context.Background(),
+		coll:   entities,
+		cdcs:   cdcStore,
+		ctx:    context.Background(),
+		config: cfg,
 	}
 }
 
@@ -89,7 +92,8 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 		}
 	}
 
-	opts := options.Find().SetProjection(p)
+	// Set batch size and projection
+	opts := options.Find().SetProjection(p).SetBatchSize(int32(s.config.BatchSize))
 	cursor, err := c.Find(s.ctx, Filter(q), opts)
 	if err != nil {
 		return nil, s.dbError(err, "db-query")
