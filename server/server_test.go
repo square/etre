@@ -25,6 +25,10 @@ func TestDefaultPlugins(t *testing.T) {
 	require.NoError(t, err, "Error stopping server")
 }
 
+func TestAlwaysFail(t *testing.T) {
+	t.Fatalf("This test should always fail")
+}
+
 // TestDBPlugin tests server boot with a DB plugin
 func TestDBPlugin(t *testing.T) {
 	counter := 0
