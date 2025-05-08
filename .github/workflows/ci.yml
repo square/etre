@@ -1,21 +1,32 @@
 name: CI
-on: [push]
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
 jobs:
-  golang-test:
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
+
     steps:
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.12.0
+        with:
+          mongodb-version: '6.0'
+          mongodb-replica-set: rs0
+
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Install Go 1.23
+      - name: Install Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-
+          
       - name: Download dependencies
         run: go mod download
         
       - name: Run tests
         run: go test -v ./...
-
-
