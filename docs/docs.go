@@ -15,6 +15,14 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/changes": {
+            "get": {
+                "description": "Starts streaming changes from the Etre CDC on a websocket interface.\nSee Etre documentation for details about consuming the changes stream.",
+                "summary": "Starts a websocket response.",
+                "operationId": "changesHandler",
+                "responses": {}
+            }
+        },
         "/entities/:type": {
             "get": {
                 "description": "Query entities of a type specified by the :type endpoint.\nReturns a set of entities matching the labels in the ` + "`" + `query` + "`" + ` query parameter.\nAll labels of each entity are returned, unless specific labels are specified in the ` + "`" + `labels` + "`" + ` query parameter.\nThe result set is reduced to distinct values if the request includes the ` + "`" + `distinct` + "`" + ` query parameter (requires ` + "`" + `lables` + "`" + ` name a single label).\nIf the query is longer than 2000 characters, use the POST /query endpoint (to be implemented).",
@@ -74,6 +82,591 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "description": "Given JSON payload, update labels in matching entities of the given :type.\nApplies update to the set of entities matching the labels in the ` + "`" + `query` + "`" + ` query parameter.\nOptionally specify ` + "`" + `setOp` + "`" + `, ` + "`" + `setId` + "`" + `, and ` + "`" + `setSize` + "`" + ` together to define a SetOp.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Update matching entities in bulk",
+                "operationId": "putEntitiesHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Selector",
+                        "name": "query",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Set of matching entities after update applied.",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/etre.Entity"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Given JSON payload, create new entities of the given :type.\nSome meta-labels are filled in by Etre, e.g. ` + "`" + `_id` + "`" + `.\nOptionally specify ` + "`" + `setOp` + "`" + `, ` + "`" + `setId` + "`" + `, and ` + "`" + `setSize` + "`" + ` together to define a SetOp.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Create entities in bulk",
+                "operationId": "postEntitiesHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "List of new entity id's",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the set of entities of the given :type, matching the labels in the ` + "`" + `query` + "`" + ` query parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Remove matching entities in bulk",
+                "operationId": "deleteEntitiesHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Selector",
+                        "name": "query",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/etre.Entity"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity/:type": {
+            "post": {
+                "description": "Given JSON payload, create one new entity of the given :type.\nSome meta-labels are filled in by Etre, e.g. ` + "`" + `_id` + "`" + `.\nOptionally specify ` + "`" + `setOp` + "`" + `, ` + "`" + `setId` + "`" + `, and ` + "`" + `setSize` + "`" + ` together to define a SetOp.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Create one entity",
+                "operationId": "postEntityHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "List of new entity id's",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity/:type/:id": {
+            "get": {
+                "description": "Return one entity of the given :type, identified by the path parameter :id.\nAll labels of each entity are returned, unless specific labels are specified in the ` + "`" + `labels` + "`" + ` query parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Get one entity by id",
+                "operationId": "getEntityHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of labels to return",
+                        "name": "labels",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Entity"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Given JSON payload, update labels in the entity of the given :type and :id.\nOptionally specify ` + "`" + `setOp` + "`" + `, ` + "`" + `setId` + "`" + `, and ` + "`" + `setSize` + "`" + ` together to define a SetOp.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Patch one entity by _id",
+                "operationId": "putEntityHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Entity after update applied.",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/etre.Entity"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the set of entities matching the labels in the ` + "`" + `query` + "`" + ` query parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Remove entity of the given :type and matching the :id parameter.",
+                "operationId": "deleteEntityHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Set of deleted entities.",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/etre.Entity"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity/:type/:id/labels": {
+            "get": {
+                "description": "Return an array of label names used by a single entity of the given :type, identified by the path parameter :id.\nThe values of these labels are not returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Return the labels for a single entity.",
+                "operationId": "getLabelsHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity/:type/:id/labels/:label": {
+            "delete": {
+                "description": "Remove one label from one entity of the given :type and matching the :id parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Delete a label from one entity",
+                "operationId": "deleteLabelHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Label name",
+                        "name": "label",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetOp",
+                        "name": "setOp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SetId",
+                        "name": "setId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SetSize",
+                        "name": "setSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Entity after the label is deleted.",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Entity"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "description": "Reports a summary of how Etre was called by different groups.\nSystem Report includes a counter of queries, a ` + "`" + `load` + "`" + ` which is the number of currently executing queries, and counters of errors and failed authentications.\nGroup Reports are made for each user-defined group, which correspond to authentication types.\nGroup Reports have sub-reports for request failures, query traffic per entity type, and CDC activity.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Report calling metrics for Etre",
+                "operationId": "metricsHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "If 'yes' or 'true' then reset metrics to zero.",
+                        "name": "reset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/etre.Metrics"
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "Report if the service is up, and what version of the Etre service.",
+                "summary": "Report service status",
+                "operationId": "statusHandler",
+                "responses": {
+                    "200": {
+                        "description": "returns a map[string]string",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
             }
         }
     },
@@ -100,6 +693,291 @@ const docTemplate = `{
                 "type": {
                     "description": "error slug (e.g. db-error, missing-param, etc.)",
                     "type": "string"
+                }
+            }
+        },
+        "etre.Metrics": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "description": "Groups metrics are measurements related to user-defined groups and entity types.\nThe auth plugin sets groups for each caller (HTTP request). Metrics for the caller\nare added to each group in the list, so a single call can count toward one or more\nmetric groups. If no groups are specified, no group metrics are recorded.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/etre.MetricsGroupReport"
+                    }
+                },
+                "system": {
+                    "description": "System metrics are measurements related to the API, not an entity type.\nFor example, authentication failures are a system metric.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/etre.MetricsSystemReport"
+                        }
+                    ]
+                }
+            }
+        },
+        "etre.MetricsCDCReport": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "integer"
+                }
+            }
+        },
+        "etre.MetricsEntityReport": {
+            "type": "object",
+            "properties": {
+                "entity-type": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/etre.MetricsLabelReport"
+                    }
+                },
+                "query": {
+                    "$ref": "#/definitions/etre.MetricsQueryReport"
+                },
+                "trace": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+        },
+        "etre.MetricsGroupReport": {
+            "type": "object",
+            "properties": {
+                "cdc": {
+                    "$ref": "#/definitions/etre.MetricsCDCReport"
+                },
+                "entity": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/etre.MetricsEntityReport"
+                    }
+                },
+                "group": {
+                    "type": "string"
+                },
+                "request": {
+                    "$ref": "#/definitions/etre.MetricsRequestReport"
+                },
+                "ts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "etre.MetricsLabelReport": {
+            "type": "object",
+            "properties": {
+                "delete": {
+                    "type": "integer"
+                },
+                "read": {
+                    "type": "integer"
+                },
+                "update": {
+                    "type": "integer"
+                }
+            }
+        },
+        "etre.MetricsQueryReport": {
+            "type": "object",
+            "properties": {
+                "create-bulk_avg": {
+                    "type": "integer"
+                },
+                "create-bulk_max": {
+                    "type": "integer"
+                },
+                "create-bulk_med": {
+                    "type": "integer"
+                },
+                "create-bulk_min": {
+                    "description": "CreateBulk stats represent the number of entities received for CreateMany\n(API endpoing POST /api/v1/entities/:type). The Created counter measures\nthe number of entities successfully created. These stats measure the size\nof bulk create requests.",
+                    "type": "integer"
+                },
+                "create-many": {
+                    "type": "integer"
+                },
+                "create-one": {
+                    "description": "CreateOne and CreateMany counters are the number of create queries.\nThey are subsets of Write. These API endpoints increment the metrics:\n  POST /api/v1/entity/:type   (one)\n  POST /api/v1/entities/:type (many/bulk)",
+                    "type": "integer"
+                },
+                "created": {
+                    "description": "Created, Updated, and Deleted counters are the number of entities successfully\ncreated, updated, and deleted. These metrics are incremented in their\ncorresponding metric API endpoints when entities are successfully created,\nupdated, or deleted.\n\nFor example, a request to PUT /api/v1/entity/:type/:id always increments\nUpdateId by 1, but it increments Updated by 1 only if successful.",
+                    "type": "integer"
+                },
+                "delete-bulk_avg": {
+                    "type": "integer"
+                },
+                "delete-bulk_max": {
+                    "type": "integer"
+                },
+                "delete-bulk_med": {
+                    "type": "integer"
+                },
+                "delete-bulk_min": {
+                    "description": "DeleteBulk stats represent the number of entities that matched the bulk\ndelete query and were deleted. The Deleted counter measures the number\nof entities successfully deleted. These stats measure the size of bulk\ndelete requests.",
+                    "type": "integer"
+                },
+                "delete-id": {
+                    "description": "DeleteId and DeleteQuery counters are the number of delete queries.\nThey are a subset of Write. These API endpoints increment the metrics:\n  DELETE /api/v1/entity/:type   (id)\n  DELETE /api/v1/entities/:type (query)\nSee Labels stats for the number of labels used in the DeleteQuery query.",
+                    "type": "integer"
+                },
+                "delete-label": {
+                    "description": "DeleteLabel counter is the number of delete label queries. It is a subset of Write.\nThese API endpoints increment DeleteLabel:\n  DELETE /api/v1/entity/:type/:id/labels/:label",
+                    "type": "integer"
+                },
+                "delete-query": {
+                    "type": "integer"
+                },
+                "deleted": {
+                    "type": "integer"
+                },
+                "labels_avg": {
+                    "type": "integer"
+                },
+                "labels_max": {
+                    "type": "integer"
+                },
+                "labels_med": {
+                    "type": "integer"
+                },
+                "labels_min": {
+                    "description": "Labels stats represent the number of labels in read, update, and delete\nqueries. The metric is incremented in these API endpoints:\n  GET    /api/v1/entities/:type (read)\n  POST   /api/v1/query/:type    (read)\n  PUT    /api/v1/entities/:type (update bulk)\n  DELETE /api/v1/entities/:type (delete bulk)\nThe metric counts all labels in the query. See MetricsLabelReport for\nlabel-specific counters.\n\nFor example, with query \"a=1,!b,c in (x,y)\" the label count is 3.",
+                    "type": "integer"
+                },
+                "latency-ms_max": {
+                    "description": "LatencyMs stats represent query latency (response time) in milliseconds\nfor all queries (read and write). Low query latency is not a problem,\nso stats only represent the worst case: high query latency. _p99 is the\n99th percentile (ignoring the top 1% as outliers). _p999 is the 99.9th\npercentile (ignoring the top 0.1% as outliers).",
+                    "type": "number"
+                },
+                "latency-ms_p99": {
+                    "type": "number"
+                },
+                "latency-ms_p999": {
+                    "type": "number"
+                },
+                "miss-sla": {
+                    "description": "MissSLA counter is the number of queries with LatencyMs greater than\nthe configured query latency SLA (config.metrics.query_latency_sla).",
+                    "type": "integer"
+                },
+                "query": {
+                    "description": "Query counter is the grand total number of queries. Every authenticated\nquery increments Query by 1. Query = Read + Write.",
+                    "type": "integer"
+                },
+                "query-timeout": {
+                    "description": "QueryTimeout counter is the number of queries which took too  long\nto execute and were cancelled. The default query timeout is set by\nserver config datasource.query.query_timeout, or by client header\nX-Etre-Query-Timeout. QueryTimeout and MissSLA are independent.",
+                    "type": "integer"
+                },
+                "read": {
+                    "description": "Read counter is the total number of read queries. All read queries\nincrement Read by 1. Read = ReadQuery + ReadId + ReadLabels.\nRead is incremented after authentication and before authorization.\nAll other read metrics are incremented after authorization.",
+                    "type": "integer"
+                },
+                "read-id": {
+                    "description": "ReadId counter is the number of reads by entity ID. It is a subset of Read.\nThese API endpoints increment ReadId by 1:\n  GET /api/v1/entity/:id",
+                    "type": "integer"
+                },
+                "read-labels": {
+                    "description": "ReadLabels counter is the number of read label queries. It is a subset of Read.\nThese API endpoints increment ReadLabels by 1:\n  GET /api/v1/entity/:type/:id/labels",
+                    "type": "integer"
+                },
+                "read-match_avg": {
+                    "type": "integer"
+                },
+                "read-match_max": {
+                    "type": "integer"
+                },
+                "read-match_med": {
+                    "type": "integer"
+                },
+                "read-match_min": {
+                    "description": "ReadMatch stats represent the number of entities that matched the read\nquery and were returned to the client. See Labels stats for the number\nof labels used in the query.",
+                    "type": "integer"
+                },
+                "read-query": {
+                    "description": "ReadQuery counter is the number of reads by query. It is a subset of Read.\nThese API endpoints increment ReadQuery by 1:\n  GET  /api/v1/entities/:type\n  POST /api/v1/query/:type\nSee Labels stats for the number of labels used in the query.",
+                    "type": "integer"
+                },
+                "set-op": {
+                    "description": "SetOp counter is the number of queries that used a set op.",
+                    "type": "integer"
+                },
+                "update-bulk_avg": {
+                    "type": "integer"
+                },
+                "update-bulk_max": {
+                    "type": "integer"
+                },
+                "update-bulk_med": {
+                    "type": "integer"
+                },
+                "update-bulk_min": {
+                    "description": "UpdateBulk stats represent the number of entities that matched the bulk\nupdate query and were updated. The Updated counter measures the number\nof entities successfully updated. These stats measure the size of bulk\nupdate requests.",
+                    "type": "integer"
+                },
+                "update-id": {
+                    "description": "UpdateId and UpdateQuery counters are the number of update (patch) queries.\nThey are a subset of Write. These API endpoints increment the metrics:\n  PUT /api/v1/entity/:type/:id (id)\n  PUT /api/v1/entities/:type   (query)\nSee Labels stats for the number of labels used in the UpdateQuery query.",
+                    "type": "integer"
+                },
+                "update-query": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                },
+                "write": {
+                    "description": "Write counter is the grand total number of write queries. All write queries\nincrement Write by 1. Write = CreateOne + CreateMany + UpdateId +\nUpdateQuery + DeleteId + DeleteQuery + DeleteLabel.\n\nWrite is incremented after authentication and before authorization, so it\ndoes not count successful writes. Successfully written entities are measured\nby counters Created, Updated, and Deleted. All other write metrics are\nincremented after authorization.",
+                    "type": "integer"
+                }
+            }
+        },
+        "etre.MetricsRequestReport": {
+            "type": "object",
+            "properties": {
+                "api-error": {
+                    "type": "integer"
+                },
+                "authorization-failed": {
+                    "description": "AuthorizationFailed counter is the number of authorization failures.\nThe caller authenticated, but ACLs do not allow the request.",
+                    "type": "integer"
+                },
+                "client-error": {
+                    "type": "integer"
+                },
+                "db-error": {
+                    "type": "integer"
+                },
+                "invalid-entity-type": {
+                    "description": "InvalidEntityType counter is the number of invalid entity types the caller\ntried to query. The API returns HTTP status 400 (bad request) and an etre.Error\nmessage.",
+                    "type": "integer"
+                }
+            }
+        },
+        "etre.MetricsSystemReport": {
+            "type": "object",
+            "properties": {
+                "authentication-failed": {
+                    "description": "AuthenticationFailed counter is the number of authentication failures.\nThe API returns HTTP status 401 (unauthorized). If the caller fails to\nauthenticate, only Query and AuthenticationFailed are incremented.",
+                    "type": "integer"
+                },
+                "error": {
+                    "description": "Error counter is the grand total number of errors. This counts every\nerror regardless of type: auth, client, database, timeout, internal, etc.",
+                    "type": "integer"
+                },
+                "load": {
+                    "description": "Load gauge is the current number of running queries.",
+                    "type": "integer"
+                },
+                "query": {
+                    "description": "Query counter is the grand total number of queries. This counts every API query\nat the start of the HTTP request before authentication, validation, etc.",
+                    "type": "integer"
                 }
             }
         }
