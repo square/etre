@@ -17,10 +17,357 @@ definitions:
         description: error slug (e.g. db-error, missing-param, etc.)
         type: string
     type: object
+  etre.Metrics:
+    properties:
+      groups:
+        description: |-
+          Groups metrics are measurements related to user-defined groups and entity types.
+          The auth plugin sets groups for each caller (HTTP request). Metrics for the caller
+          are added to each group in the list, so a single call can count toward one or more
+          metric groups. If no groups are specified, no group metrics are recorded.
+        items:
+          $ref: '#/definitions/etre.MetricsGroupReport'
+        type: array
+      system:
+        allOf:
+        - $ref: '#/definitions/etre.MetricsSystemReport'
+        description: |-
+          System metrics are measurements related to the API, not an entity type.
+          For example, authentication failures are a system metric.
+    type: object
+  etre.MetricsCDCReport:
+    properties:
+      clients:
+        type: integer
+    type: object
+  etre.MetricsEntityReport:
+    properties:
+      entity-type:
+        type: string
+      label:
+        additionalProperties:
+          $ref: '#/definitions/etre.MetricsLabelReport'
+        type: object
+      query:
+        $ref: '#/definitions/etre.MetricsQueryReport'
+      trace:
+        additionalProperties:
+          additionalProperties:
+            type: integer
+          type: object
+        type: object
+    type: object
+  etre.MetricsGroupReport:
+    properties:
+      cdc:
+        $ref: '#/definitions/etre.MetricsCDCReport'
+      entity:
+        additionalProperties:
+          $ref: '#/definitions/etre.MetricsEntityReport'
+        type: object
+      group:
+        type: string
+      request:
+        $ref: '#/definitions/etre.MetricsRequestReport'
+      ts:
+        type: integer
+    type: object
+  etre.MetricsLabelReport:
+    properties:
+      delete:
+        type: integer
+      read:
+        type: integer
+      update:
+        type: integer
+    type: object
+  etre.MetricsQueryReport:
+    properties:
+      create-bulk_avg:
+        type: integer
+      create-bulk_max:
+        type: integer
+      create-bulk_med:
+        type: integer
+      create-bulk_min:
+        description: |-
+          CreateBulk stats represent the number of entities received for CreateMany
+          (API endpoing POST /api/v1/entities/:type). The Created counter measures
+          the number of entities successfully created. These stats measure the size
+          of bulk create requests.
+        type: integer
+      create-many:
+        type: integer
+      create-one:
+        description: |-
+          CreateOne and CreateMany counters are the number of create queries.
+          They are subsets of Write. These API endpoints increment the metrics:
+            POST /api/v1/entity/:type   (one)
+            POST /api/v1/entities/:type (many/bulk)
+        type: integer
+      created:
+        description: |-
+          Created, Updated, and Deleted counters are the number of entities successfully
+          created, updated, and deleted. These metrics are incremented in their
+          corresponding metric API endpoints when entities are successfully created,
+          updated, or deleted.
+
+          For example, a request to PUT /api/v1/entity/:type/:id always increments
+          UpdateId by 1, but it increments Updated by 1 only if successful.
+        type: integer
+      delete-bulk_avg:
+        type: integer
+      delete-bulk_max:
+        type: integer
+      delete-bulk_med:
+        type: integer
+      delete-bulk_min:
+        description: |-
+          DeleteBulk stats represent the number of entities that matched the bulk
+          delete query and were deleted. The Deleted counter measures the number
+          of entities successfully deleted. These stats measure the size of bulk
+          delete requests.
+        type: integer
+      delete-id:
+        description: |-
+          DeleteId and DeleteQuery counters are the number of delete queries.
+          They are a subset of Write. These API endpoints increment the metrics:
+            DELETE /api/v1/entity/:type   (id)
+            DELETE /api/v1/entities/:type (query)
+          See Labels stats for the number of labels used in the DeleteQuery query.
+        type: integer
+      delete-label:
+        description: |-
+          DeleteLabel counter is the number of delete label queries. It is a subset of Write.
+          These API endpoints increment DeleteLabel:
+            DELETE /api/v1/entity/:type/:id/labels/:label
+        type: integer
+      delete-query:
+        type: integer
+      deleted:
+        type: integer
+      labels_avg:
+        type: integer
+      labels_max:
+        type: integer
+      labels_med:
+        type: integer
+      labels_min:
+        description: |-
+          Labels stats represent the number of labels in read, update, and delete
+          queries. The metric is incremented in these API endpoints:
+            GET    /api/v1/entities/:type (read)
+            POST   /api/v1/query/:type    (read)
+            PUT    /api/v1/entities/:type (update bulk)
+            DELETE /api/v1/entities/:type (delete bulk)
+          The metric counts all labels in the query. See MetricsLabelReport for
+          label-specific counters.
+
+          For example, with query "a=1,!b,c in (x,y)" the label count is 3.
+        type: integer
+      latency-ms_max:
+        description: |-
+          LatencyMs stats represent query latency (response time) in milliseconds
+          for all queries (read and write). Low query latency is not a problem,
+          so stats only represent the worst case: high query latency. _p99 is the
+          99th percentile (ignoring the top 1% as outliers). _p999 is the 99.9th
+          percentile (ignoring the top 0.1% as outliers).
+        type: number
+      latency-ms_p99:
+        type: number
+      latency-ms_p999:
+        type: number
+      miss-sla:
+        description: |-
+          MissSLA counter is the number of queries with LatencyMs greater than
+          the configured query latency SLA (config.metrics.query_latency_sla).
+        type: integer
+      query:
+        description: |-
+          Query counter is the grand total number of queries. Every authenticated
+          query increments Query by 1. Query = Read + Write.
+        type: integer
+      query-timeout:
+        description: |-
+          QueryTimeout counter is the number of queries which took too  long
+          to execute and were cancelled. The default query timeout is set by
+          server config datasource.query.query_timeout, or by client header
+          X-Etre-Query-Timeout. QueryTimeout and MissSLA are independent.
+        type: integer
+      read:
+        description: |-
+          Read counter is the total number of read queries. All read queries
+          increment Read by 1. Read = ReadQuery + ReadId + ReadLabels.
+          Read is incremented after authentication and before authorization.
+          All other read metrics are incremented after authorization.
+        type: integer
+      read-id:
+        description: |-
+          ReadId counter is the number of reads by entity ID. It is a subset of Read.
+          These API endpoints increment ReadId by 1:
+            GET /api/v1/entity/:id
+        type: integer
+      read-labels:
+        description: |-
+          ReadLabels counter is the number of read label queries. It is a subset of Read.
+          These API endpoints increment ReadLabels by 1:
+            GET /api/v1/entity/:type/:id/labels
+        type: integer
+      read-match_avg:
+        type: integer
+      read-match_max:
+        type: integer
+      read-match_med:
+        type: integer
+      read-match_min:
+        description: |-
+          ReadMatch stats represent the number of entities that matched the read
+          query and were returned to the client. See Labels stats for the number
+          of labels used in the query.
+        type: integer
+      read-query:
+        description: |-
+          ReadQuery counter is the number of reads by query. It is a subset of Read.
+          These API endpoints increment ReadQuery by 1:
+            GET  /api/v1/entities/:type
+            POST /api/v1/query/:type
+          See Labels stats for the number of labels used in the query.
+        type: integer
+      set-op:
+        description: SetOp counter is the number of queries that used a set op.
+        type: integer
+      update-bulk_avg:
+        type: integer
+      update-bulk_max:
+        type: integer
+      update-bulk_med:
+        type: integer
+      update-bulk_min:
+        description: |-
+          UpdateBulk stats represent the number of entities that matched the bulk
+          update query and were updated. The Updated counter measures the number
+          of entities successfully updated. These stats measure the size of bulk
+          update requests.
+        type: integer
+      update-id:
+        description: |-
+          UpdateId and UpdateQuery counters are the number of update (patch) queries.
+          They are a subset of Write. These API endpoints increment the metrics:
+            PUT /api/v1/entity/:type/:id (id)
+            PUT /api/v1/entities/:type   (query)
+          See Labels stats for the number of labels used in the UpdateQuery query.
+        type: integer
+      update-query:
+        type: integer
+      updated:
+        type: integer
+      write:
+        description: |-
+          Write counter is the grand total number of write queries. All write queries
+          increment Write by 1. Write = CreateOne + CreateMany + UpdateId +
+          UpdateQuery + DeleteId + DeleteQuery + DeleteLabel.
+
+          Write is incremented after authentication and before authorization, so it
+          does not count successful writes. Successfully written entities are measured
+          by counters Created, Updated, and Deleted. All other write metrics are
+          incremented after authorization.
+        type: integer
+    type: object
+  etre.MetricsRequestReport:
+    properties:
+      api-error:
+        type: integer
+      authorization-failed:
+        description: |-
+          AuthorizationFailed counter is the number of authorization failures.
+          The caller authenticated, but ACLs do not allow the request.
+        type: integer
+      client-error:
+        type: integer
+      db-error:
+        type: integer
+      invalid-entity-type:
+        description: |-
+          InvalidEntityType counter is the number of invalid entity types the caller
+          tried to query. The API returns HTTP status 400 (bad request) and an etre.Error
+          message.
+        type: integer
+    type: object
+  etre.MetricsSystemReport:
+    properties:
+      authentication-failed:
+        description: |-
+          AuthenticationFailed counter is the number of authentication failures.
+          The API returns HTTP status 401 (unauthorized). If the caller fails to
+          authenticate, only Query and AuthenticationFailed are incremented.
+        type: integer
+      error:
+        description: |-
+          Error counter is the grand total number of errors. This counts every
+          error regardless of type: auth, client, database, timeout, internal, etc.
+        type: integer
+      load:
+        description: Load gauge is the current number of running queries.
+        type: integer
+      query:
+        description: |-
+          Query counter is the grand total number of queries. This counts every API query
+          at the start of the HTTP request before authentication, validation, etc.
+        type: integer
+    type: object
 info:
   contact: {}
 paths:
+  /changes:
+    get:
+      description: |-
+        Starts streaming changes from the Etre CDC on a websocket interface.
+        See Etre documentation for details about consuming the changes stream.
+      operationId: changesHandler
+      responses: {}
+      summary: Starts a websocket response.
   /entities/:type:
+    delete:
+      description: Deletes the set of entities of the given :type, matching the labels
+        in the `query` query parameter.
+      operationId: deleteEntitiesHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Selector
+        in: query
+        name: query
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/etre.Entity'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Remove matching entities in bulk
     get:
       description: |-
         Query entities of a type specified by the :type endpoint.
@@ -66,4 +413,379 @@ paths:
           schema:
             $ref: '#/definitions/etre.Error'
       summary: Query a set of entities
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Given JSON payload, create new entities of the given :type.
+        Some meta-labels are filled in by Etre, e.g. `_id`.
+        Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+      operationId: postEntitiesHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: List of new entity id's
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Create entities in bulk
+    put:
+      consumes:
+      - application/json
+      description: |-
+        Given JSON payload, update labels in matching entities of the given :type.
+        Applies update to the set of entities matching the labels in the `query` query parameter.
+        Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+      operationId: putEntitiesHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Selector
+        in: query
+        name: query
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Set of matching entities after update applied.
+          schema:
+            items:
+              $ref: '#/definitions/etre.Entity'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Update matching entities in bulk
+  /entity/:type:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Given JSON payload, create one new entity of the given :type.
+        Some meta-labels are filled in by Etre, e.g. `_id`.
+        Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+      operationId: postEntityHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: List of new entity id's
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Create one entity
+  /entity/:type/:id:
+    delete:
+      description: Deletes the set of entities matching the labels in the `query`
+        query parameter.
+      operationId: deleteEntityHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Set of deleted entities.
+          schema:
+            items:
+              $ref: '#/definitions/etre.Entity'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Remove entity of the given :type and matching the :id parameter.
+    get:
+      description: |-
+        Return one entity of the given :type, identified by the path parameter :id.
+        All labels of each entity are returned, unless specific labels are specified in the `labels` query parameter.
+      operationId: getEntityHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Comma-separated list of labels to return
+        in: query
+        name: labels
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/etre.Entity'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Get one entity by id
+    put:
+      consumes:
+      - application/json
+      description: |-
+        Given JSON payload, update labels in the entity of the given :type and :id.
+        Optionally specify `setOp`, `setId`, and `setSize` together to define a SetOp.
+      operationId: putEntityHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Entity after update applied.
+          schema:
+            items:
+              $ref: '#/definitions/etre.Entity'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Patch one entity by _id
+  /entity/:type/:id/labels:
+    get:
+      description: |-
+        Return an array of label names used by a single entity of the given :type, identified by the path parameter :id.
+        The values of these labels are not returned.
+      operationId: getLabelsHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Return the labels for a single entity.
+  /entity/:type/:id/labels/:label:
+    delete:
+      description: Remove one label from one entity of the given :type and matching
+        the :id parameter.
+      operationId: deleteLabelHandler
+      parameters:
+      - description: Entity type
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Label name
+        in: path
+        name: label
+        required: true
+        type: string
+      - description: SetOp
+        in: query
+        name: setOp
+        type: string
+      - description: SetId
+        in: query
+        name: setId
+        type: string
+      - description: SetSize
+        in: query
+        name: setSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Entity after the label is deleted.
+          schema:
+            $ref: '#/definitions/etre.Entity'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/etre.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/etre.Error'
+      summary: Delete a label from one entity
+  /metrics:
+    get:
+      description: |-
+        Reports a summary of how Etre was called by different groups.
+        System Report includes a counter of queries, a `load` which is the number of currently executing queries, and counters of errors and failed authentications.
+        Group Reports are made for each user-defined group, which correspond to authentication types.
+        Group Reports have sub-reports for request failures, query traffic per entity type, and CDC activity.
+      operationId: metricsHandler
+      parameters:
+      - description: If 'yes' or 'true' then reset metrics to zero.
+        in: query
+        name: reset
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/etre.Metrics'
+      summary: Report calling metrics for Etre
+  /status:
+    get:
+      description: Report if the service is up, and what version of the Etre service.
+      operationId: statusHandler
+      responses:
+        "200":
+          description: returns a map[string]string
+          schema:
+            type: string
+      summary: Report service status
 swagger: "2.0"
