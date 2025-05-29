@@ -21,32 +21,32 @@ import (
 // Use a EntityClients map to pass multiple clients for different entity types.
 type EntityClient interface {
 	// Query returns entities that match the query and pass the filter.
-	Query(query string, filter QueryFilter) ([]Entity, error)
+	Query(ctx context.Context, query string, filter QueryFilter) ([]Entity, error)
 
 	// Get returns a single entity by internal ID.
-	Get(id string) (Entity, error)
+	Get(ctx context.Context, id string) (Entity, error)
 
 	// Insert is a bulk operation that creates the given entities.
-	Insert([]Entity) (WriteResult, error)
+	Insert(ctx context.Context, entities []Entity) (WriteResult, error)
 
 	// Update is a bulk operation that patches entities that match the query.
-	Update(query string, patch Entity) (WriteResult, error)
+	Update(ctx context.Context, query string, patch Entity) (WriteResult, error)
 
 	// UpdateOne patches the given entity by internal ID.
-	UpdateOne(id string, patch Entity) (WriteResult, error)
+	UpdateOne(ctx context.Context, id string, patch Entity) (WriteResult, error)
 
 	// Delete is a bulk operation that removes all entities that match the query.
-	Delete(query string) (WriteResult, error)
+	Delete(ctx context.Context, query string) (WriteResult, error)
 
 	// DeleteOne removes the given entity by internal ID.
-	DeleteOne(id string) (WriteResult, error)
+	DeleteOne(ctx context.Context, id string) (WriteResult, error)
 
 	// Labels returns all labels on the given entity by internal ID.
-	Labels(id string) ([]string, error)
+	Labels(ctx context.Context, id string) ([]string, error)
 
 	// DeleteLabel removes the given label from the given entity by internal ID.
 	// Labels should be stable, long-lived. Consequently, there's no bulk label delete.
-	DeleteLabel(id string, label string) (WriteResult, error)
+	DeleteLabel(ctx context.Context, id string, label string) (WriteResult, error)
 
 	// EntityType returns the entity type of the client.
 	EntityType() string
@@ -65,16 +65,6 @@ type EntityClient interface {
 	// for server-side metrics. The trace string is a comma-separated list of key=value
 	// pairs like: app=foo,host=bar. Invalid trace values are silently ignored by the server.
 	WithTrace(string) EntityClient
-
-	// WithContext returns a new EntityClient that attaches the context to every request.
-	WithContext(ctx context.Context) EntityClient
-
-	// Context returns the EntityClient's context. To change the context, use
-	// WithContext.
-	//
-	// The returned context is always non-nil; it defaults to the
-	// background context.
-	Context() context.Context
 }
 
 // EntityClientConfig represents required and optional configuration for an EntityClient.
@@ -118,7 +108,6 @@ type entityClient struct {
 	retryWait        time.Duration
 	retryLogging     bool
 	queryTimeout     time.Duration
-	ctx              context.Context
 }
 
 // NewEntityClient creates a new type-specific Etre API client that makes requests
@@ -161,13 +150,7 @@ func (c entityClient) WithTrace(trace string) EntityClient {
 	return new
 }
 
-func (c entityClient) WithContext(ctx context.Context) EntityClient {
-	new := c
-	new.ctx = ctx
-	return new
-}
-
-func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
+func (c entityClient) Query(ctx context.Context, query string, filter QueryFilter) ([]Entity, error) {
 	if query == "" {
 		return nil, ErrNoQuery
 	}
@@ -184,7 +167,7 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 
 	var entities []Entity
 	err := c.apiRetry(func() (bool, error) {
-		resp, bytes, err := c.do("GET", path, nil)
+		resp, bytes, err := c.do(ctx, "GET", path, nil)
 		if err != nil {
 			return false, err
 		}
@@ -201,13 +184,13 @@ func (c entityClient) Query(query string, filter QueryFilter) ([]Entity, error) 
 	return entities, err
 }
 
-func (c entityClient) Get(id string) (Entity, error) {
+func (c entityClient) Get(ctx context.Context, id string) (Entity, error) {
 	if id == "" {
 		return nil, ErrIdNotSet
 	}
 	var entity Entity
 	err := c.apiRetry(func() (bool, error) {
-		resp, bytes, err := c.do("GET", "/entity/"+c.entityType+"/"+url.PathEscape(id), nil)
+		resp, bytes, err := c.do(ctx, "GET", "/entity/"+c.entityType+"/"+url.PathEscape(id), nil)
 		if err != nil {
 			return false, err
 		}
@@ -224,16 +207,16 @@ func (c entityClient) Get(id string) (Entity, error) {
 	return entity, err
 }
 
-func (c entityClient) Insert(entities []Entity) (WriteResult, error) {
+func (c entityClient) Insert(ctx context.Context, entities []Entity) (WriteResult, error) {
 	if len(entities) == 0 {
 		return WriteResult{}, ErrNoEntity
 	}
 	// Let API validate the new entities. Currently, they cannot contain _id,
 	// for example, but let the API be the single source of truth.
-	return c.write(entities, 1, "POST", "/entities/"+c.entityType)
+	return c.write(ctx, entities, 1, "POST", "/entities/"+c.entityType)
 }
 
-func (c entityClient) Update(query string, patch Entity) (WriteResult, error) {
+func (c entityClient) Update(ctx context.Context, query string, patch Entity) (WriteResult, error) {
 	if query == "" {
 		return WriteResult{}, ErrNoQuery
 	}
@@ -244,52 +227,52 @@ func (c entityClient) Update(query string, patch Entity) (WriteResult, error) {
 	}
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
-	return c.write(patch, -1, "PUT", "/entities/"+c.entityType+"?query="+query)
+	return c.write(ctx, patch, -1, "PUT", "/entities/"+c.entityType+"?query="+query)
 }
 
-func (c entityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
+func (c entityClient) UpdateOne(ctx context.Context, id string, patch Entity) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
 	Debug("_id=%s, patch=%+v", id, patch)
 	// Let API return error if patch contains (meta)labels that cannot be updated,
 	// e.g. _id. Currently, the API does not allow any metalabels in the patch.
-	wr, err := c.write(patch, 1, "PUT", "/entity/"+c.entityType+"/"+id)
+	wr, err := c.write(ctx, patch, 1, "PUT", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
 	}
 	return wr, nil
 }
 
-func (c entityClient) Delete(query string) (WriteResult, error) {
+func (c entityClient) Delete(ctx context.Context, query string) (WriteResult, error) {
 	if query == "" {
 		return WriteResult{}, ErrNoQuery
 	}
 	Debug("query='%s'", query)
 	query = url.QueryEscape(query) // always escape the query
-	return c.write(nil, -1, "DELETE", "/entities/"+c.entityType+"?query="+query)
+	return c.write(ctx, nil, -1, "DELETE", "/entities/"+c.entityType+"?query="+query)
 }
 
-func (c entityClient) DeleteOne(id string) (WriteResult, error) {
+func (c entityClient) DeleteOne(ctx context.Context, id string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
 	Debug("_id=%s", id)
-	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id)
+	wr, err := c.write(ctx, nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id)
 	if err != nil {
 		return WriteResult{}, err
 	}
 	return wr, nil
 }
 
-func (c entityClient) Labels(id string) ([]string, error) {
+func (c entityClient) Labels(ctx context.Context, id string) ([]string, error) {
 	if id == "" {
 		return nil, ErrIdNotSet
 	}
 
 	var labels []string
 	err := c.apiRetry(func() (bool, error) {
-		resp, bytes, err := c.do("GET", "/entity/"+c.entityType+"/"+id+"/labels", nil)
+		resp, bytes, err := c.do(ctx, "GET", "/entity/"+c.entityType+"/"+id+"/labels", nil)
 		if err != nil {
 			return false, err
 		}
@@ -304,7 +287,7 @@ func (c entityClient) Labels(id string) ([]string, error) {
 	return labels, err
 }
 
-func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) {
+func (c entityClient) DeleteLabel(ctx context.Context, id string, label string) (WriteResult, error) {
 	if id == "" {
 		return WriteResult{}, ErrIdNotSet
 	}
@@ -312,7 +295,7 @@ func (c entityClient) DeleteLabel(id string, label string) (WriteResult, error) 
 		return WriteResult{}, ErrNoLabel
 	}
 	Debug("_id=%s, label=%s", id, label)
-	wr, err := c.write(nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
+	wr, err := c.write(ctx, nil, 1, "DELETE", "/entity/"+c.entityType+"/"+id+"/labels/"+label)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -327,7 +310,7 @@ func (c entityClient) EntityType() string {
 
 // write sends payload via method to endpoint, expecting n successful writes.
 // If n is -1, the number of writes is variable (bulk update or delete).
-func (c entityClient) write(payload interface{}, n int, method, endpoint string) (WriteResult, error) {
+func (c entityClient) write(ctx context.Context, payload interface{}, n int, method, endpoint string) (WriteResult, error) {
 	var wr WriteResult
 
 	// If entities (insert and update), marshal them. If not (delete), pass nil.
@@ -353,7 +336,7 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 
 	err = c.apiRetry(func() (bool, error) {
 		// Do low-level HTTP request. An erorr here is probably network not API error.
-		resp, bytes, err := c.do(method, endpoint, bytes)
+		resp, bytes, err := c.do(ctx, method, endpoint, bytes)
 		if err != nil {
 			return false, err
 		}
@@ -384,7 +367,7 @@ func (c entityClient) write(payload interface{}, n int, method, endpoint string)
 	return wr, err
 }
 
-func (c entityClient) do(method, endpoint string, payload []byte) (*http.Response, []byte, error) {
+func (c entityClient) do(ctx context.Context, method, endpoint string, payload []byte) (*http.Response, []byte, error) {
 	// Make a complete URL: addr + API_ROOT + endpoint
 	// _CALLER MUST url.QueryEscape(query)!_ We can't escape the whole endpoint
 	// here because it'll escape /.
@@ -395,13 +378,13 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 	var err error
 	if payload != nil {
 		buf := bytes.NewBuffer(payload)
-		req, err = http.NewRequestWithContext(c.Context(), method, url, buf)
+		req, err = http.NewRequestWithContext(ctx, method, url, buf)
 	} else {
 		// Can't use a nil *bytes.Buffer because net/http/request.go looks at the type:
 		//   switch v := body.(type) {
 		//       case *bytes.Buffer:
 		// So even though it's nil, request.go will attempt to read it, causing a panic.
-		req, err = http.NewRequestWithContext(c.Context(), method, url, nil)
+		req, err = http.NewRequestWithContext(ctx, method, url, nil)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("http.NewRequest: %s: %s", url, err)
@@ -439,13 +422,6 @@ func (c entityClient) do(method, endpoint string, payload []byte) (*http.Respons
 
 func (c entityClient) url(endpoint string) string {
 	return c.addr + API_ROOT + endpoint
-}
-
-func (c entityClient) Context() context.Context {
-	if c.ctx != nil {
-		return c.ctx
-	}
-	return context.Background()
 }
 
 func readError(resp *http.Response, bytes []byte) (bool, error) {
@@ -505,81 +481,79 @@ func (c entityClient) apiRetry(f func() (bool, error)) error {
 // return empty slices and no error. Defining a callback function allows tests
 // to intercept, save, and inspect Client calls and simulate Etre API returns.
 type MockEntityClient struct {
-	QueryFunc       func(string, QueryFilter) ([]Entity, error)
-	GetFunc         func(string) (Entity, error)
-	InsertFunc      func([]Entity) (WriteResult, error)
-	UpdateFunc      func(query string, patch Entity) (WriteResult, error)
-	UpdateOneFunc   func(id string, patch Entity) (WriteResult, error)
-	DeleteFunc      func(query string) (WriteResult, error)
-	DeleteOneFunc   func(id string) (WriteResult, error)
-	LabelsFunc      func(id string) ([]string, error)
-	DeleteLabelFunc func(id string, label string) (WriteResult, error)
+	QueryFunc       func(ctx context.Context, query string, filter QueryFilter) ([]Entity, error)
+	GetFunc         func(ctx context.Context, id string) (Entity, error)
+	InsertFunc      func(ctx context.Context, entities []Entity) (WriteResult, error)
+	UpdateFunc      func(ctx context.Context, query string, patch Entity) (WriteResult, error)
+	UpdateOneFunc   func(ctx context.Context, id string, patch Entity) (WriteResult, error)
+	DeleteFunc      func(ctx context.Context, query string) (WriteResult, error)
+	DeleteOneFunc   func(ctx context.Context, id string) (WriteResult, error)
+	LabelsFunc      func(ctx context.Context, id string) ([]string, error)
+	DeleteLabelFunc func(ctx context.Context, id string, label string) (WriteResult, error)
 	EntityTypeFunc  func() string
 	WithSetFunc     func(Set) EntityClient
 	WithTraceFunc   func(string) EntityClient
-	WithContextFunc func(ctx context.Context) EntityClient
-	ContextFunc     func() context.Context
 }
 
-func (c MockEntityClient) Query(query string, filter QueryFilter) ([]Entity, error) {
+func (c MockEntityClient) Query(ctx context.Context, query string, filter QueryFilter) ([]Entity, error) {
 	if c.QueryFunc != nil {
-		return c.QueryFunc(query, filter)
+		return c.QueryFunc(ctx, query, filter)
 	}
 	return nil, nil
 }
 
-func (c MockEntityClient) Get(id string) (Entity, error) {
+func (c MockEntityClient) Get(ctx context.Context, id string) (Entity, error) {
 	if c.GetFunc != nil {
-		return c.GetFunc(id)
+		return c.GetFunc(ctx, id)
 	}
 	return nil, nil
 }
 
-func (c MockEntityClient) Insert(entities []Entity) (WriteResult, error) {
+func (c MockEntityClient) Insert(ctx context.Context, entities []Entity) (WriteResult, error) {
 	if c.InsertFunc != nil {
-		return c.InsertFunc(entities)
+		return c.InsertFunc(ctx, entities)
 	}
 	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) Update(query string, patch Entity) (WriteResult, error) {
+func (c MockEntityClient) Update(ctx context.Context, query string, patch Entity) (WriteResult, error) {
 	if c.UpdateFunc != nil {
-		return c.UpdateFunc(query, patch)
+		return c.UpdateFunc(ctx, query, patch)
 	}
 	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) UpdateOne(id string, patch Entity) (WriteResult, error) {
+func (c MockEntityClient) UpdateOne(ctx context.Context, id string, patch Entity) (WriteResult, error) {
 	if c.UpdateOneFunc != nil {
-		return c.UpdateOneFunc(id, patch)
+		return c.UpdateOneFunc(ctx, id, patch)
 	}
 	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) Delete(query string) (WriteResult, error) {
+func (c MockEntityClient) Delete(ctx context.Context, query string) (WriteResult, error) {
 	if c.DeleteFunc != nil {
-		return c.DeleteFunc(query)
+		return c.DeleteFunc(ctx, query)
 	}
 	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) DeleteOne(id string) (WriteResult, error) {
+func (c MockEntityClient) DeleteOne(ctx context.Context, id string) (WriteResult, error) {
 	if c.DeleteOneFunc != nil {
-		return c.DeleteOneFunc(id)
+		return c.DeleteOneFunc(ctx, id)
 	}
 	return WriteResult{}, nil
 }
 
-func (c MockEntityClient) Labels(id string) ([]string, error) {
+func (c MockEntityClient) Labels(ctx context.Context, id string) ([]string, error) {
 	if c.LabelsFunc != nil {
-		return c.LabelsFunc(id)
+		return c.LabelsFunc(ctx, id)
 	}
 	return nil, nil
 }
 
-func (c MockEntityClient) DeleteLabel(id string, label string) (WriteResult, error) {
+func (c MockEntityClient) DeleteLabel(ctx context.Context, id string, label string) (WriteResult, error) {
 	if c.DeleteLabelFunc != nil {
-		return c.DeleteLabelFunc(id, label)
+		return c.DeleteLabelFunc(ctx, id, label)
 	}
 	return WriteResult{}, nil
 }
@@ -603,18 +577,4 @@ func (c MockEntityClient) WithTrace(trace string) EntityClient {
 		return c.WithTraceFunc(trace)
 	}
 	return c
-}
-
-func (c MockEntityClient) WithContext(ctx context.Context) EntityClient {
-	if c.WithContextFunc != nil {
-		return c.WithContextFunc(ctx)
-	}
-	return c
-}
-
-func (c MockEntityClient) Context() context.Context {
-	if c.ContextFunc != nil {
-		return c.ContextFunc()
-	}
-	return context.Background()
 }

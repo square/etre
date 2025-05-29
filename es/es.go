@@ -4,6 +4,7 @@
 package es
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -202,6 +203,10 @@ func Run(ctx app.Context) {
 	}
 	etre.Debug("addr: %s", ctx.Options.Addr)
 
+	// Create a context with the timeout
+	ctxTimeout, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	// cmdLine.Args validated above
 	entityType := strings.SplitN(cmdLine.Args[0], ".", 2)
 	ctx.EntityType = entityType[0]
@@ -295,7 +300,7 @@ func Run(ctx app.Context) {
 			printAndExit(err, ctx)
 		}
 
-		wr, err := ec.Insert([]etre.Entity{patch})
+		wr, err := ec.Insert(ctxTimeout, []etre.Entity{patch})
 		_, err = writeResult(ctx, set, wr, err, "insert")
 		if err != nil {
 			printAndExit(err, ctx)
@@ -329,7 +334,7 @@ func Run(ctx app.Context) {
 			printAndExit(err, ctx)
 		}
 
-		wr, err := ec.UpdateOne(ctx.EntityId, patch)
+		wr, err := ec.UpdateOne(ctxTimeout, ctx.EntityId, patch)
 		found, err := writeResult(ctx, set, wr, err, "update")
 		if err != nil {
 			printAndExit(err, ctx)
@@ -358,7 +363,7 @@ func Run(ctx app.Context) {
 			}
 		}
 
-		wr, err := ec.DeleteOne(ctx.EntityId)
+		wr, err := ec.DeleteOne(ctxTimeout, ctx.EntityId)
 		found, err := writeResult(ctx, set, wr, err, "delete")
 		if err != nil {
 			printAndExit(err, ctx)
@@ -378,7 +383,7 @@ func Run(ctx app.Context) {
 	if o.DeleteLabel {
 		ctx.EntityId = cmdLine.Args[1]
 		label := cmdLine.Args[2]
-		wr, err := ec.DeleteLabel(ctx.EntityId, label)
+		wr, err := ec.DeleteLabel(ctxTimeout, ctx.EntityId, label)
 		found, err := writeResult(ctx, set, wr, err, "delete label from")
 		if err != nil {
 			printAndExit(err, ctx)
@@ -421,7 +426,11 @@ func Run(ctx app.Context) {
 		ReturnLabels: ctx.ReturnLabels,
 		Distinct:     ctx.Options.Unique,
 	}
-	entities, err := ec.Query(ctx.Query, f)
+
+	// Create a context with the queryTimeout
+	ctxQueryTimeout, queryCancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer queryCancel()
+	entities, err := ec.Query(ctxQueryTimeout, ctx.Query, f)
 	etre.Debug("ec.Query return: %d entities, err: %v", len(entities), err)
 
 	// If Response hook set, let it handle the reponse.
