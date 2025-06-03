@@ -11,15 +11,18 @@ import (
 	"path"
 	"runtime"
 	"sort"
+	"time"
 )
 
 const (
-	VERSION                  = "0.12.0"
-	API_ROOT          string = "/api/v1"
-	META_LABEL_ID            = "_id"
-	META_LABEL_TYPE          = "_type"
-	META_LABEL_REV           = "_rev"
-	CDC_WRITE_TIMEOUT int    = 5 // seconds
+	VERSION                   = "0.12.0"
+	API_ROOT           string = "/api/v1"
+	META_LABEL_ID             = "_id"
+	META_LABEL_TYPE           = "_type"
+	META_LABEL_REV            = "_rev"
+	META_LABEL_CREATED        = "_created"
+	META_LABEL_UPDATED        = "_updated"
+	CDC_WRITE_TIMEOUT  int    = 5 // seconds
 
 	VERSION_HEADER       = "X-Etre-Version"
 	TRACE_HEADER         = "X-Etre-Trace"
@@ -56,34 +59,83 @@ func (e Entity) Id() string {
 	return e[META_LABEL_ID].(string)
 }
 
+// Created returns the entities creation time from the META_LABEL_CREATED label.
+// If the label is not present, returns the zero value of time.Time.
+func (e Entity) Created() time.Time {
+	v := e[META_LABEL_CREATED]
+	if v == nil {
+		// Allowed, since old entities might not have this field
+		return time.Time{}
+	}
+	nanos, err := toInt64(v)
+	if err != nil {
+		// Since they do have this field, it must be the right type
+		panic(fmt.Sprintf("entity %s has invalid _created data type: %T; expected int64 (or int/int32 before v0.11)",
+			e.Id(), v))
+	}
+	return time.Unix(0, nanos)
+}
+
+// Updated returns the entities last update time from the META_LABEL_UPDATED label.
+// If the label is not present, returns the zero value of time.Time.
+func (e Entity) Updated() time.Time {
+	v := e[META_LABEL_UPDATED]
+	if v == nil {
+		// Allowed, since old entities might not have this field
+		return time.Time{}
+	}
+	nanos, err := toInt64(v)
+	if err != nil {
+		// Since they do have this field, it must be the right type
+		panic(fmt.Sprintf("entity %s has invalid _updated data type: %T; expected int64 (or int/int32 before v0.11)",
+			e.Id(), v))
+	}
+	return time.Unix(0, nanos)
+}
+
 func (e Entity) Type() string {
 	return e[META_LABEL_TYPE].(string)
 }
 
 func (e Entity) Rev() int64 {
-	// See "Some other useful marshalling mappings are:" at https://pkg.go.dev/go.mongodb.org/mongo-driver/bson?tab=doc
-	// TL;DR: only int32 and int64 map 1:1 Go:BSON. Before v0.11, we used int
-	// but that is magical in BSON: "int marshals to a BSON int32 if the value
-	// is between math.MinInt32 and math.MaxInt32, inclusive, and a BSON int64
-	// otherwise." As of v0.11 _rev is int64 everywhere, but for backwards-compat
-	// we check for int and int32.
 	v := e[META_LABEL_REV]
-	switch v.(type) {
-	case int64:
-		return v.(int64)
-	case int32:
-		return int64(v.(int32))
-	case int:
-		return int64(v.(int))
+	rev, err := toInt64(v)
+	if err != nil {
+		panic(fmt.Sprintf("entity %s has invalid _rev data type: %T; expected int64 (or int/int32 before v0.11)",
+			e.Id(), v))
 	}
-	panic(fmt.Sprintf("entity %s has invalid _rev data type: %T; expected int64 (or int/int32 before v0.11)",
-		e.Id(), v))
+	return rev
 }
 
 // Has returns true of the entity has the label, regardless of its value.
 func (e Entity) Has(label string) bool {
 	_, ok := e[label]
 	return ok
+}
+
+func toInt64(v any) (int64, error) {
+	// See "Some other useful marshalling mappings are:" at https://pkg.go.dev/go.mongodb.org/mongo-driver/bson?tab=doc
+	// TL;DR: only int32 and int64 map 1:1 Go:BSON. Before v0.11, we used int
+	// but that is magical in BSON: "int marshals to a BSON int32 if the value
+	// is between math.MinInt32 and math.MaxInt32, inclusive, and a BSON int64
+	// otherwise." As of v0.11 _rev is int64 everywhere, but for backwards-compat
+	// we check for int and int32.
+	//
+	// We also need to check for float64 and float32, since json.Unmarshal might use this type.
+	switch v.(type) {
+	case int64:
+		return v.(int64), nil
+	case int32:
+		return int64(v.(int32)), nil
+	case int:
+		return int64(v.(int)), nil
+	case float64:
+		return int64(v.(float64)), nil
+	case float32:
+		return int64(v.(float32)), nil
+	default:
+		return 0, fmt.Errorf("invalid type %T for int64 conversion", v)
+	}
 }
 
 // A Set is a user-defined logical grouping of writes (insert, update, delete).
@@ -122,7 +174,8 @@ var metaLabels = map[string]bool{
 	"_setId":   true,
 	"_setOp":   true,
 	"_setSize": true,
-	"_ts":      true,
+	"_created": true,
+	"_updated": true,
 	"_type":    true,
 }
 

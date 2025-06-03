@@ -129,10 +129,13 @@ func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, err
 	// A slice of IDs we generate to insert along with entities into DB
 	newIds := make([]string, 0, len(entities))
 
+	now := time.Now().UnixNano()
 	for i := range entities {
 		entities[i]["_id"] = primitive.NewObjectID()
 		entities[i]["_type"] = wo.EntityType
 		entities[i]["_rev"] = int64(0)
+		entities[i]["_created"] = now
+		entities[i]["_updated"] = now
 
 		res, err := c.InsertOne(s.ctx, entities[i])
 		if err != nil {
@@ -187,6 +190,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 	// diffs is a slice made up of a diff for each doc updated
 	diffs := []etre.Entity{}
 
+	patch["_updated"] = time.Now().UnixNano()
 	updates := bson.M{
 		"$set": patch,
 		"$inc": bson.M{
@@ -194,7 +198,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 		},
 	}
 
-	p := bson.M{"_id": 1, "_type": 1, "_rev": 1}
+	p := bson.M{"_id": 1, "_type": 1, "_rev": 1, "_updated": 1}
 	for label := range patch {
 		p[label] = 1
 	}

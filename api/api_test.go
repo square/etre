@@ -52,9 +52,9 @@ type server struct {
 }
 
 var testEntities = []etre.Entity{
-	{"_id": "59f10d2a5669fc79103a0000", "_type": "node", "_rev": int64(0), "x": "1", "foo": "bar"},
-	{"_id": "59f10d2a5669fc79103a1111", "_type": "node", "_rev": int64(0), "x": "2", "foo": "bar"},
-	{"_id": "59f10d2a5669fc79103a2222", "_type": "node", "_rev": int64(0), "x": "3", "foo": "bar"},
+	{"_id": "59f10d2a5669fc79103a0000", "_type": "node", "_rev": int64(0), "_created": int64(1000), "_updated": int64(2000), "x": "1", "foo": "bar"},
+	{"_id": "59f10d2a5669fc79103a1111", "_type": "node", "_rev": int64(0), "_created": int64(3000), "_updated": int64(4000), "x": "2", "foo": "bar"},
+	{"_id": "59f10d2a5669fc79103a2222", "_type": "node", "_rev": int64(0), "_created": int64(5000), "_updated": int64(6000), "x": "3", "foo": "bar"},
 }
 
 var testEntityIds = []string{"59f10d2a5669fc79103a0000", "59f10d2a5669fc79103a1111", "59f10d2a5669fc79103a2222"}
@@ -66,9 +66,9 @@ var (
 )
 
 var testEntitiesWithObjectIDs = []etre.Entity{
-	{"_id": testEntityId0, "_type": "node", "_rev": int64(0), "x": "1", "foo": "bar"},
-	{"_id": testEntityId1, "_type": "node", "_rev": int64(0), "x": "2", "foo": "bar"},
-	{"_id": testEntityId2, "_type": "node", "_rev": int64(0), "x": "3", "foo": "bar"},
+	{"_id": testEntityId0, "_type": "node", "_rev": int64(0), "_created": int64(1000), "_updated": int64(2000), "x": "1", "foo": "bar"},
+	{"_id": testEntityId1, "_type": "node", "_rev": int64(0), "_created": int64(3000), "_updated": int64(4000), "x": "2", "foo": "bar"},
+	{"_id": testEntityId2, "_type": "node", "_rev": int64(0), "_created": int64(5000), "_updated": int64(6000), "x": "3", "foo": "bar"},
 }
 
 var defaultConfig = config.Config{
@@ -125,11 +125,13 @@ func uri(id string) string {
 	return addr + etre.API_ROOT + "/entity/" + id
 }
 
-func fixRev(e []etre.Entity) {
-	for i := range e {
-		f := e[i]["_rev"].(float64)
-		delete(e[i], "_rev")
-		e[i]["_rev"] = int64(f)
+func fixInt64(e []etre.Entity) {
+	for _, label := range []string{"_rev", "_updated", "_created"} {
+		for i := range e {
+			f := e[i][label].(float64)
+			delete(e[i], label)
+			e[i][label] = int64(f)
+		}
 	}
 }
 

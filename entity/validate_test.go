@@ -29,6 +29,8 @@ func TestValidateCreateEntitiesErrorsMetalabels(t *testing.T) {
 		{"a": "b", "_id": "59f10d2a5669fc79103a1111"}, // _id not allowed
 		{"a": "b", "_type": "node"},                   // _type not allowed
 		{"a": "b", "_rev": int64(0)},                  // _rev not allowed
+		{"a": "b", "_created": int64(0)},              // _created not allowed
+		{"a": "b", "_updated": int64(0)},              // _updated not allowed
 	}
 
 	for _, e := range invalid {

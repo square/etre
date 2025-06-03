@@ -55,7 +55,7 @@ func TestGetEntityBasic(t *testing.T) {
 	expectFilter := etre.QueryFilter{}
 	assert.Equal(t, expectFilter, gotFilter)
 
-	fixRev([]etre.Entity{gotEntity}) // JSON float64(_rev) ->, int64(_rev)
+	fixInt64([]etre.Entity{gotEntity}) // JSON float64(_rev) ->, int64(_rev)
 	assert.Equal(t, testEntities[0], gotEntity)
 
 	// -- Metrics -----------------------------------------------------------

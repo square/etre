@@ -5,6 +5,7 @@ package entity_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,14 +53,14 @@ func setupV09(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	}
 
 	v09testNodes = []etre.Entity{
-		{"_type": entityType, "_rev": int(0), "x": "a", "y": "a"},
-		{"_type": entityType, "_rev": int(0), "x": "b", "y": "a"},
-		{"_type": entityType, "_rev": int(0), "x": "c", "y": "a"},
+		{"_type": entityType, "_rev": int(0), "_updated": int(0), "_created": int(0), "x": "a", "y": "a"},
+		{"_type": entityType, "_rev": int(0), "_updated": int(0), "_created": int(0), "x": "b", "y": "a"},
+		{"_type": entityType, "_rev": int(0), "_updated": int(0), "_created": int(0), "x": "c", "y": "a"},
 	}
 	v09testNodes_int32 = []etre.Entity{
-		{"_type": entityType, "_rev": int32(0), "x": "a", "y": "a"},
-		{"_type": entityType, "_rev": int32(0), "x": "b", "y": "a"},
-		{"_type": entityType, "_rev": int32(0), "x": "c", "y": "a"},
+		{"_type": entityType, "_rev": int32(0), "_updated": int32(0), "_created": int32(0), "x": "a", "y": "a"},
+		{"_type": entityType, "_rev": int32(0), "_updated": int32(0), "_created": int32(0), "x": "b", "y": "a"},
+		{"_type": entityType, "_rev": int32(0), "_updated": int32(0), "_created": int32(0), "x": "c", "y": "a"},
 	}
 	res, err := nodesColl.InsertMany(context.TODO(), docs(v09testNodes))
 	require.NoError(t, err)
@@ -101,6 +102,7 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
 	id2, _ := primitive.ObjectIDFromHex(ids[1])
 	id3, _ := primitive.ObjectIDFromHex(ids[2])
+	upd := (*gotEvents[0].New)["_updated"].(int64)
 	expectEvents := []etre.CDCEvent{
 		{
 			Id:         gotEvents[0].Id, // non-deterministic
@@ -111,7 +113,7 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": "d"},
+			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "_created": upd, "_updated": upd, "x": "d"},
 		},
 		{
 			Id:         gotEvents[1].Id, // non-deterministic
@@ -122,7 +124,7 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "x": "e"},
+			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "_created": upd, "_updated": upd, "x": "e"},
 		},
 		{
 			Id:         gotEvents[2].Id, // non-deterministic
@@ -133,12 +135,13 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "x": "f", "_setId": "343", "_setOp": "something", "_setSize": 1},
+			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "_created": upd, "_updated": upd, "x": "f", "_setId": "343", "_setOp": "something", "_setSize": 1},
 			SetId:      "343",
 			SetOp:      "something",
 			SetSize:    1,
 		},
 	}
+	assert.Greater(t, upd, time.Now().Add(-10*time.Second).UnixNano(), "expected _created/_updated to be within the last 10 seconds")
 	assert.Equal(t, expectEvents, gotEvents)
 }
 
@@ -168,10 +171,11 @@ func TestV09UpdateEntities(t *testing.T) {
 	require.NoError(t, err)
 	expectDiffs := []etre.Entity{
 		{
-			"_id":   v09testNodes[0]["_id"],
-			"_type": entityType,
-			"_rev":  int32(0),
-			"y":     "a",
+			"_id":      v09testNodes[0]["_id"],
+			"_type":    entityType,
+			"_rev":     int32(0),
+			"_updated": int32(0),
+			"y":        "a",
 		},
 	}
 	assert.Equal(t, expectDiffs, gotDiffs)
@@ -181,6 +185,7 @@ func TestV09UpdateEntities(t *testing.T) {
 		gotEvents[i].Ts = 0
 	}
 	id1, _ := v09testNodes[0]["_id"].(primitive.ObjectID)
+	upd := (*gotEvents[0].New)["_updated"].(int64)
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -188,13 +193,14 @@ func TestV09UpdateEntities(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "a"},
-			New:        &etre.Entity{"y": "y"},
+			Old:        &etre.Entity{"y": "a", "_updated": int32(0)},
+			New:        &etre.Entity{"y": "y", "_updated": upd},
 			SetId:      "111",
 			SetOp:      "update-y1",
 			SetSize:    1,
 		},
 	}
+	assert.Greater(t, upd, time.Now().Add(-10*time.Second).UnixNano(), "expected _created/_updated to be within the last 10 seconds")
 	assert.Equal(t, expectEvent, gotEvents)
 }
 
@@ -297,6 +303,8 @@ func TestV09DeleteLabel(t *testing.T) {
 	}
 	delete(e, "y")       // because we deleted the label
 	e["_rev"] = int32(1) // because we deleted the label
+	e["_created"] = int32(0)
+	e["_updated"] = int32(0)
 	expectNew := []etre.Entity{e}
 	assert.Equal(t, expectNew, gotNew)
 
