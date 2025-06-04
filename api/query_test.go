@@ -384,9 +384,10 @@ func TestResponseCompression(t *testing.T) {
 	assert.Equal(t, "application/json", res.Header.Get("Content-Type"))
 }
 
-// fixLatencyMetric is a helper function that fixes the latency metric in the actual metrics. Since latency is non-deterministic, it can cause
-// tests to fail. This function replaces the latency metric in the actual metrics with the expected value, so that the test can pass.
-// It also asserts that the actual latency is less than the max value, to ensure that the latency is within acceptable limits.
+// fixLatencyMetric is a helper function that fixes the non-deterministic latency to ensure actual==expected for assertions.
+// Since latency is non-deterministic, it can cause tests to fail intermittently. This function replaces the latency metric
+// in the "expect" metrics with the "actual" value, so that the test can pass.
+// It also asserts that the actual latency is between 0 and the provided max value, to ensure that the latency is within acceptable limits.
 func fixLatencyMetric(t *testing.T, max int, expect, actual []mock.MetricMethodArgs) {
 	t.Helper()
 	if len(actual) != len(expect) {
@@ -395,7 +396,6 @@ func fixLatencyMetric(t *testing.T, max int, expect, actual []mock.MetricMethodA
 	}
 	for i, _ := range actual {
 		if actual[i].Metric == metrics.LatencyMs && expect[i].Metric == metrics.LatencyMs && actual[i].Method == expect[i].Method {
-			// Replace the latency metric with the expected value.
 			assert.True(t, actual[i].IntVal >= 0 && actual[i].IntVal <= int64(max), "Latency metric value %d must be between 0 and %d.", actual[i].IntVal, max)
 			expect[i].IntVal = actual[i].IntVal
 		}
