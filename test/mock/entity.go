@@ -11,60 +11,52 @@ import (
 )
 
 type EntityStore struct {
-	WithContextFunc       func(context.Context) entity.Store
-	ReadEntitiesFunc      func(string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
-	DeleteEntityLabelFunc func(entity.WriteOp, string) (etre.Entity, error)
-	CreateEntitiesFunc    func(entity.WriteOp, []etre.Entity) ([]string, error)
-	UpdateEntitiesFunc    func(entity.WriteOp, query.Query, etre.Entity) ([]etre.Entity, error)
-	DeleteEntitiesFunc    func(entity.WriteOp, query.Query) ([]etre.Entity, error)
-	DeleteLabelFunc       func(entity.WriteOp, string) (etre.Entity, error)
+	ReadEntitiesFunc      func(context.Context, string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
+	DeleteEntityLabelFunc func(context.Context, entity.WriteOp, string) (etre.Entity, error)
+	CreateEntitiesFunc    func(context.Context, entity.WriteOp, []etre.Entity) ([]string, error)
+	UpdateEntitiesFunc    func(context.Context, entity.WriteOp, query.Query, etre.Entity) ([]etre.Entity, error)
+	DeleteEntitiesFunc    func(context.Context, entity.WriteOp, query.Query) ([]etre.Entity, error)
+	DeleteLabelFunc       func(context.Context, entity.WriteOp, string) (etre.Entity, error)
 }
 
-func (s EntityStore) WithContext(ctx context.Context) entity.Store {
-	if s.WithContextFunc != nil {
-		return s.WithContextFunc(ctx)
-	}
-	return s
-}
-
-func (s EntityStore) DeleteEntityLabel(wo entity.WriteOp, label string) (etre.Entity, error) {
+func (s EntityStore) DeleteEntityLabel(ctx context.Context, wo entity.WriteOp, label string) (etre.Entity, error) {
 	if s.DeleteEntityLabelFunc != nil {
-		return s.DeleteEntityLabelFunc(wo, label)
+		return s.DeleteEntityLabelFunc(ctx, wo, label)
 	}
 	return nil, nil
 }
 
-func (s EntityStore) CreateEntities(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
+func (s EntityStore) CreateEntities(ctx context.Context, wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 	if s.CreateEntitiesFunc != nil {
-		return s.CreateEntitiesFunc(wo, entities)
+		return s.CreateEntitiesFunc(ctx, wo, entities)
 	}
 	return nil, nil
 }
 
-func (s EntityStore) ReadEntities(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+func (s EntityStore) ReadEntities(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 	if s.ReadEntitiesFunc != nil {
-		return s.ReadEntitiesFunc(entityType, q, f)
+		return s.ReadEntitiesFunc(ctx, entityType, q, f)
 	}
 	return nil, nil
 }
 
-func (s EntityStore) UpdateEntities(wo entity.WriteOp, q query.Query, u etre.Entity) ([]etre.Entity, error) {
+func (s EntityStore) UpdateEntities(ctx context.Context, wo entity.WriteOp, q query.Query, u etre.Entity) ([]etre.Entity, error) {
 	if s.UpdateEntitiesFunc != nil {
-		return s.UpdateEntitiesFunc(wo, q, u)
+		return s.UpdateEntitiesFunc(ctx, wo, q, u)
 	}
 	return nil, nil
 }
 
-func (s EntityStore) DeleteEntities(wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+func (s EntityStore) DeleteEntities(ctx context.Context, wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
 	if s.DeleteEntitiesFunc != nil {
-		return s.DeleteEntitiesFunc(wo, q)
+		return s.DeleteEntitiesFunc(ctx, wo, q)
 	}
 	return nil, nil
 }
 
-func (s EntityStore) DeleteLabel(wo entity.WriteOp, label string) (etre.Entity, error) {
+func (s EntityStore) DeleteLabel(ctx context.Context, wo entity.WriteOp, label string) (etre.Entity, error) {
 	if s.DeleteLabelFunc != nil {
-		return s.DeleteLabelFunc(wo, label)
+		return s.DeleteLabelFunc(ctx, wo, label)
 	}
 	return etre.Entity{}, nil
 }

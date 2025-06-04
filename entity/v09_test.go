@@ -94,7 +94,7 @@ func TestV09CreateEntitiesMultiple(t *testing.T) {
 		{"x": "e"},
 		{"x": "f", "_setId": "343", "_setOp": "something", "_setSize": 1},
 	}
-	ids, err := store.CreateEntities(wo, testData)
+	ids, err := store.CreateEntities(context.Background(), wo, testData)
 	require.NoError(t, err)
 	assert.Len(t, ids, len(testData))
 
@@ -167,7 +167,7 @@ func TestV09UpdateEntities(t *testing.T) {
 		SetId:      "111",
 		SetSize:    1,
 	}
-	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
+	gotDiffs, err := store.UpdateEntities(context.Background(), wo1, q, patch)
 	require.NoError(t, err)
 	expectDiffs := []etre.Entity{
 		{
@@ -218,7 +218,7 @@ func TestV09DeleteEntities(t *testing.T) {
 	q, err := query.Translate("x == a")
 	require.NoError(t, err)
 
-	gotOld, err := store.DeleteEntities(wo, q)
+	gotOld, err := store.DeleteEntities(context.Background(), wo, q)
 	require.NoError(t, err)
 	assert.Equal(t, v09testNodes_int32[:1], gotOld)
 
@@ -226,7 +226,7 @@ func TestV09DeleteEntities(t *testing.T) {
 	q, err = query.Translate("x in (b,c)")
 	require.NoError(t, err)
 
-	gotOld, err = store.DeleteEntities(wo, q)
+	gotOld, err = store.DeleteEntities(context.Background(), wo, q)
 	require.NoError(t, err)
 	assert.Equal(t, v09testNodes_int32[1:], gotOld)
 
@@ -281,7 +281,7 @@ func TestV09DeleteLabel(t *testing.T) {
 		EntityId:   v09testNodes[0]["_id"].(primitive.ObjectID).Hex(),
 		Caller:     username,
 	}
-	gotOld, err := store.DeleteLabel(wo, "y")
+	gotOld, err := store.DeleteLabel(context.Background(), wo, "y")
 	require.NoError(t, err)
 
 	expectOld := etre.Entity{
@@ -294,7 +294,7 @@ func TestV09DeleteLabel(t *testing.T) {
 
 	// The foo label should no longer be set on the entity
 	q, _ := query.Translate("x=a")
-	gotNew, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
+	gotNew, err := store.ReadEntities(context.Background(), entityType, q, etre.QueryFilter{})
 	require.NoError(t, err)
 
 	e := etre.Entity{}

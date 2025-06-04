@@ -3,6 +3,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,7 +34,7 @@ func TestPostEntityOK(t *testing.T) {
 	var gotWO entity.WriteOp
 	var gotEntities []etre.Entity
 	store := mock.EntityStore{
-		CreateEntitiesFunc: func(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		CreateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 			gotWO = wo
 			gotEntities = entities
 			return []string{"id1"}, nil
@@ -96,7 +97,7 @@ func TestPostEntityDuplicate(t *testing.T) {
 	// Test that POST /entities/:type returns HTTP 403 Conflict on duplicate
 	// which we simulate by returning what entity.Store would:
 	store := mock.EntityStore{
-		CreateEntitiesFunc: func(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		CreateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 			// Real CreateEntities() always returns []string, not nil, because
 			// it supports partial writes
 			return []string{}, entity.DbError{Err: fmt.Errorf("dupe"), Type: "duplicate-entity"}
@@ -144,7 +145,7 @@ func TestPostEntityErrors(t *testing.T) {
 	// Test that POST /entities/:type returns an error for any issue
 	created := false
 	store := mock.EntityStore{
-		CreateEntitiesFunc: func(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		CreateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 			created = true
 			return []string{"id1"}, nil
 		},
@@ -254,7 +255,7 @@ func TestPutEntityOK(t *testing.T) {
 	var gotWO entity.WriteOp
 	var gotQuery query.Query
 	store := mock.EntityStore{
-		UpdateEntitiesFunc: func(wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+		UpdateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 			gotWO = wo
 			gotQuery = q
 			diff := []etre.Entity{
@@ -329,7 +330,7 @@ func TestPutEntityDuplicate(t *testing.T) {
 	// Test that PUT /entities/:type/:id returns HTTP 403 Conflict on duplicate
 	// which we simulate by returning what entity.Store would:
 	store := mock.EntityStore{
-		UpdateEntitiesFunc: func(wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+		UpdateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 			return nil, entity.DbError{
 				Type:     "duplicate-entity", // the key to making this happen
 				EntityId: testEntityIds[0],
@@ -380,7 +381,7 @@ func TestPutEntityNotFound(t *testing.T) {
 	// Test that PUT /entities/:type/:id returns HTTP 404 when there's no entity
 	// with the given id. In this case, the entity.Store returns an empty diff:
 	store := mock.EntityStore{
-		UpdateEntitiesFunc: func(wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+		UpdateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 			return []etre.Entity{}, nil // no entities matched
 		},
 	}
@@ -419,7 +420,7 @@ func TestPutEntityErrors(t *testing.T) {
 	// Test that PUT /entities/:type/:id returns errors unless all inputs are correct
 	updated := false
 	store := mock.EntityStore{
-		UpdateEntitiesFunc: func(wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+		UpdateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 			updated = true
 			return []etre.Entity{{"_id": testEntityId0, "_type": entityType, "_rev": int64(0)}}, nil
 		},
@@ -592,7 +593,7 @@ func TestDeleteEntityOK(t *testing.T) {
 	var gotWO entity.WriteOp
 	var gotQuery query.Query
 	store := mock.EntityStore{
-		DeleteEntitiesFunc: func(wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+		DeleteEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
 			gotWO = wo
 			gotQuery = q
 			diff := []etre.Entity{
@@ -671,7 +672,7 @@ func TestDeleteLabel(t *testing.T) {
 	var gotWO entity.WriteOp
 	var gotLabel string
 	store := mock.EntityStore{
-		DeleteLabelFunc: func(wo entity.WriteOp, label string) (etre.Entity, error) {
+		DeleteLabelFunc: func(ctx context.Context, wo entity.WriteOp, label string) (etre.Entity, error) {
 			gotWO = wo
 			gotLabel = label
 			return etre.Entity{"_id": testEntityId0, "_type": entityType, "_rev": int64(0), "foo": "oldVal"}, nil

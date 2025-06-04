@@ -3,6 +3,7 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,7 +32,7 @@ func TestGetEntityBasic(t *testing.T) {
 	var gotQuery query.Query
 	var gotFilter etre.QueryFilter
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			gotQuery = q
 			gotFilter = f
 			return testEntitiesWithObjectIDs[0:1], nil
@@ -83,7 +84,7 @@ func TestGetEntityReturnLabels(t *testing.T) {
 	// that the URL param "labels=" is processed and passed along to the entity.Store.
 	var gotFilter etre.QueryFilter
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			gotFilter = f
 			return testEntitiesWithObjectIDs[0:1], nil
 		},
@@ -129,7 +130,7 @@ func TestGetEntityNotFound(t *testing.T) {
 	// We simulate this by making ReadEntities() below return an empty list which
 	// the real entity.Store() does when no entity exists with the given _id.
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			return []etre.Entity{}, nil
 		},
 	}
@@ -163,7 +164,7 @@ func TestGetEntityErrors(t *testing.T) {
 	read := false
 	var dbError error
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			read = true
 			return nil, dbError
 		},
@@ -257,7 +258,7 @@ func TestGetEntityLabels(t *testing.T) {
 	var gotQuery query.Query
 	var gotFilter etre.QueryFilter
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			gotQuery = q
 			gotFilter = f
 			return testEntitiesWithObjectIDs[0:1], nil

@@ -3,6 +3,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -32,7 +33,7 @@ func TestPostEntitiesOK(t *testing.T) {
 	var gotWO entity.WriteOp
 	var gotEntities []etre.Entity
 	store := mock.EntityStore{
-		CreateEntitiesFunc: func(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		CreateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 			gotWO = wo
 			gotEntities = entities
 			return []string{"id1", "id2"}, nil
@@ -95,7 +96,7 @@ func TestPostEntitiesErrors(t *testing.T) {
 	// Most importantly: CreateEntities() should _not_ be called.
 	created := false
 	store := mock.EntityStore{
-		CreateEntitiesFunc: func(wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		CreateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, entities []etre.Entity) ([]string, error) {
 			created = true
 			return []string{"id1", "id2"}, nil
 		},
@@ -246,7 +247,7 @@ func TestPutEntitiesOK(t *testing.T) {
 	var gotQuery query.Query
 	var gotPatch etre.Entity
 	store := mock.EntityStore{
-		UpdateEntitiesFunc: func(wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+		UpdateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 			gotWO = wo
 			gotQuery = q
 			gotPatch = patch
@@ -330,7 +331,7 @@ func TestPutEntitiesErrors(t *testing.T) {
 	// metrics when any input is invalid. The UpdateEntities() should not be called.
 	updated := false
 	store := mock.EntityStore{
-		UpdateEntitiesFunc: func(wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+		UpdateEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 			updated = true
 			return []etre.Entity{}, nil
 		},
@@ -496,7 +497,7 @@ func TestDeleteEntitiesOK(t *testing.T) {
 	var gotWO entity.WriteOp
 	var gotQuery query.Query
 	store := mock.EntityStore{
-		DeleteEntitiesFunc: func(wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+		DeleteEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
 			gotWO = wo
 			gotQuery = q
 			return []etre.Entity{
@@ -575,7 +576,7 @@ func TestDeleteEntitiesErrors(t *testing.T) {
 	// metrics when any input is invalid. The DeleteEntities() should not be called.
 	deleted := false
 	store := mock.EntityStore{
-		DeleteEntitiesFunc: func(wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+		DeleteEntitiesFunc: func(ctx context.Context, wo entity.WriteOp, q query.Query) ([]etre.Entity, error) {
 			deleted = true
 			return []etre.Entity{}, nil
 		},

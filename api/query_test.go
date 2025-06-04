@@ -28,7 +28,7 @@ func TestQueryBasic(t *testing.T) {
 	var gotQuery query.Query
 	var gotFilter etre.QueryFilter
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			gotQuery = q
 			gotFilter = f
 			return testEntitiesWithObjectIDs, nil
@@ -171,7 +171,7 @@ func TestQueryNoMatches(t *testing.T) {
 	// is still 200 OK in this case because there's no error.
 	var gotQuery query.Query
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			gotQuery = q
 			return []etre.Entity{}, nil // no matching queries
 		},
@@ -220,7 +220,7 @@ func TestQueryErrorsDatabaseError(t *testing.T) {
 	// Test that GET /entities/:type?query=Q handles a database error correctly.
 	// Db errors (and only db errors return HTTP 503 "Service Unavailable".
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			return nil, entity.DbError{Err: fmt.Errorf("fake error"), Type: "db-read"}
 		},
 	}
@@ -269,7 +269,7 @@ func TestQueryErrorsNoEntityType(t *testing.T) {
 	// You can run "../test/coverage -test.run TestQueryErrorsNoEntityType" and
 	// see that the handler is never called.
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			return nil, entity.DbError{Err: fmt.Errorf("fake error"), Type: "db-read"}
 		},
 	}
@@ -310,7 +310,7 @@ func TestQueryErrorsTimeout(t *testing.T) {
 	// Test that GET /entities/:type?query=Q handles a database timeout correctly.
 	// Db errors (and only db errors return HTTP 503 "Service Unavailable".
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 			<-ctx.Done()
@@ -357,7 +357,7 @@ func TestQueryErrorsTimeout(t *testing.T) {
 func TestResponseCompression(t *testing.T) {
 	// Stand up the server
 	store := mock.EntityStore{
-		ReadEntitiesFunc: func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		ReadEntitiesFunc: func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 			return testEntitiesWithObjectIDs, nil
 		},
 	}

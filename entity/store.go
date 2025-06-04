@@ -19,23 +19,20 @@ import (
 
 // Store interface has methods needed to do CRUD operations on entities.
 type Store interface {
-	WithContext(context.Context) Store
+	ReadEntities(context.Context, string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
 
-	ReadEntities(string, query.Query, etre.QueryFilter) ([]etre.Entity, error)
+	CreateEntities(context.Context, WriteOp, []etre.Entity) ([]string, error)
 
-	CreateEntities(WriteOp, []etre.Entity) ([]string, error)
+	UpdateEntities(context.Context, WriteOp, query.Query, etre.Entity) ([]etre.Entity, error)
 
-	UpdateEntities(WriteOp, query.Query, etre.Entity) ([]etre.Entity, error)
+	DeleteEntities(context.Context, WriteOp, query.Query) ([]etre.Entity, error)
 
-	DeleteEntities(WriteOp, query.Query) ([]etre.Entity, error)
-
-	DeleteLabel(WriteOp, string) (etre.Entity, error)
+	DeleteLabel(context.Context, WriteOp, string) (etre.Entity, error)
 }
 
 type store struct {
 	coll   map[string]*mongo.Collection
 	cdcs   cdc.Store
-	ctx    context.Context
 	config config.EntityConfig
 }
 
@@ -44,20 +41,14 @@ func NewStore(entities map[string]*mongo.Collection, cdcStore cdc.Store, cfg con
 	return store{
 		coll:   entities,
 		cdcs:   cdcStore,
-		ctx:    context.Background(),
 		config: cfg,
 	}
-}
-
-func (s store) WithContext(ctx context.Context) Store {
-	s.ctx = ctx
-	return s
 }
 
 // ReadEntities queries the db and returns a slice of Entity objects if
 // something is found, a nil slice if nothing is found, and an error if one
 // occurs.
-func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+func (s store) ReadEntities(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 	c, ok := s.coll[entityType]
 	if !ok {
 		panic("invalid entity type passed to ReadEntities: " + entityType)
@@ -67,9 +58,9 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 	// "es -u node.metacluster zone=pd" returns a list of unique metacluster names.
 	// This is 10x faster than "es node.metacluster zone=pd | sort -u".
 	if len(f.ReturnLabels) == 1 && f.Distinct {
-		values, err := c.Distinct(s.ctx, f.ReturnLabels[0], Filter(q))
+		values, err := c.Distinct(ctx, f.ReturnLabels[0], Filter(q))
 		if err != nil {
-			return nil, s.dbError(err, "db-read-distinct")
+			return nil, s.dbError(ctx, err, "db-read-distinct")
 		}
 		entities := make([]etre.Entity, len(values))
 		for i, v := range values {
@@ -94,13 +85,13 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 
 	// Set batch size and projection
 	opts := options.Find().SetProjection(p).SetBatchSize(int32(s.config.BatchSize))
-	cursor, err := c.Find(s.ctx, Filter(q), opts)
+	cursor, err := c.Find(ctx, Filter(q), opts)
 	if err != nil {
-		return nil, s.dbError(err, "db-query")
+		return nil, s.dbError(ctx, err, "db-query")
 	}
 	entities := []etre.Entity{}
-	if err := cursor.All(s.ctx, &entities); err != nil {
-		return nil, s.dbError(err, "db-read-cursor")
+	if err := cursor.All(ctx, &entities); err != nil {
+		return nil, s.dbError(ctx, err, "db-read-cursor")
 	}
 	return entities, nil
 }
@@ -120,7 +111,7 @@ func (s store) ReadEntities(entityType string, q query.Query, f etre.QueryFilter
 // entities inserted. Since the entities were inserted in order (guranteed by
 // inserting one by one), caller should only return subset of entities that
 // failed to be inserted.
-func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, error) {
+func (s store) CreateEntities(ctx context.Context, wo WriteOp, entities []etre.Entity) ([]string, error) {
 	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to CreateEntities: " + wo.EntityType)
@@ -137,9 +128,9 @@ func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, err
 		entities[i]["_created"] = now
 		entities[i]["_updated"] = now
 
-		res, err := c.InsertOne(s.ctx, entities[i])
+		res, err := c.InsertOne(ctx, entities[i])
 		if err != nil {
-			return newIds, s.dbError(err, "db-insert")
+			return newIds, s.dbError(ctx, err, "db-insert")
 		}
 		id := res.InsertedID.(primitive.ObjectID)
 		newIds = append(newIds, id.Hex())
@@ -152,7 +143,7 @@ func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, err
 			old: nil,
 			rev: int64(0),
 		}
-		if err := s.cdcWrite(entities[i], wo, cp); err != nil {
+		if err := s.cdcWrite(ctx, entities[i], wo, cp); err != nil {
 			return newIds, err
 		}
 	}
@@ -174,18 +165,18 @@ func (s store) CreateEntities(wo WriteOp, entities []etre.Entity) ([]string, err
 //	update := db.Entity{"y": "bar"}
 //
 //	diffs, err := c.UpdateEntities(q, update)
-func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
+func (s store) UpdateEntities(ctx context.Context, wo WriteOp, q query.Query, patch etre.Entity) ([]etre.Entity, error) {
 	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to UpdateEntities: " + wo.EntityType)
 	}
 
 	fopts := options.Find().SetProjection(bson.M{"_id": 1})
-	cursor, err := c.Find(s.ctx, Filter(q), fopts)
+	cursor, err := c.Find(ctx, Filter(q), fopts)
 	if err != nil {
-		return nil, s.dbError(err, "db-query")
+		return nil, s.dbError(ctx, err, "db-query")
 	}
-	defer cursor.Close(s.ctx)
+	defer cursor.Close(ctx)
 
 	// diffs is a slice made up of a diff for each doc updated
 	diffs := []etre.Entity{}
@@ -205,19 +196,19 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 	opts := options.FindOneAndUpdate().SetProjection(p)
 
 	nextId := map[string]primitive.ObjectID{}
-	for cursor.Next(s.ctx) {
+	for cursor.Next(ctx) {
 		if err := cursor.Decode(&nextId); err != nil {
-			return diffs, s.dbError(err, "db-cursor-decode")
+			return diffs, s.dbError(ctx, err, "db-cursor-decode")
 		}
 		uq, _ := query.Translate("_id=" + nextId["_id"].Hex())
 
 		var orig etre.Entity
-		err := c.FindOneAndUpdate(s.ctx, Filter(uq), updates, opts).Decode(&orig)
+		err := c.FindOneAndUpdate(ctx, Filter(uq), updates, opts).Decode(&orig)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
 				break
 			}
-			return diffs, s.dbError(err, "db-update")
+			return diffs, s.dbError(ctx, err, "db-update")
 		}
 		diffs = append(diffs, orig)
 
@@ -236,13 +227,13 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 			old: &old,
 			new: &patch,
 		}
-		if err := s.cdcWrite(patch, wo, cp); err != nil {
+		if err := s.cdcWrite(ctx, patch, wo, cp); err != nil {
 			return diffs, err
 		}
 	}
 
 	if err := cursor.Err(); err != nil {
-		return diffs, s.dbError(err, "db-cursor-next")
+		return diffs, s.dbError(ctx, err, "db-cursor-next")
 	}
 
 	return diffs, nil
@@ -256,7 +247,7 @@ func (s store) UpdateEntities(wo WriteOp, q query.Query, patch etre.Entity) ([]e
 // Returns a slice of successfully deleted entities an error if there is one.
 // For example, if 4 entities were supposed to be deleted and 3 are ok and the
 // 4th fails, a slice with 3 deleted entities and an error will be returned.
-func (s store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) {
+func (s store) DeleteEntities(ctx context.Context, wo WriteOp, q query.Query) ([]etre.Entity, error) {
 	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteEntities: " + wo.EntityType)
@@ -265,12 +256,12 @@ func (s store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) 
 	deleted := []etre.Entity{}
 	for {
 		var old etre.Entity
-		err := c.FindOneAndDelete(s.ctx, Filter(q)).Decode(&old)
+		err := c.FindOneAndDelete(ctx, Filter(q)).Decode(&old)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
 				break
 			}
-			return deleted, s.dbError(err, "db-delete")
+			return deleted, s.dbError(ctx, err, "db-delete")
 		}
 		deleted = append(deleted, old)
 		ce := cdcPartial{
@@ -280,7 +271,7 @@ func (s store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) 
 			new: nil,
 			rev: old.Rev() + 1,
 		}
-		if err := s.cdcWrite(old, wo, ce); err != nil {
+		if err := s.cdcWrite(ctx, old, wo, ce); err != nil {
 			return deleted, err
 		}
 	}
@@ -289,7 +280,7 @@ func (s store) DeleteEntities(wo WriteOp, q query.Query) ([]etre.Entity, error) 
 }
 
 // DeleteLabel deletes a label from an entity.
-func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
+func (s store) DeleteLabel(ctx context.Context, wo WriteOp, label string) (etre.Entity, error) {
 	c, ok := s.coll[wo.EntityType]
 	if !ok {
 		panic("invalid entity type passed to DeleteLabel: " + wo.EntityType)
@@ -305,9 +296,9 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 		SetProjection(bson.M{"_id": 1, "_type": 1, "_rev": 1, label: 1}).
 		SetReturnDocument(options.Before)
 	var old etre.Entity
-	err := c.FindOneAndUpdate(s.ctx, filter, update, opts).Decode(&old)
+	err := c.FindOneAndUpdate(ctx, filter, update, opts).Decode(&old)
 	if err != nil {
-		return nil, s.dbError(err, "db-update")
+		return nil, s.dbError(ctx, err, "db-update")
 	}
 
 	// Make the new Entity by copying the old and deleting the label
@@ -336,15 +327,15 @@ func (s store) DeleteLabel(wo WriteOp, label string) (etre.Entity, error) {
 		old: &old,
 		rev: old.Rev() + 1,
 	}
-	if err := s.cdcWrite(etre.Entity{}, wo, cp); err != nil {
+	if err := s.cdcWrite(ctx, etre.Entity{}, wo, cp); err != nil {
 		return old, err
 	}
 
 	return old, nil
 }
 
-func (s store) dbError(err error, errType string) error {
-	if ctxErr := s.ctx.Err(); ctxErr != nil {
+func (s store) dbError(ctx context.Context, err error, errType string) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
 		return DbError{Err: ctxErr, Type: errType}
 	}
 	if dupe := IsDupeKeyError(err); dupe != nil {
@@ -370,7 +361,7 @@ type cdcPartial struct {
 	rev int64
 }
 
-func (s store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
+func (s store) cdcWrite(ctx context.Context, e etre.Entity, wo WriteOp, cp cdcPartial) error {
 	// set op from entity or wo, in that order.
 	set := e.Set()
 	if set.Size == 0 && wo.SetSize > 0 {
@@ -393,7 +384,7 @@ func (s store) cdcWrite(e etre.Entity, wo WriteOp, cp cdcPartial) error {
 		SetOp:   set.Op,
 		SetSize: set.Size,
 	}
-	if err := s.cdcs.Write(s.ctx, event); err != nil {
+	if err := s.cdcs.Write(ctx, event); err != nil {
 		return DbError{Err: err, Type: "cdc-write", EntityId: cp.id.Hex()}
 	}
 	return nil
