@@ -453,6 +453,18 @@ func Run(ctx app.Context) {
 		return
 	}
 
+	// For the CLI, convert _created and _updated labels in place to RFC3339Nano format so they print human readable.
+	// Note that this will break entity.Created() and entity.Updated() since they expect this to be a numeric timestamp,
+	// but that's okay since the CLI just prints the entities as a map and exits.
+	for _, entity := range entities {
+		if entity["_created"] != nil {
+			entity["_created"] = entity.Created().Format(time.RFC3339Nano)
+		}
+		if entity["_updated"] != nil {
+			entity["_updated"] = entity.Updated().Format(time.RFC3339Nano)
+		}
+	}
+
 	if ctx.Options.JSON {
 		bytes, err := json.Marshal(entities)
 		if err != nil {

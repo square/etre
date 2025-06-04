@@ -145,6 +145,9 @@ func TestQueryOK(t *testing.T) {
 		{
 			"_id":      "abc",
 			"hostname": "localhost",
+			"_rev":     float64(0), // json.Unmarshal will convert int64 to float64, so use float64 here so the asserts are okay
+			"_created": float64(1000),
+			"_updated": float64(2000),
 		},
 	}
 
@@ -162,6 +165,9 @@ func TestQueryOK(t *testing.T) {
 	assert.Equal(t, "query="+query, gotQuery)
 	assert.Equal(t, got, respData)
 	assert.Equal(t, ctx, httpRT.gotCtx)
+	assert.Equal(t, int64(0), got[0].Rev())
+	assert.Equal(t, time.Unix(0, 1000), got[0].Created())
+	assert.Equal(t, time.Unix(0, 2000), got[0].Updated())
 }
 
 func TestQueryNoResults(t *testing.T) {

@@ -5,6 +5,7 @@ package entity_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,10 +63,11 @@ func setup(t *testing.T, cdcm *mock.CDCStore) entity.Store {
 	_, err = iv.CreateOne(context.TODO(), idx)
 	require.NoError(t, err)
 
+	now := time.Now().UnixNano()
 	testNodes = []etre.Entity{
-		{"_type": entityType, "_rev": int64(0), "x": int64(2), "y": "a", "z": int64(9), "foo": ""},
-		{"_type": entityType, "_rev": int64(0), "x": int64(4), "y": "b", "bar": ""},
-		{"_type": entityType, "_rev": int64(0), "x": int64(6), "y": "b", "bar": ""},
+		{"_type": entityType, "_rev": int64(0), "x": int64(2), "y": "a", "z": int64(9), "foo": "", "_created": now, "_updated": now},
+		{"_type": entityType, "_rev": int64(0), "x": int64(4), "y": "b", "bar": "", "_created": now, "_updated": now},
+		{"_type": entityType, "_rev": int64(0), "x": int64(6), "y": "b", "bar": "", "_created": now, "_updated": now},
 	}
 	res, err := nodesColl.InsertMany(context.TODO(), docs(testNodes))
 	require.NoError(t, err)
@@ -210,11 +212,12 @@ func TestReadEntitiesFilterReturnMetalabels(t *testing.T) {
 	q, err := query.Translate("y=a")
 	require.NoError(t, err)
 
-	actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{ReturnLabels: []string{"_id", "_type", "_rev", "y"}})
+	actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{ReturnLabels: []string{"_id", "_type", "_rev", "y", "_created", "_updated"}})
 	require.NoError(t, err)
 
 	expect := []etre.Entity{
-		{"_id": testNodes[0]["_id"], "_type": entityType, "_rev": int64(0), "y": "a"},
+		{"_id": testNodes[0]["_id"], "_type": entityType, "_rev": int64(0), "y": "a",
+			"_created": testNodes[0]["_created"], "_updated": testNodes[0]["_updated"]},
 	}
 	assert.Equal(t, expect, actual)
 }
@@ -248,6 +251,9 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
 	id2, _ := primitive.ObjectIDFromHex(ids[1])
 	id3, _ := primitive.ObjectIDFromHex(ids[2])
+
+	createTime, ok := (*gotEvents[0].New)["_created"].(int64)
+	require.True(t, ok, "expected _created to be int64, got %T", (*gotEvents[0].New)["_created"])
 	expectEvents := []etre.CDCEvent{
 		{
 			Id:         gotEvents[0].Id, // non-deterministic
@@ -258,7 +264,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 7},
+			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 7, "_created": createTime, "_updated": createTime},
 		},
 		{
 			Id:         gotEvents[1].Id, // non-deterministic
@@ -269,7 +275,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "x": 8},
+			New:        &etre.Entity{"_id": id2, "_type": entityType, "_rev": int64(0), "x": 8, "_created": createTime, "_updated": createTime},
 		},
 		{
 			Id:         gotEvents[2].Id, // non-deterministic
@@ -280,7 +286,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1},
+			New:        &etre.Entity{"_id": id3, "_type": entityType, "_rev": int64(0), "x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1, "_created": createTime, "_updated": createTime},
 			SetId:      "343",
 			SetOp:      "something",
 			SetSize:    1,
@@ -317,6 +323,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 
 	// Only x=5 written/inserted, so only a CDC event for it
 	id1, _ := primitive.ObjectIDFromHex(ids[0])
+	upd1 := (*gotEvents[0].New)["_updated"].(int64)
 	expectEvents := []etre.CDCEvent{
 		{
 			Id:         gotEvents[0].Id, // non-deterministic
@@ -327,9 +334,10 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 			Caller:     username,
 			Op:         "i",
 			Old:        nil,
-			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 5},
+			New:        &etre.Entity{"_id": id1, "_type": entityType, "_rev": int64(0), "x": 5, "_created": upd1, "_updated": upd1},
 		},
 	}
+	assert.Greater(t, upd1, time.Now().Add(-10*time.Second).UnixNano(), "expected _created/_updated to be within the last 10 seconds")
 	assert.Equal(t, expectEvents, gotEvents)
 }
 
@@ -368,10 +376,11 @@ func TestUpdateEntities(t *testing.T) {
 	assert.Len(t, gotDiffs, 1)
 	expectDiffs := []etre.Entity{
 		{
-			"_id":   testNodes[0]["_id"],
-			"_type": entityType,
-			"_rev":  int64(0),
-			"y":     "a",
+			"_id":      testNodes[0]["_id"],
+			"_type":    entityType,
+			"_rev":     int64(0),
+			"_updated": testNodes[0]["_updated"],
+			"y":        "a",
 		},
 	}
 	assert.Equal(t, expectDiffs, gotDiffs)
@@ -394,16 +403,18 @@ func TestUpdateEntities(t *testing.T) {
 	assert.Len(t, gotDiffs, 2)
 	expectDiffs = []etre.Entity{
 		{
-			"_id":   testNodes[1]["_id"],
-			"_type": entityType,
-			"_rev":  int64(0),
-			"y":     "b",
+			"_id":      testNodes[1]["_id"],
+			"_type":    entityType,
+			"_rev":     int64(0),
+			"_updated": testNodes[1]["_updated"],
+			"y":        "b",
 		},
 		{
-			"_id":   testNodes[2]["_id"],
-			"_type": entityType,
-			"_rev":  int64(0),
-			"y":     "b",
+			"_id":      testNodes[2]["_id"],
+			"_type":    entityType,
+			"_rev":     int64(0),
+			"_updated": testNodes[2]["_updated"],
+			"y":        "b",
 		},
 	}
 	assert.Equal(t, expectDiffs, gotDiffs)
@@ -417,6 +428,9 @@ func TestUpdateEntities(t *testing.T) {
 	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
 	id2, _ := testNodes[1]["_id"].(primitive.ObjectID)
 	id3, _ := testNodes[2]["_id"].(primitive.ObjectID)
+	upd1 := (*gotEvents[0].New)["_updated"].(int64)
+	upd2 := (*gotEvents[1].New)["_updated"].(int64)
+	upd3 := (*gotEvents[2].New)["_updated"].(int64)
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -424,8 +438,8 @@ func TestUpdateEntities(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "a"},
-			New:        &etre.Entity{"y": "y"},
+			Old:        &etre.Entity{"y": "a", "_updated": testNodes[0]["_updated"]},
+			New:        &etre.Entity{"y": "y", "_updated": upd1},
 			SetId:      "111",
 			SetOp:      "update-y1",
 			SetSize:    1,
@@ -436,8 +450,8 @@ func TestUpdateEntities(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "b"},
-			New:        &etre.Entity{"y": "c"},
+			Old:        &etre.Entity{"y": "b", "_updated": testNodes[0]["_updated"]},
+			New:        &etre.Entity{"y": "c", "_updated": upd2},
 			SetId:      "222",
 			SetOp:      "update-y2",
 			SetSize:    1,
@@ -448,14 +462,17 @@ func TestUpdateEntities(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "b"},
-			New:        &etre.Entity{"y": "c"},
+			Old:        &etre.Entity{"y": "b", "_updated": testNodes[0]["_updated"]},
+			New:        &etre.Entity{"y": "c", "_updated": upd3},
 			SetId:      "222",
 			SetOp:      "update-y2",
 			SetSize:    1,
 		},
 	}
 	assert.Equal(t, expectEvent, gotEvents)
+	assert.Greater(t, upd1, testNodes[0]["_updated"].(int64), "expected _updated to be greater than original value")
+	assert.Greater(t, upd2, testNodes[1]["_updated"].(int64), "expected _updated to be greater than original value")
+	assert.Greater(t, upd3, testNodes[2]["_updated"].(int64), "expected _updated to be greater than original value")
 }
 
 func TestUpdateEntitiesById(t *testing.T) {
@@ -488,10 +505,11 @@ func TestUpdateEntitiesById(t *testing.T) {
 	require.NoError(t, err)
 	expectDiffs := []etre.Entity{
 		{
-			"_id":   testNodes[0]["_id"],
-			"_type": entityType,
-			"_rev":  int64(0),
-			"y":     "a",
+			"_id":      testNodes[0]["_id"],
+			"_type":    entityType,
+			"_rev":     int64(0),
+			"_updated": testNodes[0]["_updated"],
+			"y":        "a",
 		},
 	}
 	assert.Equal(t, expectDiffs, gotDiffs)
@@ -513,16 +531,18 @@ func TestUpdateEntitiesById(t *testing.T) {
 	require.NoError(t, err)
 	expectDiffs = []etre.Entity{
 		{
-			"_id":   testNodes[1]["_id"],
-			"_type": entityType,
-			"_rev":  int64(0),
-			"y":     "b",
+			"_id":      testNodes[1]["_id"],
+			"_type":    entityType,
+			"_rev":     int64(0),
+			"_updated": testNodes[1]["_updated"],
+			"y":        "b",
 		},
 		{
-			"_id":   testNodes[2]["_id"],
-			"_type": entityType,
-			"_rev":  int64(0),
-			"y":     "b",
+			"_id":      testNodes[2]["_id"],
+			"_type":    entityType,
+			"_rev":     int64(0),
+			"_updated": testNodes[2]["_updated"],
+			"y":        "b",
 		},
 	}
 	assert.Equal(t, expectDiffs, gotDiffs)
@@ -536,6 +556,9 @@ func TestUpdateEntitiesById(t *testing.T) {
 	id1, _ := testNodes[0]["_id"].(primitive.ObjectID)
 	id2, _ := testNodes[1]["_id"].(primitive.ObjectID)
 	id3, _ := testNodes[2]["_id"].(primitive.ObjectID)
+	upd1 := (*gotEvents[0].New)["_updated"].(int64)
+	upd2 := (*gotEvents[1].New)["_updated"].(int64)
+	upd3 := (*gotEvents[2].New)["_updated"].(int64)
 	expectEvent := []etre.CDCEvent{
 		{
 			EntityId:   id1.Hex(),
@@ -543,8 +566,8 @@ func TestUpdateEntitiesById(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "a"},
-			New:        &etre.Entity{"y": "y"},
+			Old:        &etre.Entity{"y": "a", "_updated": testNodes[0]["_updated"]},
+			New:        &etre.Entity{"y": "y", "_updated": upd1},
 			SetId:      "111",
 			SetOp:      "update-y1",
 			SetSize:    1,
@@ -555,8 +578,8 @@ func TestUpdateEntitiesById(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "b"},
-			New:        &etre.Entity{"y": "c"},
+			Old:        &etre.Entity{"y": "b", "_updated": testNodes[1]["_updated"]},
+			New:        &etre.Entity{"y": "c", "_updated": upd2},
 			SetId:      "222",
 			SetOp:      "update-y2",
 			SetSize:    1,
@@ -567,13 +590,16 @@ func TestUpdateEntitiesById(t *testing.T) {
 			EntityRev:  int64(1),
 			Caller:     username,
 			Op:         "u",
-			Old:        &etre.Entity{"y": "b"},
-			New:        &etre.Entity{"y": "c"},
+			Old:        &etre.Entity{"y": "b", "_updated": testNodes[2]["_updated"]},
+			New:        &etre.Entity{"y": "c", "_updated": upd3},
 			SetId:      "222",
 			SetOp:      "update-y2",
 			SetSize:    1,
 		},
 	}
+	assert.Greater(t, upd1, testNodes[0]["_updated"].(int64), "expected _updated to increase after update")
+	assert.Greater(t, upd2, testNodes[1]["_updated"].(int64), "expected _updated to increase after update")
+	assert.Greater(t, upd3, testNodes[2]["_updated"].(int64), "expected _updated to increase after update")
 	assert.Equal(t, expectEvent, gotEvents)
 }
 

@@ -86,7 +86,7 @@ func (v validator) Entities(entities []etre.Entity, op byte) error {
 			switch op {
 			case VALIDATE_ON_CREATE:
 				// User cannot set these metalabels on create
-				for _, ml := range []string{"_id", "_type", "_rev", "_ts"} {
+				for _, ml := range []string{"_id", "_type", "_rev", "_created", "_updated"} {
 					if label != ml {
 						continue
 					}
