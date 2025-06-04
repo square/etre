@@ -81,6 +81,7 @@ func TestPostEntityOK(t *testing.T) {
 		{Method: "Inc", Metric: metrics.Created, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -128,6 +129,7 @@ func TestPostEntityDuplicate(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -177,6 +179,7 @@ func TestPostEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -207,6 +210,7 @@ func TestPostEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -234,6 +238,7 @@ func TestPostEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -309,6 +314,7 @@ func TestPutEntityOK(t *testing.T) {
 		{Method: "Inc", Metric: metrics.Updated, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -359,6 +365,7 @@ func TestPutEntityDuplicate(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -404,6 +411,7 @@ func TestPutEntityNotFound(t *testing.T) {
 		//{Method: "Inc", Metric: metrics.Updated, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -442,6 +450,7 @@ func TestPutEntityErrors(t *testing.T) {
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics := []mock.MetricMethodArgs{}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -470,6 +479,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -503,6 +513,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -535,6 +546,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -564,6 +576,7 @@ func TestPutEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -638,6 +651,7 @@ func TestDeleteEntityOK(t *testing.T) {
 		{Method: "Inc", Metric: metrics.Deleted, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -711,6 +725,7 @@ func TestDeleteLabel(t *testing.T) {
 		{Method: "IncLabel", Metric: metrics.LabelDelete, StringVal: "foo"},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------

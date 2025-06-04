@@ -66,6 +66,7 @@ func TestGetEntityBasic(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ReadId, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -112,6 +113,7 @@ func TestGetEntityReturnLabels(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ReadId, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -152,6 +154,7 @@ func TestGetEntityNotFound(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ReadId, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -193,6 +196,7 @@ func TestGetEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ClientError, IntVal: 1}, // error
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -213,6 +217,7 @@ func TestGetEntityErrors(t *testing.T) {
 
 	// -- Metrics -----------------------------------------------------------
 	expectMetrics = []mock.MetricMethodArgs{}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
@@ -239,6 +244,7 @@ func TestGetEntityErrors(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1}, // error
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -286,6 +292,7 @@ func TestGetEntityLabels(t *testing.T) {
 		{Method: "Inc", Metric: metrics.ReadLabels, IntVal: 1},
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------

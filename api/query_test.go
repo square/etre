@@ -66,6 +66,7 @@ func TestQueryBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 3},              // len(testEntities)
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -110,6 +111,7 @@ func TestQueryBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 3},              // len(testEntities)
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -152,6 +154,7 @@ func TestQueryBasic(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 3},                // len(testEntities)
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// -- Auth -----------------------------------------------------------
@@ -205,6 +208,7 @@ func TestQueryNoMatches(t *testing.T) {
 		{Method: "Val", Metric: metrics.ReadMatch, IntVal: 0}, // no matching queries
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -250,6 +254,7 @@ func TestQueryErrorsDatabaseError(t *testing.T) {
 		{Method: "Inc", Metric: metrics.DbError, IntVal: 1}, // db error
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -345,6 +350,7 @@ func TestQueryErrorsTimeout(t *testing.T) {
 		{Method: "Inc", Metric: metrics.QueryTimeout, IntVal: 1}, // query timeout
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
+	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
 	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 }
 
@@ -376,4 +382,22 @@ func TestResponseCompression(t *testing.T) {
 
 	// Make sure content type is correct
 	assert.Equal(t, "application/json", res.Header.Get("Content-Type"))
+}
+
+// fixLatencyMetric is a helper function that fixes the non-deterministic latency to ensure actual==expected for assertions.
+// Since latency is non-deterministic, it can cause tests to fail intermittently. This function replaces the latency metric
+// in the "expect" metrics with the "actual" value, so that the test can pass.
+// It also asserts that the actual latency is between 0 and the provided max value, to ensure that the latency is within acceptable limits.
+func fixLatencyMetric(t *testing.T, max int, expect, actual []mock.MetricMethodArgs) {
+	t.Helper()
+	if len(actual) != len(expect) {
+		// Something else is wrong, the test is going to fail anyway. Let it fail.
+		return
+	}
+	for i, _ := range actual {
+		if actual[i].Metric == metrics.LatencyMs && expect[i].Metric == metrics.LatencyMs && actual[i].Method == expect[i].Method {
+			assert.True(t, actual[i].IntVal >= 0 && actual[i].IntVal <= int64(max), "Latency metric value %d must be between 0 and %d.", actual[i].IntVal, max)
+			expect[i].IntVal = actual[i].IntVal
+		}
+	}
 }
