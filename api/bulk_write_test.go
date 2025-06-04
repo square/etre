@@ -421,7 +421,7 @@ func TestPutEntitiesErrors(t *testing.T) {
 		{Method: "Val", Metric: metrics.LatencyMs, IntVal: 0},
 	}
 	fixLatencyMetric(t, 150, expectMetrics, server.metricsrec.Called)
-	assert.Equal(t, server.metricsrec.Called, expectMetrics)
+	assert.Equal(t, expectMetrics, server.metricsrec.Called)
 
 	// ----------------------------------------------------------------------
 	// No patch (empty payload)
