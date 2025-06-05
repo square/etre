@@ -116,7 +116,7 @@ func TestReadEntitiesWithAllOperators(t *testing.T) {
 		q, err := query.Translate(qs)
 		require.NoError(t, err)
 
-		actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
+		actual, err := store.ReadEntities(context.Background(), entityType, q, etre.QueryFilter{})
 		require.NoError(t, err)
 		assert.Equal(t, expect, actual)
 	}
@@ -158,7 +158,7 @@ func TestReadEntitiesMatching(t *testing.T) {
 		q, err := query.Translate(rt.query)
 		require.NoError(t, err)
 
-		got, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
+		got, err := store.ReadEntities(context.Background(), entityType, q, etre.QueryFilter{})
 		require.NoError(t, err)
 		assert.Equal(t, rt.expect, got)
 	}
@@ -176,7 +176,7 @@ func TestReadEntitiesFilterDistinct(t *testing.T) {
 		ReturnLabels: []string{"y"}, // only works with 1 return label
 		Distinct:     true,
 	}
-	got, err := store.ReadEntities(entityType, q, f)
+	got, err := store.ReadEntities(context.Background(), entityType, q, f)
 	require.NoError(t, err)
 
 	expect := []etre.Entity{
@@ -202,7 +202,7 @@ func TestReadEntitiesFilterReturnLabels(t *testing.T) {
 		{"x": int64(4)},
 		{"x": int64(6)},
 	}
-	got, err := store.ReadEntities(entityType, q, f)
+	got, err := store.ReadEntities(context.Background(), entityType, q, f)
 	require.NoError(t, err)
 	assert.Equal(t, expect, got)
 }
@@ -212,7 +212,7 @@ func TestReadEntitiesFilterReturnMetalabels(t *testing.T) {
 	q, err := query.Translate("y=a")
 	require.NoError(t, err)
 
-	actual, err := store.ReadEntities(entityType, q, etre.QueryFilter{ReturnLabels: []string{"_id", "_type", "_rev", "y", "_created", "_updated"}})
+	actual, err := store.ReadEntities(context.Background(), entityType, q, etre.QueryFilter{ReturnLabels: []string{"_id", "_type", "_rev", "y", "_created", "_updated"}})
 	require.NoError(t, err)
 
 	expect := []etre.Entity{
@@ -243,7 +243,7 @@ func TestCreateEntitiesMultiple(t *testing.T) {
 		etre.Entity{"x": 8},
 		etre.Entity{"x": 9, "_setId": "343", "_setOp": "something", "_setSize": 1},
 	}
-	ids, err := store.CreateEntities(wo, testData)
+	ids, err := store.CreateEntities(context.Background(), wo, testData)
 	require.NoError(t, err)
 	assert.Len(t, ids, len(testData))
 
@@ -314,7 +314,7 @@ func TestCreateEntitiesMultiplePartialSuccess(t *testing.T) {
 		etre.Entity{"x": 6}, // dupe
 		etre.Entity{"x": 7}, // would be ok but blocked by dupe
 	}
-	ids, err := store.CreateEntities(wo, testData)
+	ids, err := store.CreateEntities(context.Background(), wo, testData)
 	require.Error(t, err)
 	dberr, ok := err.(entity.DbError)
 	require.True(t, ok, "got error type %#v, expected entity.DbError", err)
@@ -371,7 +371,7 @@ func TestUpdateEntities(t *testing.T) {
 		SetId:      "111",
 		SetSize:    1,
 	}
-	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
+	gotDiffs, err := store.UpdateEntities(context.Background(), wo1, q, patch)
 	require.NoError(t, err)
 	assert.Len(t, gotDiffs, 1)
 	expectDiffs := []etre.Entity{
@@ -398,7 +398,7 @@ func TestUpdateEntities(t *testing.T) {
 		SetId:      "222",
 		SetSize:    1,
 	}
-	gotDiffs, err = store.UpdateEntities(wo2, q, patch)
+	gotDiffs, err = store.UpdateEntities(context.Background(), wo2, q, patch)
 	require.NoError(t, err)
 	assert.Len(t, gotDiffs, 2)
 	expectDiffs = []etre.Entity{
@@ -501,7 +501,7 @@ func TestUpdateEntitiesById(t *testing.T) {
 		SetId:      "111",
 		SetSize:    1,
 	}
-	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
+	gotDiffs, err := store.UpdateEntities(context.Background(), wo1, q, patch)
 	require.NoError(t, err)
 	expectDiffs := []etre.Entity{
 		{
@@ -527,7 +527,7 @@ func TestUpdateEntitiesById(t *testing.T) {
 		SetId:      "222",
 		SetSize:    1,
 	}
-	gotDiffs, err = store.UpdateEntities(wo2, q, patch)
+	gotDiffs, err = store.UpdateEntities(context.Background(), wo2, q, patch)
 	require.NoError(t, err)
 	expectDiffs = []etre.Entity{
 		{
@@ -623,7 +623,7 @@ func TestUpdateEntitiesDuplicate(t *testing.T) {
 		EntityType: entityType,
 		Caller:     username,
 	}
-	gotDiffs, err := store.UpdateEntities(wo1, q, patch)
+	gotDiffs, err := store.UpdateEntities(context.Background(), wo1, q, patch)
 	require.Error(t, err)
 	dberr, ok := err.(entity.DbError)
 	require.True(t, ok, "got error type %#v, expected entity.DbError", err)
@@ -650,7 +650,7 @@ func TestDeleteEntities(t *testing.T) {
 	q, err := query.Translate("y == a")
 	require.NoError(t, err)
 
-	gotOld, err := store.DeleteEntities(wo, q)
+	gotOld, err := store.DeleteEntities(context.Background(), wo, q)
 	require.NoError(t, err)
 	assert.Equal(t, testNodes[:1], gotOld)
 
@@ -658,7 +658,7 @@ func TestDeleteEntities(t *testing.T) {
 	q, err = query.Translate("y == b")
 	require.NoError(t, err)
 
-	gotOld, err = store.DeleteEntities(wo, q)
+	gotOld, err = store.DeleteEntities(context.Background(), wo, q)
 	require.NoError(t, err)
 	assert.Equal(t, testNodes[1:], gotOld)
 
@@ -717,7 +717,7 @@ func TestDeleteLabel(t *testing.T) {
 		EntityId:   testNodes[0]["_id"].(primitive.ObjectID).Hex(),
 		Caller:     username,
 	}
-	gotOld, err := store.DeleteLabel(wo, "foo")
+	gotOld, err := store.DeleteLabel(context.Background(), wo, "foo")
 	require.NoError(t, err)
 
 	expectOld := etre.Entity{
@@ -730,7 +730,7 @@ func TestDeleteLabel(t *testing.T) {
 
 	// The foo label should no longer be set on the entity
 	q, _ := query.Translate("y=a")
-	gotNew, err := store.ReadEntities(entityType, q, etre.QueryFilter{})
+	gotNew, err := store.ReadEntities(context.Background(), entityType, q, etre.QueryFilter{})
 	require.NoError(t, err)
 
 	e := etre.Entity{}

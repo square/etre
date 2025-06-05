@@ -198,11 +198,8 @@ func TestClientQueryTimeout(t *testing.T) {
 	// and plumbed all the way down to the entity.Store context
 	var gotCtx context.Context
 	store := mock.EntityStore{}
-	store.WithContextFunc = func(ctx context.Context) entity.Store {
+	store.ReadEntitiesFunc = func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 		gotCtx = ctx
-		return store
-	}
-	store.ReadEntitiesFunc = func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
 		return testEntitiesWithObjectIDs[0:1], nil
 	}
 	server := setup(t, defaultConfig, store)
@@ -244,24 +241,25 @@ func TestContextPropagation(t *testing.T) {
 	// Make sure context values from the request are propagated all the way down to the entity.Store context
 	var gotCtx context.Context
 	store := mock.EntityStore{}
-	store.WithContextFunc = func(ctx context.Context) entity.Store {
-		gotCtx = ctx
-		return store
-	}
 	// We're going to test all operations, so we need to set all of these funcs
-	store.ReadEntitiesFunc = func(entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+	store.ReadEntitiesFunc = func(ctx context.Context, entityType string, q query.Query, f etre.QueryFilter) ([]etre.Entity, error) {
+		gotCtx = ctx
 		return testEntitiesWithObjectIDs[0:1], nil
 	}
-	store.CreateEntitiesFunc = func(op entity.WriteOp, entities []etre.Entity) ([]string, error) {
+	store.CreateEntitiesFunc = func(ctx context.Context, op entity.WriteOp, entities []etre.Entity) ([]string, error) {
+		gotCtx = ctx
 		return []string{testEntityIds[0]}, nil
 	}
-	store.UpdateEntitiesFunc = func(op entity.WriteOp, q query.Query, e etre.Entity) ([]etre.Entity, error) {
+	store.UpdateEntitiesFunc = func(ctx context.Context, op entity.WriteOp, q query.Query, e etre.Entity) ([]etre.Entity, error) {
+		gotCtx = ctx
 		return testEntitiesWithObjectIDs[0:1], nil
 	}
-	store.DeleteEntitiesFunc = func(op entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+	store.DeleteEntitiesFunc = func(ctx context.Context, op entity.WriteOp, q query.Query) ([]etre.Entity, error) {
+		gotCtx = ctx
 		return testEntitiesWithObjectIDs[0:1], nil
 	}
-	store.DeleteLabelFunc = func(op entity.WriteOp, label string) (etre.Entity, error) {
+	store.DeleteLabelFunc = func(ctx context.Context, op entity.WriteOp, label string) (etre.Entity, error) {
+		gotCtx = ctx
 		return testEntitiesWithObjectIDs[0], nil
 	}
 

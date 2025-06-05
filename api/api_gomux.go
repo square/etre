@@ -576,7 +576,7 @@ func (api *API) getEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Query data store (instrumented)
 	rc.inst.Start("db")
-	entities, err := api.es.WithContext(ctx).ReadEntities(rc.entityType, q, f)
+	entities, err := api.es.ReadEntities(ctx, rc.entityType, q, f)
 	rc.inst.Stop("db")
 	if err != nil {
 		api.readError(rc, w, err)
@@ -650,7 +650,7 @@ func (api *API) postEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write new entities to data store
-	ids, err = api.es.WithContext(ctx).CreateEntities(rc.wo, entities)
+	ids, err = api.es.CreateEntities(ctx, rc.wo, entities)
 	rc.gm.Inc(metrics.Created, int64(len(ids)))
 
 reply:
@@ -717,7 +717,7 @@ func (api *API) putEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Patch all entities matching query
-	entities, err = api.es.WithContext(ctx).UpdateEntities(rc.wo, q, patch)
+	entities, err = api.es.UpdateEntities(ctx, rc.wo, q, patch)
 	rc.gm.Val(metrics.UpdateBulk, int64(len(entities)))
 	rc.gm.Inc(metrics.Updated, int64(len(entities)))
 
@@ -764,7 +764,7 @@ func (api *API) deleteEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete entities, returns the deleted entities
-	entities, err = api.es.WithContext(ctx).DeleteEntities(rc.wo, q)
+	entities, err = api.es.DeleteEntities(ctx, rc.wo, q)
 	rc.gm.Val(metrics.DeleteBulk, int64(len(entities)))
 	rc.gm.Inc(metrics.Deleted, int64(len(entities)))
 
@@ -805,7 +805,7 @@ func (api *API) getEntityHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read the entity by ID
 	q, _ := query.Translate("_id=" + rc.entityId)
-	entities, err := api.es.WithContext(ctx).ReadEntities(rc.entityType, q, f)
+	entities, err := api.es.ReadEntities(ctx, rc.entityType, q, f)
 	if err != nil {
 		api.readError(rc, w, err)
 		return
@@ -838,7 +838,7 @@ func (api *API) getLabelsHandler(w http.ResponseWriter, r *http.Request) {
 	rc.gm.Inc(metrics.ReadLabels, 1) // specific read type
 
 	q, _ := query.Translate("_id=" + rc.entityId)
-	entities, err := api.es.WithContext(ctx).ReadEntities(rc.entityType, q, etre.QueryFilter{})
+	entities, err := api.es.ReadEntities(ctx, rc.entityType, q, etre.QueryFilter{})
 	if err != nil {
 		api.readError(rc, w, err)
 		return
@@ -893,7 +893,7 @@ func (api *API) postEntityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create new entity
-	ids, err = api.es.WithContext(ctx).CreateEntities(rc.wo, []etre.Entity{newEntity})
+	ids, err = api.es.CreateEntities(ctx, rc.wo, []etre.Entity{newEntity})
 	if err == nil {
 		rc.gm.Inc(metrics.Created, 1)
 	}
@@ -947,7 +947,7 @@ func (api *API) putEntityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Patch one entity by ID
-	entities, err = api.es.WithContext(ctx).UpdateEntities(rc.wo, q, patch)
+	entities, err = api.es.UpdateEntities(ctx, rc.wo, q, patch)
 	if err != nil {
 		goto reply
 	} else if len(entities) == 0 {
@@ -991,7 +991,7 @@ func (api *API) deleteEntityHandler(w http.ResponseWriter, r *http.Request) {
 	q, _ := query.Translate("_id=" + rc.entityId)
 
 	// Delete one entity by ID
-	entities, err = api.es.WithContext(ctx).DeleteEntities(rc.wo, q)
+	entities, err = api.es.DeleteEntities(ctx, rc.wo, q)
 	if err != nil {
 		goto reply
 	} else if len(entities) == 0 {
@@ -1041,7 +1041,7 @@ func (api *API) deleteLabelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete label from entity
-	diff, err = api.es.WithContext(ctx).DeleteLabel(rc.wo, label)
+	diff, err = api.es.DeleteLabel(ctx, rc.wo, label)
 	if err != nil {
 		if err == etre.ErrEntityNotFound {
 			err = nil // delete is idempotent
