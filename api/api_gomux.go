@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/swaggo/http-swagger"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/square/etre"
@@ -1263,6 +1263,16 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 				dupeErr.EntityId = v.EntityId
 				dupeErr.Message += " (db err: " + v.Err.Error() + ")"
 				wr.Error = &dupeErr
+			case "db-insert-one":
+				insertErr := ErrDBInsertFailed
+				insertErr.EntityId = v.EntityId
+				insertErr.Message += " (db err: " + v.Err.Error() + ")"
+				wr.Error = &insertErr
+			case "db-update-one":
+				updateErr := ErrDBUpdateFailed
+				updateErr.EntityId = v.EntityId
+				updateErr.Message += " (db err: " + v.Err.Error() + ")"
+				wr.Error = &updateErr
 			default:
 				wr.Error = &etre.Error{
 					Message:    v.Err.Error(),
