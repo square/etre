@@ -1263,12 +1263,12 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 				dupeErr.EntityId = v.EntityId
 				dupeErr.Message += " (db err: " + v.Err.Error() + ")"
 				wr.Error = &dupeErr
-			case "db-insert-one":
+			case "db-insert":
 				insertErr := ErrDBInsertFailed
 				insertErr.EntityId = v.EntityId
 				insertErr.Message += " (db err: " + v.Err.Error() + ")"
 				wr.Error = &insertErr
-			case "db-update-one":
+			case "db-update":
 				updateErr := ErrDBUpdateFailed
 				updateErr.EntityId = v.EntityId
 				updateErr.Message += " (db err: " + v.Err.Error() + ")"
