@@ -18,6 +18,18 @@ var ErrDuplicateEntity = etre.Error{
 	Message:    "cannot insert or update entity because identifying labels conflict with another entity",
 }
 
+var ErrDBInsertFailed = etre.Error{
+	Type:       "db-insert-failed",
+	HTTPStatus: http.StatusBadRequest,
+	Message:    "failed to insert entity",
+}
+
+var ErrDBUpdateFailed = etre.Error{
+	Type:       "db-update-failed",
+	HTTPStatus: http.StatusBadRequest,
+	Message:    "failed to update entity",
+}
+
 var ErrNotFound = etre.Error{
 	Type:       "entity-not-found",
 	HTTPStatus: http.StatusNotFound,
