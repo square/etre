@@ -1178,6 +1178,7 @@ func (api *API) readError(rc *req, w http.ResponseWriter, err error) {
 	api.systemMetrics.Inc(metrics.Error, 1)
 	var httpStatus = http.StatusInternalServerError
 	var ret interface{}
+	log.Printf("API READ ERROR: %v", err)
 	switch v := err.(type) {
 	case etre.Error:
 		maybeInc(metrics.ClientError, 1, rc.gm)
@@ -1204,7 +1205,6 @@ func (api *API) readError(rc *req, w http.ResponseWriter, err error) {
 		if dbErr.Err == context.DeadlineExceeded {
 			maybeInc(metrics.QueryTimeout, 1, rc.gm)
 		} else {
-			log.Printf("DATABASE ERROR: %v", dbErr)
 			maybeInc(metrics.DbError, 1, rc.gm)
 		}
 		ret = etre.Error{
@@ -1215,7 +1215,6 @@ func (api *API) readError(rc *req, w http.ResponseWriter, err error) {
 		}
 		httpStatus = http.StatusServiceUnavailable
 	default:
-		log.Printf("API ERROR: %v", err)
 		maybeInc(metrics.APIError, 1, rc.gm)
 		httpStatus = http.StatusInternalServerError
 	}
@@ -1234,6 +1233,7 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 
 	// Map error to etre.Error
 	if err != nil {
+		log.Printf("API WRITE ERROR: %v", err)
 		api.systemMetrics.Inc(metrics.Error, 1)
 		switch v := err.(type) {
 		case etre.Error:
@@ -1255,7 +1255,6 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 			if err.(entity.DbError).Err == context.DeadlineExceeded {
 				maybeInc(metrics.QueryTimeout, 1, rc.gm)
 			} else {
-				log.Printf("DATABASE ERROR: %v", v.Err)
 				maybeInc(metrics.DbError, 1, rc.gm)
 			}
 			switch v.Type {
