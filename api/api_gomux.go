@@ -1255,6 +1255,7 @@ func (api *API) WriteResult(rc *req, w http.ResponseWriter, ids interface{}, err
 			if err.(entity.DbError).Err == context.DeadlineExceeded {
 				maybeInc(metrics.QueryTimeout, 1, rc.gm)
 			} else {
+				log.Printf("DATABASE ERROR: %v", v.Err)
 				maybeInc(metrics.DbError, 1, rc.gm)
 			}
 			switch v.Type {
